@@ -1,0 +1,41 @@
+{
+  "name": "@symbolon/app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Symbolon's web app: business, vendor and public screens over @symbolon/* packages",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build --webpack",
+    "start": "next start --port 3000",
+    "typecheck": "tsc --noEmit -p tsconfig.check.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.128.0",
+    "@circle-fin/w3s-pw-web-sdk": "1.1.11",
+    "@next/env": "16.3.6",
+    "@symbolon/chain": "workspace:*",
+    "@symbolon/core": "workspace:*",
+    "@symbolon/db": "workspace:*",
+    "@symbolon/seal": "workspace:*",
+    "@symbolon/steward": "workspace:*",
+    "drizzle-orm": "0.45.3",
+    "gsap": "3.15.0",
+    "next": "16.3.6",
+    "qrcode": "1.5.4",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "server-only": "0.0.1",
+    "viem": "2.56.9"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "22.20.4",
+    "@types/qrcode": "1.5.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2",
+    "vitest": "5.0.2"
+  }
+}

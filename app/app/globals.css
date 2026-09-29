@@ -1,0 +1,100 @@
+@import "tailwindcss";
+@source "../app";
+@source "../components";
+@source "../lib";
+
+/* Roles, not colours: every component uses these. The app is dark only (operator, 2026-09-29): the pad at night. */
+:root {
+  --paper: #131a16;
+  --paper-raised: #1a231e;
+  --rule: #3b4a41;
+  --rule-soft: #26322b;
+  --ink: #e4ebe0;
+  --graphite: #93a298;
+  --seal: #9fb0f5;
+  --seal-wash: #20284a;
+  --red: #ef8a7c;
+  --red-wash: #3a1f1b;
+  /* Behind sheets and dialogs: always darkens the page */
+  --scrim: rgba(0, 0, 0, 0.6);
+  color-scheme: dark;
+  /* Motion tokens for CSS transitions; GSAP uses the same curves (lib/motion.ts) */
+  --ease-arrive: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-settle: cubic-bezier(0.2, 0, 0, 1);
+  --ease-depart: cubic-bezier(0.4, 0, 1, 1);
+  --dur-quick: 180ms;
+  --dur-base: 300ms;
+  --dur-arrive: 420ms;
+}
+
+/* The only light palette: paper. Pale ink on white paper would print as blank pages (the public invoice has a print button). */
+@media print {
+  :root {
+    --paper: #ffffff;
+    --paper-raised: #ffffff;
+    --rule: #a9bca3;
+    --rule-soft: #cdd9c7;
+    --ink: #15211c;
+    --graphite: #5d6b63;
+    --seal: #2b3a8c;
+    --seal-wash: #dfe3f1;
+    --red: #b23a2e;
+    --red-wash: #f3dfd9;
+    color-scheme: light;
+  }
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-raised: var(--paper-raised);
+  --color-rule: var(--rule);
+  --color-rule-soft: var(--rule-soft);
+  --color-ink: var(--ink);
+  --color-graphite: var(--graphite);
+  --color-seal: var(--seal);
+  --color-seal-wash: var(--seal-wash);
+  --color-red: var(--red);
+  --color-red-wash: var(--red-wash);
+  --color-scrim: var(--scrim);
+  --font-display: var(--font-caslon), "Times New Roman", serif;
+  --font-sans: var(--font-schibsted), system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --radius-doc: 4px;
+}
+
+html,
+body {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+body {
+  font-family: var(--font-schibsted), system-ui, sans-serif;
+  font-feature-settings: "lnum" 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--seal);
+  outline-offset: 2px;
+}
+
+/* Menus drop from the control that opened them: a short fade and drop, the motion system's "arrive" */
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+}
+.menu-in {
+  animation: menu-in var(--dur-quick) var(--ease-arrive) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
