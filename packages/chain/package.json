@@ -1,0 +1,34 @@
+{
+  "name": "@symbolon/chain",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Symbolon's contracts from TypeScript: ABIs, deployments, Arc chain config, reads, write calls, log scanning",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:live": "LIVE=1 vitest run test/live.test.ts",
+    "generate": "tsx scripts/generate.ts"
+  },
+  "dependencies": {
+    "@symbolon/seal": "workspace:*",
+    "viem": "2.56.9"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.2",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.0.2"
+  }
+}
