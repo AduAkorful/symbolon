@@ -1,0 +1,40 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.36"
+evm_version = "prague"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+# the Foundry side of the known vectors shared with packages/seal (read-only)
+fs_permissions = [
+    { access = "read", path = "../packages/seal/vectors" },
+    { access = "read", path = "../packages/steward/vectors" },
+    { access = "read", path = "./deployments/external" },
+    { access = "read", path = "./releases" },
+    { access = "read-write", path = "./deployments" },
+]
+remappings = [
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
+    "forge-std/=lib/forge-std/src/",
+]
+
+[rpc_endpoints]
+arc_testnet = "https://rpc.testnet.arc.io"
+
+[fuzz]
+runs = 512
+
+[invariant]
+runs = 128
+depth = 64
+fail_on_revert = false
+
+[fmt]
+line_length = 120
+
+[lint]
+# the style guide uses camelCase immutables and avoids assembly without a measured hot-path need
+exclude_lints = ["screaming-snake-case-immutable", "asm-keccak256", "unwrapped-modifier-logic"]
