@@ -1,0 +1,36 @@
+{
+  "name": "@symbolon/steward",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Steward: matching, timing, treasury and decision records, checked against the Vault's rules before anything is sent",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "vectors": "tsx scripts/merkleVectors.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.128.0",
+    "@circle-fin/developer-controlled-wallets": "10.8.1",
+    "@symbolon/chain": "workspace:*",
+    "@symbolon/seal": "workspace:*",
+    "viem": "2.56.9",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.2",
+    "typescript": "7.0.2",
+    "vitest": "5.0.2",
+    "tsx": "4.23.15"
+  }
+}
