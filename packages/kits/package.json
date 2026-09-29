@@ -1,0 +1,33 @@
+{
+  "name": "@symbolon/kits",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Circle App Kit capabilities used off the Vault's payment path: USDC/EURC conversion before funding",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@circle-fin/adapter-viem-v2": "1.18.0",
+    "@circle-fin/app-kit": "1.15.3",
+    "@symbolon/chain": "workspace:*",
+    "viem": "2.56.9"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.2",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.0.2"
+  }
+}
