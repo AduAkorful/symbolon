@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "SymbolonVaultImplementation": "0x02bCb1288338d47e31342737772D0b32bBA3842A",
+  "VaultFactory": "0xFC4dAd9E8F090BefB4ADaDEdFDec0BC822269a04",
+  "VaultLens": "0x3F5226e7bc228Aa3c4f79c15887b236b4788E2c4",
+  "notesHash": "0xc3446a0b10279f3ab60cfb7cf1d7bafd400fcd03ba15f026f9ea91e8a0e8a909",
+  "published": true,
+  "startBlock": 64060463,
+  "notes": "releases/vault-v1.md"
+}

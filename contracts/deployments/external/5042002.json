@@ -1,0 +1,15 @@
+{
+  "source": "https://docs.arc.io/arc/references/contract-addresses (read 2026-09-26); re-checked onchain by script/Deploy.s.sol before every deploy (USYC Teller asset/share checked too)",
+  "chainId": 5042002,
+  "cctpDomain": 26,
+  "tokenMessengerV2": "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
+  "messageTransmitterV2": "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
+  "usdc": "0x3600000000000000000000000000000000000000",
+  "eurc": "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a",
+  "tokenDecimals": 6,
+  "rpc": "https://rpc.testnet.arc.io",
+  "explorer": "https://explorer.testnet.arc.io",
+  "usyc": "0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C",
+  "usycTeller": "0x9fdF14c5B14173D74C08Af27AebFf39240dC105A",
+  "usycEntitlements": "0xcc205224862c7641930c87679e98999d23c26113"
+}

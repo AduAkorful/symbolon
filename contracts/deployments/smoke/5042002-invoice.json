@@ -1,0 +1,21 @@
+{
+  "fingerprint": "0x1815e635a00359f88e38182f4f18380eebea35dad9ed9e36f1a26e97fbe52a7b",
+  "envelope": "{\"chainId\":5042002,\"document\":{\"attachments\":[],\"currency\":{\"chainId\":5042002,\"decimals\":6,\"symbol\":\"USDC\",\"token\":\"0x3600000000000000000000000000000000000000\"},\"discounts\":[],\"dueDate\":1791010882,\"earlyPay\":[],\"invoiceNumber\":\"SMOKE-1790406082\",\"issuedAt\":1790406082,\"lineItems\":[{\"amount\":\"1.000000\",\"description\":\"Deployment smoke test\",\"quantity\":\"1\",\"unitPrice\":\"1.000000\"}],\"notes\":\"Demo data: a live test of the deployment, not a real invoice.\",\"payer\":{\"name\":\"Symbolon smoke test (demo payer)\",\"vault\":\"0x5f5e2cd9f87a81724cc48ec0c193630a60692984\"},\"payout\":{\"address\":\"0x579042072c39b4ab3decfd7fb172e8f0453d7536\",\"domain\":26},\"schema\":\"symbolon.invoice.v1\",\"seal\":\"0x74b4134c8d527a8d8ae8cb9503ab2043bcfc0ffd\",\"subtotal\":\"1.000000\",\"taxes\":[],\"total\":\"1.000000\",\"vendor\":{\"name\":\"Symbolon smoke test (demo vendor)\"}},\"ledger\":\"0x7eff84d0715284fa3d793525151b30a05af45ace\",\"signature\":\"0x876cce3e766ae869199c85c130f0c19a523cc616fec0ff1162e2fd6fc64d5e2f061209463b90715e62ee54d81f65a853d90ba37968f9aa56cde9e62dfcb95e5b1c\",\"v\":1}",
+  "invoice": {
+    "seal": "0x74b4134c8d527a8d8ae8cb9503ab2043bcfc0ffd",
+    "token": "0x3600000000000000000000000000000000000000",
+    "amount": "1000000",
+    "issuedAt": "1790406082",
+    "dueDate": "1791010882",
+    "payoutAddress": "0x579042072c39b4ab3decfd7fb172e8f0453d7536",
+    "payoutDomain": 26,
+    "payerRef": "0x0000000000000000000000005f5e2cd9f87a81724cc48ec0c193630a60692984",
+    "invoiceNumberHash": "0x6d709722dcdbf3547c3fd5b9924cdd35cd876fe99be86ef4e02aab369e201bc3",
+    "poRef": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "documentHash": "0x976abb5ba67565d05a0e19e5918cc21f284ac1910bd3fdc291a145290842e751",
+    "replaces": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "earlyPay": [],
+    "earlyPayCount": 0
+  },
+  "signature": "0x876cce3e766ae869199c85c130f0c19a523cc616fec0ff1162e2fd6fc64d5e2f061209463b90715e62ee54d81f65a853d90ba37968f9aa56cde9e62dfcb95e5b1c"
+}

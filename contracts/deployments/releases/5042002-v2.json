@@ -1,0 +1,11 @@
+{
+  "SymbolonVaultImplementation": "0xA6aA3c4DB43f36b061939feF1f822E14bF06BcF8",
+  "VaultFactory": "0x62b80C53058704c5429bFcF7A89991C689c8D0a6",
+  "VaultLens": "0x740e6155bbAd8A5baab56341b5366E8De195Da31",
+  "notesHash": "0x13aa885b211d3b20ec6d0020340bf0d830c664e6a104dc0dbb04ba72fa1cb775",
+  "published": true,
+  "startBlock": 64070665,
+  "version": 2,
+  "ReserveLogic": "0x2bdd166cEef9FDb534d88070503f632b1Ab67B03",
+  "notes": "releases/vault-v2.md"
+}

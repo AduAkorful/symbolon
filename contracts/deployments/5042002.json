@@ -1,0 +1,27 @@
+{
+  "cctpDomain": 26,
+  "chainId": 5042002,
+  "compiler": "solc 0.8.36, via_ir, optimizer 200 runs, evm prague",
+  "contracts": {
+    "InvoiceLedger": "0x7EFf84D0715284FA3d793525151b30a05Af45aCE",
+    "ReleaseRegistry": "0x0C0EF87c88108bd9d306E0C9F48AE733C7AED29e",
+    "SymbolonVaultImplementation": "0xA6aA3c4DB43f36b061939feF1f822E14bF06BcF8",
+    "VaultFactory": "0x62b80C53058704c5429bFcF7A89991C689c8D0a6",
+    "VaultLens": "0x740e6155bbAd8A5baab56341b5366E8De195Da31",
+    "ReserveLogic": "0x2bdd166cEef9FDb534d88070503f632b1Ab67B03"
+  },
+  "deployer": "0x74B4134C8d527a8D8AE8cb9503ab2043bCfC0ffd",
+  "external": {
+    "eurc": "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a",
+    "messageTransmitterV2": "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
+    "tokenMessengerV2": "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
+    "usdc": "0x3600000000000000000000000000000000000000"
+  },
+  "release": {
+    "notesHash": "0x13aa885b211d3b20ec6d0020340bf0d830c664e6a104dc0dbb04ba72fa1cb775",
+    "owner": "0x74B4134C8d527a8D8AE8cb9503ab2043bCfC0ffd",
+    "version": 2
+  },
+  "startBlock": 64060463,
+  "deployBlock": 64060492
+}
