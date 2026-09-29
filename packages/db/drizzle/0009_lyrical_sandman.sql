@@ -1,0 +1,3 @@
+ALTER TABLE "vendor_verifications" DROP CONSTRAINT "vendor_verifications_code_fields";--> statement-breakpoint
+ALTER TABLE "vendor_verifications" ADD COLUMN "code_ciphertext" text;--> statement-breakpoint
+ALTER TABLE "vendor_verifications" ADD CONSTRAINT "vendor_verifications_code_fields" CHECK ("vendor_verifications"."method" <> 'code' or ("vendor_verifications"."code_hmac" is not null and "vendor_verifications"."code_ciphertext" is not null and "vendor_verifications"."expires_at" is not null and "vendor_verifications"."seal" is not null));
