@@ -1,0 +1,34 @@
+{
+  "name": "@symbolon/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Symbolon's services: invoice intake, Vault facts, chain sync, Steward runs and decision anchoring",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@symbolon/chain": "workspace:*",
+    "@symbolon/db": "workspace:*",
+    "@symbolon/seal": "workspace:*",
+    "@symbolon/steward": "workspace:*",
+    "drizzle-orm": "0.45.3",
+    "viem": "2.56.9"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.2",
+    "typescript": "7.0.2",
+    "vitest": "5.0.2"
+  }
+}
