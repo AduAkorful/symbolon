@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { discoverWallets } from "@/components/signin/wallet";
+import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { sendCall, type SignerPlan } from "@/components/setup/owner-signer";
 import { postJson } from "@/lib/client/api";
 
@@ -10,6 +10,7 @@ type Option = { address: string; domain: number; source: string };
 type ChoiceResult = { options: Option[]; defaults: { monthlyCap: string | null; requirePo: boolean; requireDelivery: boolean } };
 
 export function AddPayee({ businessId, seal, signer, explorer }: { businessId: string; seal: string; signer: SignerPlan; explorer: string }) {
+  const discover = useWalletProviders();
   const [options, setOptions] = useState<Option[]>([]);
   const [selected, setSelected] = useState("");
   const [requirePo, setRequirePo] = useState(false);
@@ -31,7 +32,7 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
     setBusy(true); setError("");
     try {
       const call = await postJson<{ to: string; data: string }>(path, { action: "prepare", seal, payout, domain: Number(domainText), requirePo, requireDelivery, monthlyCap: cap });
-      const hash = await sendCall(signer, call, async () => (await discoverWallets()).map((w) => w.provider));
+      const hash = await sendCall(signer, call, discover);
       setTxHash(hash);
       await confirm(hash);
     } catch (e) { setError(e instanceof Error ? e.message : "Couldn't add this payee."); }

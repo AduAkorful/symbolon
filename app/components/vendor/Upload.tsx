@@ -65,7 +65,7 @@ export function Upload(props: { available: boolean; handle: string; clients: Cli
         </p>
       ) : null}
       <p className="mt-6 text-sm">
-        <a href="/v/new" className="underline decoration-rule underline-offset-4">
+        <a href="/vendor/new" className="underline decoration-rule underline-offset-4">
           Write it yourself instead
         </a>
       </p>

@@ -12,8 +12,9 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.128.0",
-    "@circle-fin/w3s-pw-web-sdk": "1.1.11",
     "@next/env": "16.3.6",
+    "@privy-io/node": "^0.35.0",
+    "@privy-io/react-auth": "^3.46.0",
     "@symbolon/chain": "workspace:*",
     "@symbolon/core": "workspace:*",
     "@symbolon/db": "workspace:*",
@@ -26,7 +27,8 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "server-only": "0.0.1",
-    "viem": "2.56.9"
+    "viem": "2.56.9",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.3",

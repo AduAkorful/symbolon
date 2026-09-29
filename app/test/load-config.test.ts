@@ -43,14 +43,14 @@ describe("loadConfig", () => {
   });
 
   describe("sign-in settings", () => {
-    const prod = { ...base, NODE_ENV: "production", APP_ORIGIN: "https://app.example.test", DATABASE_URL: "postgres://u:p@db.example.test/x" };
+    const prod = { ...base, NODE_ENV: "production", APP_ORIGIN: "https://app.example.test", DATABASE_URL: "postgres://u:p@db.example.test/x", NEXT_PUBLIC_PRIVY_APP_ID: "app-id", PRIVY_APP_SECRET: "app-secret" };
 
     it("defaults to localhost and no database URL in development", () => {
       const c = loadConfig(base);
       expect(c.appOrigin).toBe("http://localhost:3000");
       expect(c.databaseUrl).toBeUndefined();
       expect(c.production).toBe(false);
-      expect(c.circle).toBeUndefined();
+      expect(c.privy).toBeUndefined();
     });
 
     it("normalises APP_ORIGIN to a bare origin", () => {
@@ -67,10 +67,17 @@ describe("loadConfig", () => {
       expect(() => loadConfig(noDb)).toThrow(/DATABASE_URL/);
     });
 
-    it("turns email sign-in on only when both Circle values are present", () => {
-      expect(loadConfig({ ...base, CIRCLE_API_KEY: "k" }).circle).toBeUndefined();
-      expect(loadConfig({ ...base, NEXT_PUBLIC_CIRCLE_APP_ID: "a" }).circle).toBeUndefined();
-      expect(loadConfig({ ...base, CIRCLE_API_KEY: "k", NEXT_PUBLIC_CIRCLE_APP_ID: "a" }).circle).toEqual({ apiKey: "k", appId: "a" });
+    it("turns Privy sign-in on only when the app id and secret are both present, and reads the optional verification key", () => {
+      expect(() => loadConfig({ ...base, NEXT_PUBLIC_PRIVY_APP_ID: "a" })).toThrow(/together/);
+      expect(() => loadConfig({ ...base, PRIVY_APP_SECRET: "s" })).toThrow(/together/);
+      expect(loadConfig({ ...base, NEXT_PUBLIC_PRIVY_APP_ID: "a", PRIVY_APP_SECRET: "s" }).privy).toEqual({ appId: "a", appSecret: "s" });
+      expect(loadConfig({ ...base, NEXT_PUBLIC_PRIVY_APP_ID: "a", PRIVY_APP_SECRET: "s", PRIVY_JWT_VERIFICATION_KEY: "k" }).privy).toEqual({ appId: "a", appSecret: "s", verificationKey: "k" });
+    });
+
+    it("refuses production with no way to sign in, and Circle keys alone never open sign-in", () => {
+      const { NEXT_PUBLIC_PRIVY_APP_ID: _a, PRIVY_APP_SECRET: _s, ...noPrivy } = prod;
+      expect(() => loadConfig(noPrivy)).toThrow(/PRIVY/);
+      expect(loadConfig({ ...base, CIRCLE_API_KEY: "k", CIRCLE_ENTITY_SECRET: "e" }).privy).toBeUndefined();
     });
 
     it("reads the Anthropic key only when it is set", () => {

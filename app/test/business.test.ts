@@ -9,7 +9,6 @@ import { eq } from "drizzle-orm";
 import { AuthError } from "@/lib/server/errors";
 import { MAX_BUSINESSES, confirmVault, createBusiness, parseUsdcAmount, prepareFund, prepareVault, prepareVaultSwitch, vaultStanding } from "@/lib/server/business";
 import { readVaultState, stewardStanding } from "@/lib/server/vault-read";
-import { devCallAllowed } from "@/lib/server/dev-wallet-policy";
 import { TEMPLATES, describePolicy, duration, usd } from "@/lib/server/policy-text";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -326,45 +325,6 @@ describe("the Steward's standing is what the chain says, checked against the wal
     const viewer = await ownedBusiness(u, "viewer");
     await db.update(businesses).set({ vault: fresh().toLowerCase() }).where(eq(businesses.id, viewer.id));
     expect((await err(vaultStanding(db, stateClient({ paused: true, steward: fresh() }), cfg, u, viewer.id))).status).toBe(403);
-  });
-});
-
-describe("what the development test wallet may send", () => {
-  it("allows setup tokens, pause/unpause and addPayee only to the user's own recorded Vault", async () => {
-    const u = await person();
-    const b = await ownedBusiness(u);
-    const vault = fresh();
-    const createVault = await prepareVault(db, cfg, u, b.id, "standard", null);
-    const ok = (to: string, data: Hex, userId = u.id) => devCallAllowed(db, cfg, userId, { to, data });
-    expect(await ok(factory, createVault.data)).toBe(true);
-    expect(await ok(factory, "0xdeadbeef")).toBe(false);
-    await db.update(businesses).set({ vault: vault.toLowerCase() }).where(eq(businesses.id, b.id));
-    const pause = (await prepareVaultSwitch(db, cfg, u, b.id, "pause")).data;
-    const resume = (await prepareVaultSwitch(db, cfg, u, b.id, "resume")).data;
-    const addPayee = encodeFunctionData({ abi: symbolonVaultAbi, functionName: "addPayee", args: [fresh(), fresh(), 26, { budget: HASH(0), requirePo: false, requireDelivery: false, monthlyCap: 1n }] });
-    const transferToVault = encodeFunctionData({ abi: erc20Abi, functionName: "transfer", args: [vault, 1n] });
-    expect(await ok(cfg.deployment.tokens.usdc, transferToVault)).toBe(true);
-    expect(await ok(cfg.deployment.tokens.usdc, "0xdeadbeef")).toBe(false);
-    expect(await ok(vault, pause)).toBe(true);
-    expect(await ok(vault, resume)).toBe(true);
-    expect(await ok(vault, addPayee)).toBe(true);
-    expect(await ok(vault.toLowerCase(), pause)).toBe(true);
-
-    // anything else to the Vault, and pause to a Vault that isn't theirs, or to any other address
-    const withdraw = encodeFunctionData({ abi: symbolonVaultAbi, functionName: "withdraw", args: [cfg.deployment.tokens.usdc, fresh(), 1n] });
-    expect(await ok(vault, withdraw)).toBe(false);
-    expect(await ok(vault, `${addPayee}00` as Hex)).toBe(false);
-    expect(await ok(vault, addPayee, (await person()).id)).toBe(false);
-    expect(await ok(vault, `${pause}00` as Hex)).toBe(false);
-    expect(await ok(fresh(), pause)).toBe(false);
-    expect(await ok(vault, pause, (await person()).id)).toBe(false);
-    expect(await ok(cfg.deployment.tokens.usdc, encodeFunctionData({ abi: erc20Abi, functionName: "transfer", args: [fresh(), 1n] }))).toBe(false);
-
-    // a Vault where they are only a viewer is not theirs to pause
-    const v = await ownedBusiness(u, "viewer");
-    const viewed = fresh();
-    await db.update(businesses).set({ vault: viewed.toLowerCase() }).where(eq(businesses.id, v.id));
-    expect(await ok(viewed, pause)).toBe(false);
   });
 });
 

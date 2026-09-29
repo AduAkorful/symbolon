@@ -4,14 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const nav = [
-  { name: "Home", href: "/v" },
-  { name: "Invoices", href: "/v/invoices" },
-  { name: "Clients", href: "/v/clients" },
-  { name: "Checks", href: "/v/verify" },
-  { name: "Settings", href: "/v/settings" },
+  { name: "Home", href: "/vendor" },
+  { name: "Invoices", href: "/vendor/invoices" },
+  { name: "Clients", href: "/vendor/clients" },
+  { name: "Checks", href: "/vendor/verify" },
+  { name: "Settings", href: "/vendor/settings" },
 ];
 
-const isActive = (path: string, href: string) => (href === "/v" ? path === "/v" : path.startsWith(href));
+const isActive = (path: string, href: string) => (href === "/vendor" ? path === "/vendor" : path.startsWith(href));
 
 /** The vendor's top navigation (the screens that exist so far). The active screen is marked for assistive technology as well as sight. */
 export function VendorNav() {

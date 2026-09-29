@@ -5,14 +5,14 @@ import { AuthError } from "./errors";
 
 const windows = new Map<string, { start: number; count: number }>();
 
-export function rateLimit(key: string, max: number, windowMs: number, now = Date.now()): void {
+export function rateLimit(key: string, max: number, windowMs: number, now = Date.now(), message = "That's a lot of uploads. Wait a few minutes and try again."): void {
   const w = windows.get(key);
   if (!w || now - w.start >= windowMs) {
     windows.set(key, { start: now, count: 1 });
     if (windows.size > 5000) for (const [k, v] of windows) if (now - v.start >= windowMs) windows.delete(k);
     return;
   }
-  if (w.count >= max) throw new AuthError(429, "That's a lot of uploads. Wait a few minutes and try again.");
+  if (w.count >= max) throw new AuthError(429, message);
   w.count++;
 }
 

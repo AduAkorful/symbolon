@@ -1,15 +1,16 @@
 import "server-only";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { encodeFunctionData, getAddress, parseEventLogs, type Address, type Hex, type PublicClient } from "viem";
 import { verifySealedInvoice } from "@symbolon/seal";
 import { symbolonContracts, symbolonVaultAbi, vaultCall, type Deployment } from "@symbolon/chain";
-import { businesses, invoices, payees, seals, vendorInvitations, vendorVerifications, type Database } from "@symbolon/db";
+import { businesses, decisions, invoices, payees, seals, vendorInvitations, vendorVerifications, type Database } from "@symbolon/db";
 import { requireMember } from "./access";
 import { appendAppDecision } from "./app-decisions";
 import { AuthError } from "./errors";
 import type { SessionUser } from "./session";
 
 const HASH = /^0x[0-9a-fA-F]{64}$/;
+const MAX_UINT256 = (1n << 256n) - 1n;
 
 export async function payoutOptions(db: Database, client: PublicClient, deployment: Deployment, user: Pick<SessionUser, "id">, businessId: string, sealValue: string) {
   await requireMember(db, user.id, businessId, "owner");
@@ -24,8 +25,8 @@ export async function payoutOptions(db: Database, client: PublicClient, deployme
       if (checked.ok && checked.invoice) options.set(`${checked.invoice.payoutAddress.toLowerCase()}:${checked.invoice.payoutDomain}`, { address: checked.invoice.payoutAddress, domain: checked.invoice.payoutDomain, source: "signed invoice" });
     } catch { /* Invalid historical uploads are not trusted payout choices. */ }
   }
-  if (vendor.payoutAddress) {
-    // The Seal's configured payout is only an option on the ledger's local domain, as required by the first-contact flow.
+  if (!options.size && vendor.payoutAddress) {
+    // Only when the Seal has signed no invoice to this business: its configured payout, on the ledger's local domain (plan 05j, B14).
     const c = symbolonContracts(client, deployment);
     const localDomain = await c.ledger.read.localDomain();
     options.set(`${vendor.payoutAddress}:${localDomain}`, { address: vendor.payoutAddress, domain: localDomain, source: "Seal payout setting · local domain" });
@@ -64,6 +65,8 @@ export async function preparePayee(db: Database, client: PublicClient, deploymen
     c.lens.read.getVaultState([vault]),
     client.readContract({ address: vault, abi: symbolonVaultAbi, functionName: "OPERATING_BUDGET" }),
   ]);
+  const already = await c.lens.read.getPayee([vault, seal]).catch(() => { throw new AuthError(502, "Can't confirm this Vault's payees right now. Try again shortly."); });
+  if (already.exists) throw new AuthError(409, "This vendor is already a payee of the Vault.");
   let monthlyCap = defaults.monthlyCap ? BigInt(defaults.monthlyCap) : state.policy.ownerThreshold;
   if (choice.monthlyCap === "") {
     monthlyCap = state.policy.ownerThreshold;
@@ -71,6 +74,7 @@ export async function preparePayee(db: Database, client: PublicClient, deploymen
     if (typeof choice.monthlyCap !== "string" || !/^\d{1,78}$/.test(choice.monthlyCap) || BigInt(choice.monthlyCap) <= 0n) throw new AuthError(400, "Enter a positive monthly cap in raw token units.");
     monthlyCap = BigInt(choice.monthlyCap);
   }
+  if (monthlyCap > MAX_UINT256) throw new AuthError(400, "That monthly cap is too large.");
   const call = vaultCall(vault, "addPayee", [seal, getAddress(selected.address), selected.domain, { budget, requirePo, requireDelivery, monthlyCap }]);
   return { to: call.address, data: encodeFunctionData({ abi: symbolonVaultAbi, functionName: call.functionName, args: call.args }), chainId: deployment.chainId, summary: { seal, payout: selected, monthlyCap: monthlyCap.toString(), requirePo, requireDelivery } };
 }
@@ -98,6 +102,8 @@ export async function recordPayee(db: Database, client: PublicClient, deployment
   const current = await c.lens.read.getPayee([vault, args.seal]);
   const termsAgree = current.terms.budget === args.terms.budget && current.terms.requirePo === args.terms.requirePo && current.terms.requireDelivery === args.terms.requireDelivery && current.terms.monthlyCap === args.terms.monthlyCap;
   if (!current.exists || getAddress(current.payout) !== getAddress(args.payout) || current.payoutDomain !== args.payoutDomain || current.activeAt !== args.activeAt || !termsAgree) throw new AuthError(409, "The Vault's current payee record doesn't match that receipt.");
-  await appendAppDecision(db, businessId, { kind: "payee_added", subject: getAddress(args.seal).toLowerCase(), actor: user.id, inputs: { txHash, payout: args.payout, payoutDomain: args.payoutDomain, activeAt: args.activeAt.toString(), terms: { budget: args.terms.budget, requirePo: args.terms.requirePo, requireDelivery: args.terms.requireDelivery, monthlyCap: args.terms.monthlyCap.toString() } }, rule: "successful Vault receipt and live lens record agree", outcome: "payee_added" });
+  // Recording the same receipt again must not add another history row
+  const [recorded] = await db.select({ id: decisions.id }).from(decisions).where(and(eq(decisions.businessId, businessId), eq(decisions.kind, "payee_added"), sql`${decisions.record}->'inputs'->>'txHash' = ${txHash}`)).limit(1);
+  if (!recorded) await appendAppDecision(db, businessId, { kind: "payee_added", subject: getAddress(args.seal).toLowerCase(), actor: user.id, inputs: { txHash, payout: args.payout, payoutDomain: args.payoutDomain, activeAt: args.activeAt.toString(), terms: { budget: args.terms.budget, requirePo: args.terms.requirePo, requireDelivery: args.terms.requireDelivery, monthlyCap: args.terms.monthlyCap.toString() } }, rule: "successful Vault receipt and live lens record agree", outcome: "payee_added" });
   return { seal: getAddress(args.seal).toLowerCase(), payout: getAddress(args.payout), activeAt: args.activeAt.toString(), txHash };
 }

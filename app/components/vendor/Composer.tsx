@@ -5,7 +5,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import type { InvoiceDocument } from "@symbolon/seal";
 import { InvoiceDoc } from "@/components/InvoiceDoc";
-import { discoverWallets } from "@/components/signin/wallet";
+import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { wasRejected, type SignerPlan } from "@/components/setup/owner-signer";
 import { postJson } from "@/lib/client/api";
 import { D, E, registerMotion, strike } from "@/lib/motion";
@@ -46,6 +46,7 @@ const NEW = "new";
 
 /** Write an invoice (V4), see the exact sealed text, sign it in your own wallet, and get its link (V6). Plan 05i. */
 export function Composer({ handle, clients, nextNumber, signer, prefill, fromFile }: { handle: string; clients: ClientOption[]; nextNumber: string; signer: SignerPlan; prefill?: Prefill; fromFile?: FromFile }) {
+  const discover = useWalletProviders();
   const [step, setStep] = useState<Step>("edit");
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -122,7 +123,7 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
     setProblem(null);
     setStep("signing");
     try {
-      const signature = await signInvoice(signer, prepared, async () => (await discoverWallets()).map((w) => w.provider));
+      const signature = await signInvoice(signer, prepared, discover);
       setSent(await postJson<{ fingerprint: string; path: string }>("/api/vendor/invoice", { action: "send", document: prepared.document, signature }));
       setStep("sent");
     } catch (err) {
@@ -154,7 +155,6 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
           ) : (
             <p className="mt-4 text-sm text-graphite">
               Signing as <span className="break-all font-mono">{signer.address}</span>
-              {signer.kind === "dev" ? " (local test wallet, development build)" : null}
             </p>
           )}
           <div className="mt-6 flex flex-wrap gap-3">
@@ -195,10 +195,10 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
             >
               {copied ? "Copied" : "Copy the link"}
             </button>
-            <Link href={`/v/invoices/${sent.fingerprint}`} className={ghost}>
+            <Link href={`/vendor/invoices/${sent.fingerprint}`} className={ghost}>
               View the invoice
             </Link>
-            <a href="/v/new" className={ghost}>
+            <a href="/vendor/new" className={ghost}>
               Write another
             </a>
           </div>
@@ -217,7 +217,7 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
           {!fromFile ? (
             <>
               {" "}
-              <a href="/v/upload" className="underline decoration-rule underline-offset-4">
+              <a href="/vendor/upload" className="underline decoration-rule underline-offset-4">
                 Or upload one you already have
               </a>
               .

@@ -141,7 +141,7 @@ export async function sendInvoice(
   await upsertClient(db, user, { name: document.payer.name, vault: document.payer.vault, email: document.payer.email }).catch((e: unknown) => {
     if (!(e instanceof AuthError)) throw e;
   });
-  return { fingerprint: r.fingerprint, path: `/p/invoice/${r.fingerprint}`, duplicate: r.duplicate };
+  return { fingerprint: r.fingerprint, path: `/invoice/${r.fingerprint}`, duplicate: r.duplicate };
 }
 
 export interface InvoiceRow {

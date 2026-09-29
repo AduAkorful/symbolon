@@ -1,23 +1,23 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { arcTestnet, getDeployment, symbolonVaultAbi } from "@symbolon/chain";
-import { createTestDb, businesses, decisions, members, seals, users } from "@symbolon/db";
+import { createTestDb, businesses, decisions, members, payees, seals, users } from "@symbolon/db";
 import { eq } from "drizzle-orm";
-import { encodeAbiParameters, encodeEventTopics, getAddress, type Hex, type PublicClient } from "viem";
+import { decodeFunctionData, encodeAbiParameters, encodeEventTopics, getAddress, type Hex, type PublicClient } from "viem";
 
-const chainState = vi.hoisted(() => ({ getPayee: vi.fn() }));
+const chainState = vi.hoisted(() => ({ getPayee: vi.fn(), getVaultState: vi.fn() }));
 
 vi.mock("server-only", () => ({}));
 vi.mock("@symbolon/chain", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@symbolon/chain")>()),
-  symbolonContracts: () => ({ lens: { read: { getPayee: chainState.getPayee } }, ledger: { read: { localDomain: async () => 26 } } }),
+  symbolonContracts: () => ({ lens: { read: { getPayee: chainState.getPayee, getVaultState: chainState.getVaultState } }, ledger: { read: { localDomain: async () => 26 } } }),
 }));
 
-import { recordPayee } from "@/lib/server/payee";
+import { preparePayee, recordPayee } from "@/lib/server/payee";
 import { AuthError } from "@/lib/server/errors";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => { db = await createTestDb(); });
-beforeEach(() => chainState.getPayee.mockReset());
+beforeEach(() => { chainState.getPayee.mockReset(); chainState.getVaultState.mockReset(); });
 
 const address = (n: number) => "0x" + n.toString(16).padStart(40, "0");
 const hash = (n: number) => ("0x" + n.toString(16).padStart(64, "0")) as Hex;
@@ -108,5 +108,53 @@ describe("payee receipt confirmation", () => {
     await expect(recordPayee(db, clientFor({}), deployment, second.owner, first.business.id, hash(93), address(3)))
       .rejects.toMatchObject({ status: 403 });
     expect(await db.select().from(decisions).where(eq(decisions.businessId, first.business.id))).toHaveLength(0);
+  });
+
+  it("records the same receipt only once", async () => {
+    const { owner, business } = await fixture();
+    chainState.getPayee.mockResolvedValue({ exists: true, payout: address(2), payoutDomain: 26, activeAt: 123n, terms });
+    const client = clientFor({ status: "success", to: business.vault, logs: [addedLog(business.vault!, address(3))] });
+    await recordPayee(db, client, deployment, owner, business.id, hash(96), address(3));
+    await recordPayee(db, client, deployment, owner, business.id, hash(96), address(3));
+    expect(await db.select().from(decisions).where(eq(decisions.businessId, business.id))).toHaveLength(1);
+  });
+});
+
+describe("preparing addPayee", () => {
+  const readClient = { readContract: async () => hash(1) } as unknown as PublicClient;
+  async function verifiedVendor() {
+    const f = await fixture();
+    await db.insert(payees).values({ businessId: f.business.id, seal: address(3), status: "verified", verificationMethod: "invitation", verifiedBy: f.owner.id, verifiedAt: new Date() });
+    chainState.getVaultState.mockResolvedValue({ policy: { ownerThreshold: 500n } });
+    return f;
+  }
+  const choice = { payout: address(2), domain: 26, requirePo: false, requireDelivery: false };
+
+  it("encodes the owner's choice from the Seal's own payout, with the threshold as the default cap", async () => {
+    const { owner, business } = await verifiedVendor();
+    chainState.getPayee.mockResolvedValue({ exists: false });
+    const call = await preparePayee(db, readClient, deployment, owner, business.id, address(3), choice);
+    const decoded = decodeFunctionData({ abi: symbolonVaultAbi, data: call.data as Hex });
+    expect(decoded.functionName).toBe("addPayee");
+    expect(decoded.args?.[3]).toMatchObject({ monthlyCap: 500n });
+  });
+
+  it("refuses a vendor who is already a payee onchain", async () => {
+    const { owner, business } = await verifiedVendor();
+    chainState.getPayee.mockResolvedValue({ exists: true });
+    await expect(preparePayee(db, readClient, deployment, owner, business.id, address(3), choice)).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("refuses a payout the Seal never gave, and a cap too large for the contract", async () => {
+    const { owner, business } = await verifiedVendor();
+    chainState.getPayee.mockResolvedValue({ exists: false });
+    await expect(preparePayee(db, readClient, deployment, owner, business.id, address(3), { ...choice, payout: address(8) })).rejects.toMatchObject({ status: 400 });
+    await expect(preparePayee(db, readClient, deployment, owner, business.id, address(3), { ...choice, monthlyCap: (2n ** 256n).toString() })).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("says so when the Vault's payees can't be read", async () => {
+    const { owner, business } = await verifiedVendor();
+    chainState.getPayee.mockRejectedValue(new Error("rpc down"));
+    await expect(preparePayee(db, readClient, deployment, owner, business.id, address(3), choice)).rejects.toMatchObject({ status: 502 });
   });
 });

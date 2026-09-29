@@ -16,5 +16,5 @@ export async function openBusiness(formData: FormData): Promise<void> {
   const session = await requireSession();
   await requireMember(await getDb(), session.user.id, id);
   (await cookies()).set(BUSINESS_COOKIE, id, { httpOnly: true, secure: getConfig().production, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 365 });
-  redirect("/b");
+  redirect("/business");
 }

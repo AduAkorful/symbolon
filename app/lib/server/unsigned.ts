@@ -1,12 +1,13 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { assessUnsigned, type Extraction, type KnownVendor } from "@symbolon/steward";
 import { payees, seals, unsignedBills, type Database } from "@symbolon/db";
 import { requireMember, type Role } from "./access";
 import { AuthError } from "./errors";
 import { appendAppDecision } from "./app-decisions";
+import { createInvitation } from "./invitations";
 import { readUploadWithExtraction } from "./upload";
 import type { StewardModel } from "@symbolon/steward";
 
@@ -62,8 +63,23 @@ export async function addUnsignedBill(
 
 export async function updateUnsignedBill(db: Database, user: { id: string }, businessId: string, id: string, status: "fraud" | "dismissed") {
   await requireMember(db, user.id, businessId, "owner", "approver");
-  const [bill] = await db.update(unsignedBills).set({ status }).where(and(eq(unsignedBills.id, id), eq(unsignedBills.businessId, businessId))).returning();
-  if (!bill) throw new AuthError(404, "That bill isn't in this business's inbox.");
+  // Only an unresolved bill can be resolved: a fraud mark is not quietly turned into a dismissal later
+  const [bill] = await db.update(unsignedBills).set({ status }).where(and(eq(unsignedBills.id, id), eq(unsignedBills.businessId, businessId), inArray(unsignedBills.status, ["open", "invited"]))).returning();
+  if (!bill) throw new AuthError(404, "That bill isn't open in this business's inbox.");
   await appendAppDecision(db, businessId, { kind: status === "fraud" ? "fraud_mark" : "unsigned_dismiss", subject: id, actor: user.id, inputs: { bill: id }, rule: status === "fraud" ? "member marked unsigned bill as fraud" : "member dismissed unsigned bill", outcome: status });
   return bill;
+}
+
+/**
+ * Asks the sender for a sealed invoice: a one-use invitation for the contact the member types. Nothing from the bill (its email,
+ * phone or address) is used as the contact, because the bill is the thing we can't trust.
+ */
+export async function askForSealed(db: Database, user: { id: string }, businessId: string, id: string, input: { vendorName: unknown; contactNote: unknown }, origin: string) {
+  await requireMember(db, user.id, businessId, "owner");
+  const [bill] = await db.select({ id: unsignedBills.id }).from(unsignedBills).where(and(eq(unsignedBills.id, id), eq(unsignedBills.businessId, businessId), inArray(unsignedBills.status, ["open", "invited"]))).limit(1);
+  if (!bill) throw new AuthError(404, "That bill isn't open in this business's inbox.");
+  const invitation = await createInvitation(db, user, businessId, input, origin);
+  await db.update(unsignedBills).set({ status: "invited" }).where(and(eq(unsignedBills.id, id), eq(unsignedBills.businessId, businessId)));
+  await appendAppDecision(db, businessId, { kind: "unsigned_ask_sealed", subject: id, actor: user.id, inputs: { bill: id, invitation: invitation.id }, rule: "an unsigned bill can only be replaced by a sealed invoice", outcome: "invited" });
+  return invitation;
 }

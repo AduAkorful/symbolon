@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { discoverWallets } from "@/components/signin/wallet";
+import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { sendCall, wasRejected, type SignerPlan } from "@/components/setup/owner-signer";
 import { TxLink } from "@/components/TxLink";
 import { postJson } from "@/lib/client/api";
@@ -22,6 +22,7 @@ type Shown = { state: "paused" | "active"; block: bigint };
  */
 export function StewardSwitch(props: { businessId: string; state: "paused" | "active"; block: string; steward: string; signer: SignerPlan | null; explorer: string }) {
   const router = useRouter();
+  const discover = useWalletProviders();
   const [shown, setShown] = useState<Shown>({ state: props.state, block: BigInt(props.block) });
   useEffect(() => {
     setShown((cur) => (BigInt(props.block) >= cur.block ? { state: props.state, block: BigInt(props.block) } : cur));
@@ -39,7 +40,7 @@ export function StewardSwitch(props: { businessId: string; state: "paused" | "ac
     try {
       const call = await postJson<{ to: string; data: string }>(`/api/business/${props.businessId}/vault`, { action });
       setBusy("Waiting for your wallet…");
-      const hash = await sendCall(props.signer, call, async () => (await discoverWallets()).map((w) => w.provider));
+      const hash = await sendCall(props.signer, call, discover);
       setTx({ hash, did: action });
       setBusy("Confirming on Arc…");
       const want = action === "pause" ? "paused" : "active";

@@ -12,7 +12,7 @@ export interface Where {
   /** How to name the signed-in person: their email, else their wallet shortened */
   who: string;
   spaces: Spaces;
-  /** The business whose screens `/b` shows: the one last opened if they still belong to it, else the first */
+  /** The business whose screens `/business` shows: the one last opened if they still belong to it, else the first */
   business: Spaces["businesses"][number] | null;
 }
 

@@ -3,6 +3,7 @@ import { addUnsignedBill } from "@/lib/server/unsigned";
 import { getDb } from "@/lib/server/db";
 import { AuthError } from "@/lib/server/errors";
 import { requireSession, routeWith } from "@/lib/server/http";
+import { rateLimit } from "@/lib/server/rate";
 import { getStewardModel } from "@/lib/server/steward-model";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -10,6 +11,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export const POST = routeWith<Ctx>(async (request, ctx) => {
   const { id } = await ctx.params;
   const s = await requireSession();
+  rateLimit(`bill:${s.user.id}`, 10, 10 * 60_000);
   const form = await request.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File)) throw new AuthError(400, "Choose an invoice file.");

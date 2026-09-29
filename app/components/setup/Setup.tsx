@@ -4,7 +4,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { formatUnits } from "viem";
 import { openBusiness } from "@/app/actions";
-import { discoverWallets } from "@/components/signin/wallet";
+import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { TxLink } from "@/components/TxLink";
 import { postJson } from "@/lib/client/api";
 import { D, E, registerMotion } from "@/lib/motion";
@@ -67,7 +67,7 @@ export function Setup(props: SetupProps) {
     }
   };
 
-  const discover = async () => (await discoverWallets()).map((w) => w.provider);
+  const discover = useWalletProviders();
 
   async function createBusiness(e: React.FormEvent) {
     e.preventDefault();
@@ -204,7 +204,6 @@ export function Setup(props: SetupProps) {
             ) : (
               <p className="mt-6 text-sm text-graphite">
                 Owner: <span className="break-all font-mono">{props.signer.address}</span>
-                {props.signer.kind === "dev" ? " (local test wallet, development build)" : null}
               </p>
             )}
             {business?.vault ? (

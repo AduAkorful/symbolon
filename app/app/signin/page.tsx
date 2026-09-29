@@ -3,10 +3,10 @@ import { redirect } from "next/navigation";
 import { openBusiness } from "@/app/actions";
 import { Avatar } from "@/components/Avatar";
 import { Wordmark } from "@/components/Marks";
+import { PrivyBoundary } from "@/components/providers/PrivyBoundary";
 import { SignInForm } from "@/components/signin/SignInForm";
 import { safeNext } from "@/lib/next-path";
 import { getConfig } from "@/lib/server/config";
-import { DEV_USERS, devSignInAllowed } from "@/lib/server/dev-signin";
 import { getSession } from "@/lib/server/http";
 import { loadSpaces } from "@/lib/server/space";
 
@@ -32,13 +32,16 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<{
         {session ? (
           <Where session={session} next={next} />
         ) : (
-          <SignInForm
-            next={next}
-            options={{
-              emailAppId: config.circle?.appId ?? null,
-              devUsers: devSignInAllowed(config) ? DEV_USERS.map((u) => ({ key: u.key, label: u.label })) : [],
-            }}
-          />
+          config.privy ? (
+            <PrivyBoundary>
+              <SignInForm next={next} />
+            </PrivyBoundary>
+          ) : (
+            <div>
+              <h1 className="font-display text-5xl leading-none">Sign in</h1>
+              <p role="alert" className="mt-3 text-graphite">Sign-in isn’t set up on this server yet, so nobody can sign in. The server needs its Privy settings.</p>
+            </div>
+          )
         )}
       </main>
     </div>
@@ -65,7 +68,7 @@ async function Where({ session, next }: { session: NonNullable<Awaited<ReturnTyp
         <ul className="mt-8 space-y-3">
           {spaces.seal ? (
             <li>
-              <Link href="/v" className="flex items-center gap-4 rounded-doc border border-rule p-4 hover:border-ink">
+              <Link href="/vendor" className="flex items-center gap-4 rounded-doc border border-rule p-4 hover:border-ink">
                 <Avatar name={spaces.seal.displayName} size={36} />
                 <span>
                   <span className="block font-medium">{spaces.seal.displayName}</span>

@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { authChallenges, businesses, createTestDb, decisions, invoices, payees, seals, sessions, unsignedBills, users, vendorClients, vendorInvitations, vendorVerifications } from "../src/index.js";
+import { businesses, createTestDb, decisions, invoices, payees, seals, sessions, unsignedBills, users, vendorClients, vendorInvitations, vendorVerifications } from "../src/index.js";
 
 type TestDb = Awaited<ReturnType<typeof createTestDb>>;
 
@@ -104,19 +104,19 @@ describe("schema", () => {
     await expect(db.insert(businesses).values({ name: "X", chainId: 1, stewardMode: "yolo" })).rejects.toThrow();
   });
 
-  it("lets a wallet-first user exist without an email, and keeps wallets and Circle ids unique", async () => {
+  it("lets a wallet-first user exist without an email, and keeps wallets and Privy ids unique", async () => {
     const wallet = `0x${"12".repeat(20)}`;
     await db.insert(users).values({ wallet });
     await db.insert(users).values({ wallet: `0x${"34".repeat(20)}` }); // two users with no email: nulls don't collide
     await expect(db.insert(users).values({ wallet })).rejects.toThrow();
-    await db.insert(users).values({ circleUserId: "c-1", email: "a@b.example" });
-    await expect(db.insert(users).values({ circleUserId: "c-1" })).rejects.toThrow();
+    await db.insert(users).values({ privyUserId: "did:privy:c-1", email: "a@b.example" });
+    await expect(db.insert(users).values({ privyUserId: "did:privy:c-1" })).rejects.toThrow();
     await expect(db.insert(users).values({ email: "Mixed@Case.example" })).rejects.toThrow();
   });
 
   it("stores sessions by token hash only, one row per hash", async () => {
     const [u] = await db.insert(users).values({ wallet: `0x${"56".repeat(20)}` }).returning();
-    const row = { userId: u!.id, tokenHash: "h".repeat(64), method: "wallet" as const, expiresAt: new Date(Date.now() + 1000) };
+    const row = { userId: u!.id, tokenHash: "h".repeat(64), method: "privy" as const, expiresAt: new Date(Date.now() + 1000) };
     await db.insert(sessions).values(row);
     await expect(db.insert(sessions).values(row)).rejects.toThrow();
     await expect(db.insert(sessions).values({ ...row, tokenHash: "x", method: "password" as never })).rejects.toThrow();
@@ -139,13 +139,6 @@ describe("schema", () => {
     const [row] = await db.select().from(vendorVerifications);
     await expect(db.update(vendorVerifications).set({ secondBy: user.id }).where(eq(vendorVerifications.id, row!.id))).rejects.toThrow();
     await expect(db.insert(vendorVerifications).values({ businessId: biz.id, seal: `0x${"ef".repeat(20)}`, method: "code", raisedBy: user.id, expiresAt: new Date(Date.now() + 60_000) })).rejects.toThrow();
-  });
-
-  it("keeps a challenge's email lowercase and its nonce single", async () => {
-    const at = new Date(Date.now() + 1000);
-    await db.insert(authChallenges).values({ kind: "siwe", nonce: "n1", expiresAt: at });
-    await expect(db.insert(authChallenges).values({ kind: "siwe", nonce: "n1", expiresAt: at })).rejects.toThrow();
-    await expect(db.insert(authChallenges).values({ kind: "email", email: "A@B.example", expiresAt: at })).rejects.toThrow();
   });
 
   it("keeps a vendor's clients: a Vault or an email, lowercase, no duplicates per Seal, a payout address that is an address", async () => {

@@ -134,15 +134,17 @@ export async function loadInvoiceDetail(db: Database, client: PublicClient, cfg:
   return { row, verification, vendor: vendor[0] ?? null, ledger, evidence: evidenceFor({ verification, invoice: verification.invoice, trust, facts, ledger, match, duplicates }), trust, facts };
 }
 
-export async function claimable(db: Database, cfg: ChainSettings, user: Pick<SessionUser, "id" | "email">, method: string, businessId: string) {
-  if (method !== "circle" || !user.email) return [];
-  await businessFor(db, cfg, user, businessId, ...CLAIM_ROLES);
+export async function claimable(db: Database, cfg: ChainSettings, user: Pick<SessionUser, "id" | "email">, businessId: string) {
+  // users.email is only ever copied from an email Privy has verified (plan 05k, P3), so having one is the proof
+  if (!user.email) return [];
+  // A viewer has nothing to claim, and that is not an error for the inbox that asked
+  try { await businessFor(db, cfg, user, businessId, ...CLAIM_ROLES); } catch (e) { if (e instanceof AuthError && e.status === 403) return []; throw e; }
   const payerRef = keccak256(stringToBytes(user.email.toLowerCase()));
   return db.select().from(invoices).where(and(eq(invoices.payerRef, payerRef), isNull(invoices.businessId))).orderBy(desc(invoices.receivedAt));
 }
 
-export async function claimInvoice(db: Database, cfg: ChainSettings, user: Pick<SessionUser, "id" | "email">, method: string, businessId: string, fingerprint: string) {
-  if (method !== "circle" || !user.email) throw new AuthError(403, "Only an email-verified account can claim an email-addressed invoice.");
+export async function claimInvoice(db: Database, cfg: ChainSettings, user: Pick<SessionUser, "id" | "email">, businessId: string, fingerprint: string) {
+  if (!user.email) throw new AuthError(403, "Only an email-verified account can claim an email-addressed invoice.");
   const business = await businessFor(db, cfg, user, businessId, ...CLAIM_ROLES);
   if (!HEX_HASH.test(fingerprint)) throw new AuthError(400, "That invoice fingerprint is malformed.");
   const payerRef = keccak256(stringToBytes(user.email.toLowerCase()));
@@ -153,12 +155,13 @@ export async function claimInvoice(db: Database, cfg: ChainSettings, user: Pick<
 
 export async function addSealedInvoice(db: Database, client: PublicClient, cfg: ChainSettings, user: Pick<SessionUser, "id">, businessId: string, envelope: unknown, source: "link" | "upload") {
   const business = await businessFor(db, cfg, user, businessId, ...CLAIM_ROLES);
+  if (!business.vault) throw new AuthError(409, "This business doesn't have a Vault yet.");
+  // Addressing is checked before anything is stored: an invoice for another payer is refused, not filed (plan 05j, B5)
+  let payer: Address | undefined;
+  try { payer = vaultFromPayerRef(deriveInvoice(decodeSealedInvoice(envelope).document).payerRef); } catch { throw new AuthError(400, "That isn't a sealed invoice."); }
+  if (!payer || getAddress(payer) !== getAddress(business.vault)) throw new AuthError(403, "That invoice isn't addressed to this business.");
   const r = await receiveInvoice(db, { chainId: cfg.chainId, ledger: cfg.deployment.contracts.invoiceLedger }, envelope, source, { signatureClient: client });
   if (r.status !== "verified" || !r.fingerprint) throw new AuthError(400, r.issues[0]?.message ?? "That sealed invoice didn't check out.");
-  if (!business.vault) throw new AuthError(409, "This business doesn't have a Vault yet.");
-  const parsed = decodeSealedInvoice(envelope);
-  const payer = vaultFromPayerRef(deriveInvoice(parsed.document).payerRef);
-  if (!payer || getAddress(payer) !== getAddress(business.vault)) throw new AuthError(403, "That invoice isn't addressed to this business.");
   await db.update(invoices).set({ businessId: business.id }).where(and(eq(invoices.fingerprint, r.fingerprint), isNull(invoices.businessId)));
   return { fingerprint: r.fingerprint };
 }

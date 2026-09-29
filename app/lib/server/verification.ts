@@ -10,7 +10,8 @@ import { appendAppDecision } from "./app-decisions";
 import { AuthError } from "./errors";
 import type { SessionUser } from "./session";
 
-const digest = (id: string, code: string) => createHmac("sha256", id).update(code).digest("hex");
+// The comparison value is keyed by the server secret (per request), so a copied row can't be guessed offline: six digits are only a million tries
+const digest = (id: string, code: string) => createHmac("sha256", createHmac("sha256", codeKey()).update(`symbolon.callback-code.hmac:${id}`).digest()).update(code).digest("hex");
 function codeKey(): Buffer {
   const raw = process.env.VERIFICATION_CODE_KEY;
   if (!raw || !/^[0-9a-fA-F]{64}$/.test(raw)) throw new AuthError(503, "Code verification is unavailable until the server verification key is configured.");
@@ -96,7 +97,6 @@ export async function submitCode(db: Database, user: Pick<SessionUser, "id">, cl
   const [v] = await db.select().from(vendorVerifications).where(and(eq(vendorVerifications.id, requestId), eq(vendorVerifications.method, "code"), eq(vendorVerifications.status, "open"))).limit(1);
   if (!v || !v.seal || !v.expiresAt || v.expiresAt <= new Date()) throw new AuthError(404, "This verification request can't be used.");
   await requireMember(db, user.id, v.businessId, "owner", "approver");
-  if (v.raisedBy === user.id) throw new AuthError(403, "A different member must confirm this verification.");
   const expected = Buffer.from(v.codeHmac!, "hex");
   const actual = Buffer.from(digest(v.id, codeValue), "hex");
   if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {

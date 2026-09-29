@@ -40,20 +40,20 @@ export const users = pgTable(
     email: text("email"),
     /** The user's wallet (embedded or their own) */
     wallet: address("wallet"),
-    /** Circle's id for a user-controlled wallet user; the stable key for email sign-in, since Circle returns no email */
-    circleUserId: text("circle_user_id"),
+    /** Privy's id for this person: the stable key for sign-in. Accounts are never found or merged by email or wallet (plan 05k, P3). */
+    privyUserId: text("privy_user_id"),
     createdAt: createdAt(),
   },
   (t) => [
     uniqueIndex("users_email_key").on(t.email),
     uniqueIndex("users_wallet_key").on(t.wallet),
-    uniqueIndex("users_circle_user_key").on(t.circleUserId),
+    uniqueIndex("users_privy_user_key").on(t.privyUserId),
     check("users_email_lower", sql`${t.email} = lower(${t.email})`),
     check("users_wallet_format", sql`${t.wallet} ~ ${sql.raw(`'${ADDRESS}'`)}`),
   ],
 );
 
-export const sessionMethod = pgEnum("session_method", ["circle", "wallet", "dev"]);
+export const sessionMethod = pgEnum("session_method", ["privy"]);
 
 /** Server-side sessions: only the SHA-256 of the cookie's token is stored, so a copied row can't be replayed (plan 05g, S1) */
 export const sessions = pgTable(
@@ -69,27 +69,6 @@ export const sessions = pgTable(
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
   },
   (t) => [uniqueIndex("sessions_token_key").on(t.tokenHash), index("sessions_user_idx").on(t.userId)],
-);
-
-export const challengeKind = pgEnum("challenge_kind", ["siwe", "email"]);
-
-/** Single-use sign-in challenges: a wallet nonce, or the email the server asked Circle to verify (the browser never supplies it) */
-export const authChallenges = pgTable(
-  "auth_challenges",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    kind: challengeKind("kind").notNull(),
-    nonce: text("nonce"),
-    email: text("email"),
-    deviceId: text("device_id"),
-    createdAt: createdAt(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    consumedAt: timestamp("consumed_at", { withTimezone: true }),
-  },
-  (t) => [
-    uniqueIndex("auth_challenges_nonce_key").on(t.nonce),
-    check("auth_challenges_email_lower", sql`${t.email} = lower(${t.email})`),
-  ],
 );
 
 /** A vendor's public identity. The Seal address is the key the vendor signs invoices with. */

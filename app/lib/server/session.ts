@@ -8,7 +8,7 @@ export const SESSION_IDLE_MS = 7 * 24 * 60 * 60 * 1000;
 /** last_seen_at is only rewritten when it is this stale, so reading a session isn't a database write every time */
 const TOUCH_AFTER_MS = 60 * 60 * 1000;
 
-export type SessionMethod = "circle" | "wallet" | "dev";
+export type SessionMethod = "privy";
 export type SessionUser = typeof users.$inferSelect;
 
 const TOKEN_LENGTH = 43; // 32 random bytes, base64url without padding

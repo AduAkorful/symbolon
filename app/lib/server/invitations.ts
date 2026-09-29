@@ -38,7 +38,7 @@ export async function createInvitation(db: Database, user: Pick<SessionUser, "id
     await appendAppDecision(tx, businessId, { kind: "vendor_invitation_created", subject: row!.id, actor: user.id, inputs: { vendorName, ...(terms ? { terms } : {}) }, rule: "owner invited a vendor using a single-use, expiring secret", outcome: "invited" });
     return row!.id;
   });
-  return { id, link: `${origin.replace(/\/$/, "")}/p/invite/${token}` };
+  return { id, link: `${origin.replace(/\/$/, "")}/invite/${token}` };
 }
 
 /** Invalid, expired, revoked, and accepted bearer tokens deliberately share one response. */
@@ -66,7 +66,8 @@ export async function acceptInvitation(db: Database, client: PublicClient, deplo
   const cap = invitation.terms ? BigInt(invitation.terms.monthlyCap) : null;
   const [pendingInvoice] = await db.select({ fingerprint: invoices.fingerprint, total: invoices.total }).from(invoices).where(and(eq(invoices.businessId, invitation.businessId), eq(invoices.seal, sealAddress))).orderBy(desc(invoices.total)).limit(1);
   const threshold = BigInt(state.policy.ownerThreshold);
-  const requiresSecond = (cap !== null && cap > threshold) || (pendingInvoice?.total ?? 0n) > threshold;
+  // A Seal this business already verified stays verified: a re-invite must never downgrade a passed check
+  const requiresSecond = priorPayee?.status !== "verified" && ((cap !== null && cap > threshold) || (pendingInvoice?.total ?? 0n) > threshold);
   const status = requiresSecond ? "awaiting_second" as const : "verified" as const;
   await db.transaction(async (tx) => {
     const [claimed] = await tx.update(vendorInvitations).set({ acceptedAt: now, acceptedSeal: sealAddress }).where(and(eq(vendorInvitations.id, invitation.id), isNull(vendorInvitations.acceptedAt), isNull(vendorInvitations.revokedAt), gt(vendorInvitations.expiresAt, now))).returning({ id: vendorInvitations.id });

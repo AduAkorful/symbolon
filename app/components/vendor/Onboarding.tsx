@@ -13,7 +13,7 @@ const input = "mt-1 w-full rounded-doc border border-rule bg-paper px-3 py-2.5 f
 const primary = "rounded-doc bg-ink px-5 py-3 font-medium text-paper disabled:opacity-40";
 
 /** Vendor sign-up (V1): the Seal is your own wallet; pick a handle and the name on your invoices, then where new invoices pay out. Plan 05i. */
-export function Onboarding({ wallet, next = "/v" }: { wallet: string | null; next?: string }) {
+export function Onboarding({ wallet, next = "/vendor" }: { wallet: string | null; next?: string }) {
   const router = useRouter();
   const [i, setI] = useState(0);
   const [handle, setHandle] = useState("");
@@ -86,7 +86,7 @@ export function Onboarding({ wallet, next = "/v" }: { wallet: string | null; nex
         <Link href="/" aria-label="Symbolon home">
           <Wordmark />
         </Link>
-        <Link href="/b" className="text-sm text-graphite underline decoration-rule underline-offset-4">
+        <Link href="/business" className="text-sm text-graphite underline decoration-rule underline-offset-4">
           Back to the app
         </Link>
       </header>

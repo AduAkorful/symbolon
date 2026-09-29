@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { arcChain } from "@symbolon/chain";
 import { businesses, members } from "@symbolon/db";
 import { Wordmark } from "@/components/Marks";
+import { PrivyBoundary } from "@/components/providers/PrivyBoundary";
 import { Setup, type Standing } from "@/components/setup/Setup";
 import { getClient } from "@/lib/server/chain";
 import { getConfig } from "@/lib/server/config";
@@ -42,10 +43,11 @@ export default async function SetupPage({ searchParams }: { searchParams: Promis
         <Link href="/" aria-label="Symbolon home">
           <Wordmark />
         </Link>
-        <Link href="/b" className="text-sm text-graphite underline decoration-rule underline-offset-4">
+        <Link href="/business" className="text-sm text-graphite underline decoration-rule underline-offset-4">
           Back to the app
         </Link>
       </header>
+      <PrivyBoundary>
       <Setup
         key={open?.id ?? "new"}
         business={open ? { id: open.id, name: open.name, vault: open.vault } : null}
@@ -54,6 +56,7 @@ export default async function SetupPage({ searchParams }: { searchParams: Promis
         signer={signer}
         explorer={arcChain(config.chainId).blockExplorers!.default.url}
       />
+      </PrivyBoundary>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { arcTestnet } from "@symbolon/chain";
 import { businesses, createTestDb, members, seals } from "@symbolon/db";
 import { requireMember, requireSeal, spacesFor } from "@/lib/server/access";
 import { AuthError } from "@/lib/server/errors";
-import { upsertWalletUser } from "@/lib/server/users";
+import { walletUser as upsertWalletUser } from "./helpers";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => {

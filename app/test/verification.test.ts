@@ -71,4 +71,38 @@ describe("vendor callback verification", () => {
     const [row] = await db.select().from(vendorVerifications).where(eq(vendorVerifications.id, request.id));
     expect(row).toMatchObject({ status: "expired", attempts: 5 });
   });
+
+  it("lets the member who started the check enter the code when the amounts are under the threshold", async () => {
+    const f = await fixture(50n);
+    const request = await startCodeVerification(db, f.owner, f.business.id, f.seal);
+    const code = (await showCodeToSeal(db, f.vendor)).find((x) => x.id === request.id)!.code;
+    await expect(submitCode(db, f.owner, client, deployment, request.id, code, "Jordan", "known switchboard")).resolves.toEqual({ status: "verified" });
+  });
+
+  it("over the threshold, the member who raised and entered it cannot also be the second confirmation", async () => {
+    const f = await fixture(101n);
+    const request = await startCodeVerification(db, f.owner, f.business.id, f.seal);
+    const code = (await showCodeToSeal(db, f.vendor)).find((x) => x.id === request.id)!.code;
+    await expect(submitCode(db, f.owner, client, deployment, request.id, code, "Jordan", "known switchboard")).resolves.toEqual({ status: "awaiting_second" });
+    await expect(confirmSecond(db, f.owner, request.id)).rejects.toThrow();
+    await expect(confirmSecond(db, f.approver, request.id)).resolves.toEqual({ status: "verified" });
+  });
+
+  it("refuses a member who owns the Seal, and a Seal that has never invoiced the business", async () => {
+    const f = await fixture(50n);
+    await db.insert(members).values({ businessId: f.business.id, userId: f.vendor.id, role: "owner" });
+    await expect(startCodeVerification(db, f.owner, f.business.id, f.seal)).rejects.toThrow(/can't be verified by code/);
+    const g = await fixture(50n);
+    await db.delete(invoices).where(eq(invoices.fingerprint, g.fingerprint));
+    await expect(startCodeVerification(db, g.owner, g.business.id, g.seal)).rejects.toThrow(/only after this Seal has sent/);
+  });
+
+  it("does not store a comparison value that can be guessed without the server key", async () => {
+    const f = await fixture(50n);
+    const request = await startCodeVerification(db, f.owner, f.business.id, f.seal);
+    const code = (await showCodeToSeal(db, f.vendor)).find((x) => x.id === request.id)!.code;
+    const [row] = await db.select().from(vendorVerifications).where(eq(vendorVerifications.id, request.id));
+    const { createHmac } = await import("node:crypto");
+    expect(row!.codeHmac).not.toBe(createHmac("sha256", request.id).update(code).digest("hex"));
+  });
 });

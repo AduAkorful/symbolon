@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { ensureChain, findWalletFor, sendCall, sendWithWallet, wasRejected, type ChainParams } from "@/components/setup/owner-signer";
+import { NeedsFeesError, ensureChain, findWalletFor, sendCall, sendWithWallet, wasRejected, wrongWalletMessage, type ChainParams } from "@/components/setup/owner-signer";
 import type { Eip1193 } from "@/components/signin/wallet";
 
 const chain: ChainParams = { chainIdHex: "0x4cef52", name: "Arc Testnet", currency: { name: "USDC", symbol: "USDC", decimals: 18 }, rpcUrls: ["https://rpc.example.test"], explorerUrl: "https://explorer.example.test" };
 const ME = "0xAbCdEf0000000000000000000000000000000001";
 const plan = { kind: "wallet", address: ME, chain } as const;
 
-function wallet(o: { accounts?: string[]; chainId?: string; knowsChain?: boolean; reject?: string; hash?: string }) {
+function wallet(o: { accounts?: string[]; chainId?: string; knowsChain?: boolean; reject?: string; hash?: string; balance?: string }) {
   const calls: { method: string; params?: unknown[] }[] = [];
   let chainId = o.chainId ?? "0x1";
   const p: Eip1193 = {
@@ -24,6 +24,8 @@ function wallet(o: { accounts?: string[]; chainId?: string; knowsChain?: boolean
           return null;
         case "wallet_addEthereumChain":
           return null;
+        case "eth_getBalance":
+          return o.balance ?? "0xde0b6b3a7640000";
         case "eth_sendTransaction":
           return o.hash ?? `0x${"ab".repeat(32)}`;
       }
@@ -77,7 +79,29 @@ describe("browser wallet signing", () => {
 
   it("explains when no wallet holds the account, and when this account can't send at all", async () => {
     const w = wallet({ accounts: ["0x0000000000000000000000000000000000000009"] });
-    await expect(sendWithWallet([w.p], plan, { to: "0x1111111111111111111111111111111111111111", data: "0x" })).rejects.toThrow(/holds the account you signed in with/);
+    await expect(sendWithWallet([w.p], plan, { to: "0x1111111111111111111111111111111111111111", data: "0x" })).rejects.toThrow(/doesn't control the wallet on your Symbolon account/);
     await expect(sendCall({ kind: "none", reason: "Not available." }, { to: "0x1", data: "0x" }, async () => [])).rejects.toThrow("Not available.");
+  });
+
+  it("sends nothing from a wallet with no USDC for fees, and says where to send some", async () => {
+    const w = wallet({ chainId: chain.chainIdHex, balance: "0x0" });
+    const e = await sendWithWallet([w.p], plan, { to: "0x1111111111111111111111111111111111111111", data: "0x" }).catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(NeedsFeesError);
+    expect((e as Error).message).toContain(ME);
+    expect(w.calls.some((c) => c.method === "eth_sendTransaction")).toBe(false);
+  });
+
+  it("checks the balance after switching to Arc, of the signed-in account", async () => {
+    const w = wallet({ chainId: "0x1" });
+    await sendWithWallet([w.p], plan, { to: "0x1111111111111111111111111111111111111111", data: "0x" });
+    const methods = w.calls.map((c) => c.method);
+    expect(methods.indexOf("wallet_switchEthereumChain")).toBeLessThan(methods.indexOf("eth_getBalance"));
+    expect(methods.indexOf("eth_getBalance")).toBeLessThan(methods.indexOf("eth_sendTransaction"));
+    expect(w.calls.find((c) => c.method === "eth_getBalance")!.params![0]).toBe(ME);
+  });
+
+  it("names the account when this sign-in does not control it", async () => {
+    const other = wallet({ accounts: ["0x0000000000000000000000000000000000000009"] });
+    await expect(sendWithWallet([other.p], plan, { to: "0x1111111111111111111111111111111111111111", data: "0x" })).rejects.toThrow(wrongWalletMessage(ME));
   });
 });

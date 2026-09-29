@@ -60,6 +60,9 @@ export function evidenceFor(input: MatchViewInput): { rows: EvidenceRow[]; match
 
     if (!payee?.exists || payee.risk === BLOCKED_RISK) {
       add("Screening", payee?.risk === BLOCKED_RISK ? "blocks" : "missing", payee?.risk === BLOCKED_RISK ? "Onchain screening blocks this payee" : "No onchain screening record", "VaultLens");
+    } else if (input.facts.policy.screeningMaxAge === 0n) {
+      // The Vault treats a max age of zero as "screening isn't required" (SymbolonVault._checkPayee); the row must say the same
+      add("Screening", "info", "This Vault's policy doesn't require screening", "VaultLens");
     } else {
       const age = input.facts.now >= payee.screenedAt ? input.facts.now - payee.screenedAt : input.facts.policy.screeningMaxAge + 1n;
       const fresh = payee.screenedAt !== 0n && age <= input.facts.policy.screeningMaxAge;
@@ -92,6 +95,6 @@ export function evidenceFor(input: MatchViewInput): { rows: EvidenceRow[]; match
   if (input.duplicates?.length) add("Duplicates", "blocks", input.duplicates.map((d) => d.detail).join("; "), "Duplicate screening");
   else add("Duplicates", "holds", "No duplicate found in the current inbox", "Duplicate screening");
 
-  const matched = rows.every((r) => r.state === "holds" || r.state === "info") && Boolean(input.verification.ok) && input.trust === "verified";
+  const matched = rows.every((r) => r.state === "holds" || r.state === "info") && Boolean(input.verification.ok) && input.trust === "verified" && input.ledger?.paid !== true;
   return { rows, matched };
 }

@@ -108,9 +108,9 @@ describe("sendInvoice", () => {
     const v = await vendor();
     const { p, signature } = await prepared(v);
     const r = await sendInvoice(db, chain(), cfg, v.user, { document: p.document, signature });
-    expect(r).toEqual({ fingerprint: p.fingerprint, path: `/p/invoice/${p.fingerprint}`, duplicate: false });
+    expect(r).toEqual({ fingerprint: p.fingerprint, path: `/invoice/${p.fingerprint}`, duplicate: false });
     const again = await sendInvoice(db, chain(), cfg, v.user, { document: p.document, signature });
-    expect(again).toEqual({ fingerprint: p.fingerprint, path: `/p/invoice/${p.fingerprint}`, duplicate: true });
+    expect(again).toEqual({ fingerprint: p.fingerprint, path: `/invoice/${p.fingerprint}`, duplicate: true });
     const rows = await db.select().from(invoices).where(eq(invoices.fingerprint, p.fingerprint));
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ status: "verified", source: "link", seal: v.account.address.toLowerCase(), invoiceNumber: "0144" });

@@ -38,7 +38,7 @@ describe("signing an invoice", () => {
 
   it("signs nothing when no wallet in the browser holds the account", async () => {
     const w = wallet({ accounts: ["0x0000000000000000000000000000000000000009"] });
-    await expect(signInvoice(plan, prepared, async () => [w.p])).rejects.toThrow(/None of the wallets/);
+    await expect(signInvoice(plan, prepared, async () => [w.p])).rejects.toThrow(/doesn't control the wallet on your Symbolon account/);
     expect(w.calls.some((c) => c.method === "eth_signTypedData_v4")).toBe(false);
   });
 
@@ -53,14 +53,5 @@ describe("signing an invoice", () => {
 
   it("has no way to sign for an account that can't", async () => {
     await expect(signInvoice({ kind: "none", reason: "Sign in with a wallet." }, prepared, async () => [])).rejects.toThrow("Sign in with a wallet.");
-  });
-
-  it("sends the dev signer only the document; the server rebuilds the typed data", async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ signature: SIG }), { status: 200 }));
-    vi.stubGlobal("fetch", fetchMock);
-    expect(await signInvoice({ kind: "dev", address: ME }, prepared, async () => [])).toBe(SIG);
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe("/api/dev/sign");
-    expect(JSON.parse(init.body as string)).toEqual({ document: prepared.document });
   });
 });

@@ -89,8 +89,22 @@ describe("evidenceFor", () => {
     ["stale screening", { facts: { ...facts, payee: { ...payee, screenedAt: 0n } } }],
     ["duplicate", { duplicates: [{ kind: "same_number", fingerprint: bytes32, detail: "same number" }] }],
     ["ledger read failure", { ledger: undefined }],
+    ["already paid", { ledger: { ...ledger, seen: true, paid: true } }],
+    ["cancelled", { ledger: { ...ledger, cancelled: true } }],
     ["match failure", { match: { kind: "invoice_only", ok: false, problems: ["delivery not confirmed"] } }],
   ] as const)("never marks %s as matched", (_name, overrides) => {
     expect(view(overrides as unknown as Partial<Parameters<typeof evidenceFor>[0]>).matched).toBe(false);
+  });
+
+  it("does not require screening when the Vault's max age is zero, and says so", () => {
+    const noScreening = { ...facts, policy: { ...policy, screeningMaxAge: 0n }, payee: { ...payee, screenedAt: 0n } };
+    const result = view({ facts: noScreening });
+    expect(result.rows.find((r) => r.label === "Screening")).toMatchObject({ state: "info" });
+    expect(result.matched).toBe(true);
+  });
+
+  it("still blocks a payee that screening blocked, even when screening isn't required", () => {
+    const blocked = { ...facts, policy: { ...policy, screeningMaxAge: 0n }, payee: { ...payee, risk: 3, screenedAt: 0n } };
+    expect(view({ facts: blocked }).matched).toBe(false);
   });
 });

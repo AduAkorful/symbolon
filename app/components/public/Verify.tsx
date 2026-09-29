@@ -6,7 +6,7 @@ import { showAmount, showDate } from "@/lib/format";
 import { runCheck, type CheckResult } from "@/lib/verify-check";
 
 const box = "rounded-doc border border-rule bg-paper px-3 py-2 text-[15px] focus:border-ink focus:outline-none";
-const LINK = /\/p\/invoice\/(0x[0-9a-f]{64})\/?$/i;
+const LINK = /\/invoice\/(0x[0-9a-f]{64})\/?$/i;
 
 /**
  * The public verify page (P2, plan 05i V11). The check runs here, in the visitor's browser, against Arc's public RPC and the ledger
@@ -59,7 +59,7 @@ export function Verify({ chainId, explorer }: { chainId: number; explorer: strin
     }
     setBusy(true);
     try {
-      const r = await fetch(`/p/invoice/${m[1]!.toLowerCase()}/file`, { cache: "no-store" });
+      const r = await fetch(`/invoice/${m[1]!.toLowerCase()}/file`, { cache: "no-store" });
       if (!r.ok) {
         setResult({ kind: "unsealed", reason: "That link doesn’t lead to a valid invoice." });
         setBusy(false);

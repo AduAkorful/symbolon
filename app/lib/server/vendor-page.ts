@@ -9,6 +9,6 @@ import { loadSpaces } from "./space";
 export async function requireVendorPage(next: string) {
   const session = await requirePageSession(next);
   const seal = await mySeal(await getDb(), session.user.id);
-  if (!seal) redirect("/v/start");
+  if (!seal) redirect("/vendor/start");
   return { session, seal, where: await loadSpaces(session) };
 }

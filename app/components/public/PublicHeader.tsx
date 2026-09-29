@@ -8,7 +8,7 @@ export function PublicHeader() {
       <Link href="/" aria-label="Symbolon home">
         <Wordmark />
       </Link>
-      <Link href="/p/verify" className="text-sm text-graphite underline decoration-rule underline-offset-4 hover:text-ink">
+      <Link href="/verify" className="text-sm text-graphite underline decoration-rule underline-offset-4 hover:text-ink">
         Verify an invoice
       </Link>
     </header>

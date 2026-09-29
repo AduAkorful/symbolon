@@ -18,7 +18,7 @@ export const GET = async (request: Request, ctx: Ctx) => {
     const cfg = getConfig();
     const db = await getDb();
     const items = await listInbox(db, getClient(), cfg, s.user, id, filter && ["all", "verified", "new", "unsigned", "blocked"].includes(filter) ? filter : "all");
-    const claims = await claimable(db, cfg, s.user, s.method, id);
+    const claims = await claimable(db, cfg, s.user, id);
     return NextResponse.json({ items, claimable: claims.map((r) => ({ fingerprint: r.fingerprint, invoiceNumber: r.invoiceNumber })) });
   } catch (e) {
     if (e instanceof AuthError) return NextResponse.json({ error: e.message }, { status: e.status });
@@ -33,7 +33,7 @@ export const POST = routeWith<Ctx>(async (request, ctx) => {
   const s = await requireSession();
   const cfg = getConfig();
   const db = await getDb();
-  if (body.action === "claim") return NextResponse.json(await claimInvoice(db, cfg, s.user, s.method, id, body.fingerprint as string));
+  if (body.action === "claim") return NextResponse.json(await claimInvoice(db, cfg, s.user, id, body.fingerprint as string));
   if (body.action === "add") {
     if (typeof body.fingerprint !== "string") throw new AuthError(400, "Send an invoice fingerprint.");
     const [row] = await db.select({ envelope: invoices.envelope }).from(invoices).where(eq(invoices.fingerprint, body.fingerprint.toLowerCase())).limit(1);

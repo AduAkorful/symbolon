@@ -9,14 +9,14 @@ export function InboxActions({ businessId }: { businessId: string }) {
   async function addLink(form: HTMLFormElement) {
     const data = new FormData(form);
     const link = String(data.get("link") ?? "").trim();
-    const fingerprint = link.match(/\/p\/invoice\/(0x[0-9a-f]{64})$/i)?.[1];
+    const fingerprint = link.match(/\/invoice\/(0x[0-9a-f]{64})$/i)?.[1];
     if (!fingerprint) { setMessage("Paste a Symbolon invoice link from this deployment."); return; }
     setBusy(true); setMessage("");
     try {
       const response = await fetch(`/api/business/${businessId}/inbox`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "add", fingerprint: fingerprint.toLowerCase() }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "That invoice couldn't be added.");
-      window.location.assign(`/b/inbox/${body.fingerprint}`);
+      window.location.assign(`/business/inbox/${body.fingerprint}`);
     } catch (e) { setMessage(e instanceof Error ? e.message : "That invoice couldn't be added."); }
     finally { setBusy(false); }
   }
@@ -38,7 +38,7 @@ export function InboxActions({ businessId }: { businessId: string }) {
       <div>
         <p className="font-medium">Add a sealed invoice</p>
         <form onSubmit={(e) => { e.preventDefault(); void addLink(e.currentTarget); }} className="mt-2 flex flex-wrap gap-2">
-          <input name="link" placeholder="https://…/p/invoice/0x…" className="min-w-0 flex-1 rounded-doc border border-rule bg-paper px-3 py-2 text-sm" />
+          <input name="link" placeholder="https://…/invoice/0x…" className="min-w-0 flex-1 rounded-doc border border-rule bg-paper px-3 py-2 text-sm" />
           <button disabled={busy} className="rounded-doc bg-ink px-3 py-2 text-sm text-paper disabled:opacity-50">Add link</button>
         </form>
         <label className="mt-2 inline-block text-sm underline decoration-rule underline-offset-4">

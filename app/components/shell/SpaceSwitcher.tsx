@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { usePrivy } from "@privy-io/react-auth";
 import { useEffect, useRef, useState } from "react";
 import { openBusiness } from "@/app/actions";
 import { Avatar } from "@/components/Avatar";
@@ -19,6 +20,7 @@ const quiet = "block w-full rounded-sm px-2.5 py-1.5 text-left text-sm text-grap
 
 /** Switch between your Seal and each business you belong to, and sign out. One person can be both a vendor and a business owner. */
 export function SpaceSwitcher({ spaces, current, who, compact = false }: { spaces: SwitcherSpaces; current: Current; who: string; compact?: boolean }) {
+  const { logout } = usePrivy();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -67,6 +69,7 @@ export function SpaceSwitcher({ spaces, current, who, compact = false }: { space
     setProblem(null);
     try {
       await postJson(everywhere ? "/api/auth/signout-all" : "/api/auth/signout");
+      await logout().catch(() => undefined);
       router.push("/signin");
       router.refresh();
     } catch (e) {
@@ -99,7 +102,7 @@ export function SpaceSwitcher({ spaces, current, who, compact = false }: { space
             Signed in as <span className="text-ink">{who}</span>
           </p>
           {spaces.seal ? (
-            <Link role="menuitem" href="/v" data-current={current.kind === "vendor"} onClick={() => setOpen(false)} className={`${item} ${current.kind === "vendor" ? "bg-rule-soft/50" : ""}`}>
+            <Link role="menuitem" href="/vendor" data-current={current.kind === "vendor"} onClick={() => setOpen(false)} className={`${item} ${current.kind === "vendor" ? "bg-rule-soft/50" : ""}`}>
               <Avatar name={spaces.seal.displayName} size={24} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium">{spaces.seal.displayName}</span>

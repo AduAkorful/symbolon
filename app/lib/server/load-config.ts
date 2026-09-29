@@ -20,8 +20,8 @@ export interface AppConfig {
   production: boolean;
   /** Postgres URL; unset only in development, where the app uses an on-disk PGlite instead */
   databaseUrl?: string;
-  /** Circle user-controlled wallets (email sign-in). Absent until both values are set. */
-  circle?: { apiKey: string; appId: string };
+  /** Privy, the only way in for people (plan 05k). Absent until the app id and secret are both set; then nobody can sign in, and the sign-in page says so. */
+  privy?: { appId: string; appSecret: string; verificationKey?: string };
   /** Circle developer-controlled wallets (Steward wallets). Absent until the API key and the entity secret are both set. */
   stewardCircle?: { apiKey: string; entitySecret: string; walletSetId?: string };
   /** Claude, for reading uploaded invoices into a draft (never on a payment path). Absent until the key is set. */
@@ -72,7 +72,11 @@ export function loadConfig(env: Env): AppConfig {
   if (!databaseUrl && production) throw new ConfigError("DATABASE_URL is not set; production never falls back to a throwaway database");
 
   const apiKey = env.CIRCLE_API_KEY?.trim();
-  const appId = env.NEXT_PUBLIC_CIRCLE_APP_ID?.trim();
+  const privyAppId = env.NEXT_PUBLIC_PRIVY_APP_ID?.trim();
+  const privySecret = env.PRIVY_APP_SECRET?.trim();
+  const privyKey = env.PRIVY_JWT_VERIFICATION_KEY?.trim();
+  if (!!privyAppId !== !!privySecret) throw new ConfigError("NEXT_PUBLIC_PRIVY_APP_ID and PRIVY_APP_SECRET must be set together");
+  if (production && !privyAppId) throw new ConfigError("NEXT_PUBLIC_PRIVY_APP_ID and PRIVY_APP_SECRET are not set; production has no other way to sign in");
   const entitySecret = env.CIRCLE_ENTITY_SECRET?.trim();
   const walletSetId = env.CIRCLE_WALLET_SET_ID?.trim();
   const anthropicApiKey = env.ANTHROPIC_API_KEY?.trim();
@@ -85,7 +89,7 @@ export function loadConfig(env: Env): AppConfig {
     appOrigin,
     production,
     ...(databaseUrl ? { databaseUrl } : {}),
-    ...(apiKey && appId ? { circle: { apiKey, appId } } : {}),
+    ...(privyAppId && privySecret ? { privy: { appId: privyAppId, appSecret: privySecret, ...(privyKey ? { verificationKey: privyKey } : {}) } } : {}),
     ...(anthropicApiKey ? { anthropicApiKey } : {}),
     ...(apiKey && entitySecret ? { stewardCircle: { apiKey, entitySecret, ...(walletSetId ? { walletSetId } : {}) } } : {}),
   };
