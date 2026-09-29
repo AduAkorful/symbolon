@@ -29,11 +29,11 @@ coverage/
 skills-lock.json
 
 # Local development database (PGlite) and other local app state
-app/.data/
+web/.data/
 
 # Agent tooling: empty marker files/folders and generated pointers to ignored AGENTS.md
 .aws
 .codex/
-app/CLAUDE.md
+web/CLAUDE.md
 __pycache__/
 *.pyc
