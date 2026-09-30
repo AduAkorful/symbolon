@@ -25,6 +25,21 @@ export interface MatchViewInput {
   duplicates?: DuplicateFinding[];
   payeeTerms?: PayeeTerms;
   purchaseOrder?: PurchaseOrder;
+  /** DB-side delivery row for this invoice, if it exists */
+  dbDelivery?: {
+    state: string; // "confirmed" | "rejected"
+    reason?: string | null;
+    txHash?: string | null;
+  };
+  /** DB-side PO row for this invoice's cited poRef, if it was loaded */
+  dbPo?: {
+    poNumber: string;
+    open: boolean; // from live lens read; false = closed or lens failed
+    remainingRaw?: string | null; // raw bigint string from lens
+    releaseAfter?: Date | null; // from DB row
+    openTx?: string | null;
+    closedAt?: Date | null;
+  };
 }
 
 /** Pure, conservative evidence composition. Any unreadable or missing guard prevents the matched state. */
@@ -73,15 +88,64 @@ export function evidenceFor(input: MatchViewInput): { rows: EvidenceRow[]; match
     const poRequired = terms?.requirePo ?? input.invoice.poRef !== ZERO_BYTES32;
     const citedPo = input.invoice.poRef !== ZERO_BYTES32;
     const poProblems = input.match?.problems.filter((p) => p.includes("purchase order") || p.includes("PO")) ?? [];
-    if (!poRequired && !citedPo) add("Purchase order", "info", "No purchase order required", "Policy mirror");
-    else if (!input.match) add("Purchase order", "blocks", "Can't confirm the purchase-order rules right now", "Policy mirror");
-    else add("Purchase order", poProblems.length === 0 ? "holds" : "missing", poProblems.length === 0 ? "Required purchase-order checks hold" : poProblems.join("; "), "Policy mirror");
+
+    if (!poRequired && !citedPo) {
+      add("Purchase order", "info", "No purchase order required", "Policy mirror");
+    } else if (input.dbPo) {
+      // We have a DB record: show the number and real state
+      const po = input.dbPo;
+      if (po.closedAt) {
+        add("Purchase order", "missing", `Cites PO ${po.poNumber} · closed ${po.closedAt.toISOString().slice(0, 10)}`, "Orders · Vault");
+      } else if (!po.open) {
+        add("Purchase order", "blocks", `Cites PO ${po.poNumber} · can't confirm status right now`, "Orders · Vault");
+      } else {
+        const rem = po.remainingRaw ? ` · ${po.remainingRaw} left` : "";
+        const rel = po.releaseAfter ? ` · not before ${po.releaseAfter.toISOString().slice(0, 10)}` : "";
+        add(
+          "Purchase order",
+          poProblems.length === 0 ? "holds" : "missing",
+          `Cites PO ${po.poNumber} · open${rem}${rel}`,
+          po.openTx ? `tx ${po.openTx.slice(0, 10)}…` : "Orders",
+        );
+      }
+    } else if (citedPo && !input.match) {
+      add("Purchase order", "blocks", "Invoice cites a PO but the status can't be confirmed right now", "Policy mirror");
+    } else if (citedPo && input.match) {
+      add("Purchase order", poProblems.length === 0 ? "holds" : "missing", poProblems.length === 0 ? "Required purchase-order checks hold" : poProblems.join("; "), "Policy mirror");
+    } else if (!input.match) {
+      add("Purchase order", "blocks", "Can't confirm the purchase-order rules right now", "Policy mirror");
+    } else {
+      add("Purchase order", poProblems.length === 0 ? "holds" : "missing", poProblems.length === 0 ? "Required purchase-order checks hold" : poProblems.join("; "), "Policy mirror");
+    }
 
     const deliveryRequired = terms?.requireDelivery ?? false;
     const deliveryProblems = input.match?.problems.filter((p) => p.includes("delivery")) ?? [];
-    if (!deliveryRequired) add("Delivery", "info", "Delivery confirmation is not required", "Policy mirror");
-    else if (!input.match) add("Delivery", "blocks", "Can't confirm the delivery rules right now", "Policy mirror");
-    else add("Delivery", deliveryProblems.length === 0 ? "holds" : "missing", deliveryProblems.length === 0 ? "Delivery confirmed" : deliveryProblems.join("; "), "VaultLens / policy mirror");
+
+    if (input.dbDelivery) {
+      // We have a DB record: show the actual outcome
+      if (input.dbDelivery.state === "confirmed") {
+        add(
+          "Delivery",
+          "holds",
+          `Delivery confirmed${input.dbDelivery.txHash ? ` · tx ${input.dbDelivery.txHash.slice(0, 10)}…` : ""}`,
+          "Orders · Vault",
+        );
+      } else {
+        add(
+          "Delivery",
+          "missing",
+          `Delivery rejected: ${input.dbDelivery.reason ?? "no reason recorded"}`,
+          "Orders · Vault",
+        );
+      }
+    } else if (!deliveryRequired) {
+      add("Delivery", "info", "Delivery confirmation is not required", "Policy mirror");
+    } else if (!input.match) {
+      add("Delivery", "blocks", "Can't confirm the delivery rules right now", "Policy mirror");
+    } else {
+      add("Delivery", deliveryProblems.length === 0 ? "holds" : "missing", deliveryProblems.length === 0 ? "Delivery confirmed" : deliveryProblems.join("; "), "VaultLens / policy mirror");
+    }
+
     if (input.match && !input.match.ok) {
       add("Policy match", "blocks", input.match.problems.join("; ") || "The policy match did not hold", "Policy mirror");
     }

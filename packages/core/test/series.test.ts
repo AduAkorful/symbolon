@@ -6,7 +6,7 @@ import { symbolonVaultAbi, toTransaction } from "@symbolon/chain";
 import { businesses, createTestDb, deliveries, invoices, seriesInvoices } from "@symbolon/db";
 import { completeTotals, encodeSealedInvoice, sealInvoice, seriesDrafts, type DocumentDraft } from "@symbolon/seal";
 
-import { confirmDelivery, createSeries, receiveInvoice, rejectDelivery, releaseDue } from "../src/index.js";
+import { deliveryConfirmCall, deliveryRejectCall, recordDeliveryOutcome, createSeries, receiveInvoice, releaseDue } from "../src/index.js";
 import { notifications, seals, users } from "@symbolon/db";
 
 const CHAIN_ID = 5_042_002;
@@ -75,10 +75,17 @@ describe("recurring series and milestones", () => {
   it("records delivery evidence and builds the requester's confirmation", async () => {
     const [biz] = await db.select().from(businesses);
     const fp = keccak256(stringToBytes("milestone-1"));
-    const call = await confirmDelivery(db, { businessId: biz!.id, vault: VAULT, fingerprint: fp, source: "github", evidence: { pr: "acme/site#42", merged: true } });
+    const call = deliveryConfirmCall(VAULT, fp);
     expect(decodeFunctionData({ abi: symbolonVaultAbi, data: toTransaction(call).data })).toMatchObject({ functionName: "confirmDelivery", args: [fp] });
+    await recordDeliveryOutcome(db, {
+      businessId: biz!.id,
+      fingerprint: fp,
+      action: "confirm",
+      source: "github",
+      evidence: { pr: "acme/site#42", merged: true },
+    });
     const [row] = await db.select().from(deliveries);
-    expect(row).toMatchObject({ source: "github", evidence: { pr: "acme/site#42", merged: true } });
+    expect(row).toMatchObject({ source: "github", evidence: { pr: "acme/site#42", merged: true }, state: "confirmed" });
   });
 
   it("rejects a delivery: holds the invoice, tells the vendor why, and builds the onchain call", async () => {
@@ -87,12 +94,21 @@ describe("recurring series and milestones", () => {
     await db.insert(seals).values({ address: seal.address.toLowerCase(), userId: vendorUser!.id, handle: "studio-ana", displayName: "Studio Ana" });
     const [envelope] = await sealAll([template()]);
     const intake = await receiveInvoice(db, d, envelope!, "link");
-    const call = await rejectDelivery(db, { businessId: biz!.id, vault: VAULT, fingerprint: intake.fingerprint!, reason: "Missing the mobile layouts" });
+    const { call, reasonHash } = deliveryRejectCall(VAULT, intake.fingerprint!, "Missing the mobile layouts");
     const decoded = decodeFunctionData({ abi: symbolonVaultAbi, data: toTransaction(call).data });
     expect(decoded.functionName).toBe("rejectDelivery");
     expect(decoded.args?.[1]).toBe(keccak256(stringToBytes("Missing the mobile layouts")));
+
+    await recordDeliveryOutcome(db, {
+      businessId: biz!.id,
+      fingerprint: intake.fingerprint!,
+      action: "reject",
+      reason: "Missing the mobile layouts",
+      reasonHash,
+    });
     expect((await db.select().from(invoices))[0]!.status).toBe("held");
+    expect((await db.select().from(invoices))[0]!.holdSource).toBe("human");
     expect((await db.select().from(notifications))[0]).toMatchObject({ userId: vendorUser!.id, kind: "delivery_rejected" });
-    await expect(rejectDelivery(db, { businessId: biz!.id, vault: VAULT, fingerprint: intake.fingerprint!, reason: "  " })).rejects.toThrow(/why/);
+    expect(() => deliveryRejectCall(VAULT, intake.fingerprint!, "  ")).toThrow(/reason/);
   });
 });

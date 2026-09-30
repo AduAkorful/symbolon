@@ -288,6 +288,12 @@ export const invoices = pgTable(
     credited: amount("credited").notNull().default(sql`0`),
     syncedBlock: bigint("synced_block", { mode: "bigint" }),
     source: text("source").notNull(),
+    /**
+     * Who placed the hold (plan 05n, N2). `steward` = the Steward holds it and can reconsider each run.
+     * `human` = a delivery rejection; never released by a Steward re-run — only by a delivery confirmation.
+     * Null when status is not `held`.
+     */
+    holdSource: text("hold_source"),
     receivedAt: createdAt(),
   },
   (t) => [
@@ -298,6 +304,8 @@ export const invoices = pgTable(
     check("invoices_seal_format", sql`${t.seal} ~ ${sql.raw(`'${ADDRESS}'`)}`),
     check("invoices_source", sql`${t.source} in ('link', 'email', 'upload', 'api', 'recurring')`),
     check("invoices_amounts", sql`${t.total} > 0 and ${t.credited} >= 0 and ${t.credited} <= ${t.total}`),
+    check("invoices_hold_source", sql`${t.holdSource} is null or ${t.holdSource} in ('steward', 'human')`),
+    check("invoices_hold_source_with_status", sql`${t.status} = 'held' or ${t.holdSource} is null`),
   ],
 );
 
@@ -336,12 +344,19 @@ export const purchaseOrders = pgTable(
     description: text("description"),
     kind: text("kind").notNull().default("one_off"),
     releaseAfter: timestamp("release_after", { withTimezone: true }),
+    /** Transaction hash that opened this PO onchain; null for rows written before 05n */
+    openTx: hash("open_tx"),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    closedTx: hash("closed_tx"),
     createdBy: uuid("created_by").references(() => users.id),
     createdAt: createdAt(),
   },
   (t) => [
     primaryKey({ columns: [t.businessId, t.poRef] }),
     check("purchase_orders_kind", sql`${t.kind} in ('one_off', 'recurring', 'milestone')`),
+    check("purchase_orders_open_tx_format", sql`${t.openTx} is null or ${t.openTx} ~ ${sql.raw(`'${HASH}'`)}`),
+    check("purchase_orders_closed_tx_format", sql`${t.closedTx} is null or ${t.closedTx} ~ ${sql.raw(`'${HASH}'`)}`),
+    check("purchase_orders_closed_consistent", sql`(${t.closedAt} is null) = (${t.closedTx} is null)`),
   ],
 );
 
@@ -355,9 +370,21 @@ export const deliveries = pgTable(
     /** e.g. a merged pull request, a signed timesheet; integrations record their evidence here */
     evidence: jsonb("evidence").$type<Record<string, unknown>>().notNull().default({}),
     source: text("source").notNull().default("manual"),
+    /** confirmed or rejected; rows before 05n (all confirmed) keep their default */
+    state: text("state").notNull().default("confirmed"),
+    /** The reason given when rejecting; null for confirmations */
+    reason: text("reason"),
+    /** Transaction hash that recorded this outcome onchain */
+    txHash: hash("tx_hash"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: createdAt(),
   },
-  (t) => [uniqueIndex("deliveries_business_fp").on(t.businessId, t.fingerprint)],
+  (t) => [
+    uniqueIndex("deliveries_business_fp").on(t.businessId, t.fingerprint),
+    check("deliveries_state", sql`${t.state} in ('confirmed', 'rejected')`),
+    check("deliveries_reason_only_on_rejection", sql`${t.state} = 'rejected' or ${t.reason} is null`),
+    check("deliveries_tx_hash_format", sql`${t.txHash} is null or ${t.txHash} ~ ${sql.raw(`'${HASH}'`)}`),
+  ],
 );
 
 export const earlyPayOffers = pgTable(

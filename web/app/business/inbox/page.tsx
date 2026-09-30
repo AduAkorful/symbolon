@@ -24,8 +24,9 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const requested = (await searchParams).filter as InboxFilter | undefined;
   const filter = requested && filters.some(([value]) => value === requested) ? requested : "all";
   const items = await listInbox(db, getClient(), cfg, session.user, business.id, filter);
+  const inboxCount = filter === "all" ? items.length : (await listInbox(db, getClient(), cfg, session.user, business.id, "all")).length;
   return (
-    <Shell where={where} current={{ kind: "business", id: business.id }}>
+    <Shell where={where} current={{ kind: "business", id: business.id }} inboxCount={inboxCount}>
       <div className="max-w-[1080px]">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div><h1 className="font-display text-5xl">Inbox</h1><p className="mt-2 max-w-[62ch] text-graphite">Invoices and bills addressed to {business.name}. Trust comes from the Seal, your records and the Vault—not from the upload.</p></div>

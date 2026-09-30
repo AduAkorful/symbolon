@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { businesses, createTestDb, decisions, invoices, payees, seals, sessions, unsignedBills, users, vendorClients, vendorInvitations, vendorVerifications } from "../src/index.js";
+import { businesses, createTestDb, decisions, deliveries, invoices, payees, purchaseOrders, seals, sessions, unsignedBills, users, vendorClients, vendorInvitations, vendorVerifications } from "../src/index.js";
 
 type TestDb = Awaited<ReturnType<typeof createTestDb>>;
 
@@ -169,5 +169,58 @@ describe("schema", () => {
     await expect(db.insert(unsignedBills).values(bill)).rejects.toThrow();
     await expect(db.insert(unsignedBills).values({ ...bill, fileSha256: "bad" })).rejects.toThrow();
     await expect(db.insert(unsignedBills).values({ ...bill, fileSha256: `0x${"bb".repeat(32)}`, status: "paid" })).rejects.toThrow();
+  });
+
+  // N2 (05n): hold_source integrity
+  it("rejects an invalid hold_source and hold_source set when status is not held", async () => {
+    const { biz } = await seed(db);
+    // Invalid hold_source value
+    await expect(db.insert(invoices).values(invoiceRow(biz.id, { status: "held", holdSource: "agent" as never }))).rejects.toThrow();
+    // hold_source without status=held
+    await expect(db.insert(invoices).values(invoiceRow(biz.id, { status: "verified", holdSource: "steward" }))).rejects.toThrow();
+    // Valid: held + steward
+    await db.insert(invoices).values(invoiceRow(biz.id, { status: "held", holdSource: "steward" }));
+    const [r] = await db.select().from(invoices);
+    expect(r!.holdSource).toBe("steward");
+  });
+
+  // N2 (05n): delivery state constraints
+  it("enforces delivery state and reason consistency", async () => {
+    const { biz, user } = await seed(db);
+    const base = { businessId: biz.id, fingerprint: FP, confirmedBy: user.id };
+    // Invalid state
+    await expect(db.insert(deliveries).values({ ...base, state: "pending" as never })).rejects.toThrow();
+    // Reason on a confirmation is disallowed
+    await expect(db.insert(deliveries).values({ ...base, state: "confirmed", reason: "broken" })).rejects.toThrow();
+    // Rejection without reason is allowed (reason is optional on rejection in the schema; the server enforces non-empty)
+    await db.insert(deliveries).values({ ...base, state: "rejected" });
+    const [r] = await db.select().from(deliveries);
+    expect(r!.state).toBe("rejected");
+  });
+
+  // N2 (05n): PO closed_at / closed_tx must agree
+  it("requires closed_at and closed_tx to be set together on a PO", async () => {
+    const { biz, user } = await seed(db);
+    const po = {
+      businessId: biz.id,
+      poRef: `0x${"aa".repeat(32)}`,
+      poNumber: "PO-001",
+      seal: SEAL,
+      budget: `0x${"00".repeat(32)}`,
+      amount: 1_000_000n,
+      kind: "one_off" as const,
+      createdBy: user.id,
+    };
+    await db.insert(purchaseOrders).values(po);
+    // closedAt without closedTx
+    await expect(
+      db.update(purchaseOrders).set({ closedAt: new Date() }).where(eq(purchaseOrders.poRef, po.poRef))
+    ).rejects.toThrow();
+    // closedTx without closedAt
+    await expect(
+      db.update(purchaseOrders).set({ closedTx: `0x${"bb".repeat(32)}` }).where(eq(purchaseOrders.poRef, po.poRef))
+    ).rejects.toThrow();
+    // Both together is fine
+    await db.update(purchaseOrders).set({ closedAt: new Date(), closedTx: `0x${"bb".repeat(32)}` }).where(eq(purchaseOrders.poRef, po.poRef));
   });
 });

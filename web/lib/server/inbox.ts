@@ -4,7 +4,7 @@ import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import { getAddress, keccak256, stringToBytes, type Address, type Hex, type PublicClient } from "viem";
 import { readVaultFacts, receiveInvoice, vaultFromPayerRef } from "@symbolon/core";
 import { invoiceStatus, symbolonContracts } from "@symbolon/chain";
-import { businesses, invoices, payees, seals, unsignedBills, type Database } from "@symbolon/db";
+import { businesses, deliveries, invoices, payees, purchaseOrders, seals, unsignedBills, type Database } from "@symbolon/db";
 import { decodeSealedInvoice, deriveInvoice, verifySealedInvoice, type InvoiceDocument } from "@symbolon/seal";
 import { findDuplicates, matchInvoice } from "@symbolon/steward";
 
@@ -131,8 +131,46 @@ export async function loadInvoiceDetail(db: Database, client: PublicClient, cfg:
     known.map((x) => ({ fingerprint: x.fingerprint as Hex, seal: x.seal, invoiceNumber: x.invoiceNumber, amount: x.total, issuedAt: BigInt(Math.floor((x.issuedAt ?? x.receivedAt).getTime() / 1000)) })),
   );
   const match = facts ? matchInvoice(verification.invoice, facts.payee?.terms, facts.purchaseOrder, facts.deliveryConfirmed, facts.now) : undefined;
-  return { row, verification, vendor: vendor[0] ?? null, ledger, evidence: evidenceFor({ verification, invoice: verification.invoice, trust, facts, ledger, match, duplicates }), trust, facts };
+
+  // N11: load DB delivery and PO rows to enrich evidence
+  const [dbDelivery] = await db
+    .select({ state: deliveries.state, reason: deliveries.reason, txHash: deliveries.txHash })
+    .from(deliveries)
+    .where(and(eq(deliveries.businessId, businessId), eq(deliveries.fingerprint, fingerprint)))
+    .limit(1);
+  let dbPo: import("./match-view").MatchViewInput["dbPo"] | undefined;
+  if (verification.invoice.poRef && verification.invoice.poRef !== `0x${"00".repeat(32)}`) {
+    const [poRow] = await db
+      .select()
+      .from(purchaseOrders)
+      .where(and(eq(purchaseOrders.businessId, businessId), eq(purchaseOrders.poRef, verification.invoice.poRef)))
+      .limit(1);
+    if (poRow) {
+      // Try to get live remaining from chain (best-effort; null on failure)
+      let liveRemaining: string | null = null;
+      let liveOpen = !poRow.closedAt;
+      try {
+        if (business.vault) {
+          const contracts = symbolonContracts(client, cfg.deployment);
+          const onchain = await contracts.lens.read.getPurchaseOrder([getAddress(business.vault), verification.invoice.poRef as Hex]);
+          liveOpen = onchain.open;
+          liveRemaining = onchain.remaining.toString();
+        }
+      } catch { /* use DB state */ }
+      dbPo = {
+        poNumber: poRow.poNumber,
+        open: liveOpen,
+        remainingRaw: liveRemaining,
+        releaseAfter: poRow.releaseAfter ?? null,
+        openTx: poRow.openTx ?? null,
+        closedAt: poRow.closedAt ?? null,
+      };
+    }
+  }
+
+  return { row, verification, vendor: vendor[0] ?? null, ledger, evidence: evidenceFor({ verification, invoice: verification.invoice, trust, facts, ledger, match, duplicates, dbDelivery: dbDelivery ?? undefined, dbPo }), trust, facts, holdSource: row.holdSource };
 }
+
 
 export async function claimable(db: Database, cfg: ChainSettings, user: Pick<SessionUser, "id" | "email">, businessId: string) {
   // users.email is only ever copied from an email Privy has verified (plan 05k, P3), so having one is the proof
