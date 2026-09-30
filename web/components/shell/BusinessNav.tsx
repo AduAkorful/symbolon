@@ -9,12 +9,19 @@ import { usePathname } from "next/navigation";
  *
  * On desktop: vertical list in the aside. On mobile: horizontally scrolling row pinned below the header.
  */
-export function BusinessNav({ inboxCount }: { inboxCount?: number }) {
+export function BusinessNav({
+  inboxCount,
+  approvalsCount,
+}: {
+  inboxCount?: number;
+  approvalsCount?: number;
+}) {
   const path = usePathname();
 
   const nav = [
     { name: "Home", href: "/business" },
     { name: "Inbox", href: "/business/inbox", count: inboxCount },
+    { name: "Approvals", href: "/business/approvals", count: approvalsCount },
     { name: "Vendors", href: "/business/vendors" },
     { name: "Orders", href: "/business/orders" },
     { name: "Steward", href: "/business/steward" },

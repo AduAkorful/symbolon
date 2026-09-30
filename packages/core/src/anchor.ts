@@ -14,9 +14,14 @@ export async function anchorDecisions(
   db: Database,
   businessId: string,
   wallet?: StewardWallet,
+  opts?: { dryRun?: boolean },
 ): Promise<{ root: Hex; count: number; txHash?: Hex } | undefined> {
   const [biz] = await db.select().from(businesses).where(eq(businesses.id, businessId));
   if (!biz?.vault) throw new Error(`business ${businessId} has no Vault yet`);
+
+  if (!wallet && !opts?.dryRun) {
+    throw new Error("wallet required for anchoring onchain (set dryRun: true for tests)");
+  }
 
   const anchored = new Set(
     (await db.select({ leaves: decisionAnchors.leaves }).from(decisionAnchors).where(eq(decisionAnchors.businessId, businessId))).flatMap(

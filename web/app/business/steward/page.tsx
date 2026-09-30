@@ -115,6 +115,21 @@ export default async function BusinessStewardPage() {
 
   const shadow = await shadowAgreement(db, business.id);
 
+  const pendingAnchorCount = await (async () => {
+    const { decisionAnchors, decisions } = await import("@symbolon/db");
+    const { eq } = await import("drizzle-orm");
+    const anchoredBatches = await db
+      .select({ leaves: decisionAnchors.leaves })
+      .from(decisionAnchors)
+      .where(eq(decisionAnchors.businessId, business.id));
+    const anchored = new Set(anchoredBatches.flatMap((b) => b.leaves));
+    const allBizDecs = await db
+      .select({ hash: decisions.hash })
+      .from(decisions)
+      .where(eq(decisions.businessId, business.id));
+    return allBizDecs.filter((d) => !anchored.has(d.hash)).length;
+  })();
+
   return (
     <Shell where={where} current={{ kind: "business", id: business.id }}>
       <StewardClient
@@ -132,9 +147,11 @@ export default async function BusinessStewardPage() {
         lastRun={lastRunView}
         recentDecisions={recentDecisions}
         shadow={shadow}
+        pendingAnchorCount={pendingAnchorCount}
         signer={signer}
         explorer={explorer}
       />
     </Shell>
   );
 }
+

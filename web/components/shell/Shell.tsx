@@ -31,7 +31,13 @@ const pill = "rounded-full border border-rule px-2.5 py-0.5 font-mono text-[10px
  *
  * For business screens: shows the live Steward status, pause banner & red rule when paused, and owner pause control (S13).
  */
-export async function Shell(props: { where: Where; current: Current; children: ReactNode; inboxCount?: number }) {
+export async function Shell(props: {
+  where: Where;
+  current: Current;
+  children: ReactNode;
+  inboxCount?: number;
+  approvalsCount?: number;
+}) {
   return (
     <PrivyBoundary>
       <Frame {...props} />
@@ -39,7 +45,19 @@ export async function Shell(props: { where: Where; current: Current; children: R
   );
 }
 
-async function Frame({ where, current, children, inboxCount }: { where: Where; current: Current; children: ReactNode; inboxCount?: number }) {
+async function Frame({
+  where,
+  current,
+  children,
+  inboxCount,
+  approvalsCount,
+}: {
+  where: Where;
+  current: Current;
+  children: ReactNode;
+  inboxCount?: number;
+  approvalsCount?: number;
+}) {
   const config = getConfig();
   const testnet = config.testnet;
   const chain = <span className={pill}>{testnet ? "Arc testnet" : "Arc mainnet"}</span>;
@@ -124,7 +142,7 @@ async function Frame({ where, current, children, inboxCount }: { where: Where; c
             <SpaceSwitcher spaces={where.spaces} current={current} who={where.who} />
           </div>
         </div>
-        <BusinessNav inboxCount={inboxCount} />
+        <BusinessNav inboxCount={inboxCount} approvalsCount={approvalsCount} />
       </aside>
 
       <div className="min-w-0">

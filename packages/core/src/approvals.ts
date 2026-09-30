@@ -1,4 +1,4 @@
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 import { getAddress, type Address, type Hex } from "viem";
 
 import type { SignedApproval, SymbolonContracts } from "@symbolon/chain";
@@ -34,7 +34,14 @@ export async function recordApproval(
       deadline: new Date(Number(a.deadline) * 1000),
       signature: a.signature.toLowerCase(),
     })
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: [approvals.businessId, approvals.fingerprint, approvals.signer, approvals.credit],
+      set: {
+        deadline: new Date(Number(a.deadline) * 1000),
+        signature: a.signature.toLowerCase(),
+      },
+      setWhere: sql`excluded.deadline > ${approvals.deadline}`,
+    });
 }
 
 /**

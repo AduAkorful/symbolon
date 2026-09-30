@@ -84,6 +84,7 @@ export interface StewardClientProps {
   lastRun: RunView | null;
   recentDecisions: DecisionView[];
   shadow: ShadowView;
+  pendingAnchorCount?: number;
   signer: SignerPlan | null;
   explorer: string;
 }
@@ -96,6 +97,7 @@ export function StewardClient({
   lastRun,
   recentDecisions,
   shadow,
+  pendingAnchorCount = 0,
   signer,
   explorer,
 }: StewardClientProps) {
@@ -116,6 +118,33 @@ export function StewardClient({
   const [running, setRunning] = useState(false);
   const [runMessage, setRunMessage] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
+
+  // Anchoring state (A10)
+  const [anchoring, setAnchoring] = useState(false);
+  const [anchorMessage, setAnchorMessage] = useState<string | null>(null);
+  const [anchorError, setAnchorError] = useState<string | null>(null);
+
+  async function handleAnchorNow() {
+    if (!canRun) return;
+    setAnchoring(true);
+    setAnchorMessage(null);
+    setAnchorError(null);
+    try {
+      const res = await postJson<{ ok: boolean; txHash?: string; count?: number; error?: string }>(
+        `/api/business/${business.id}/steward`,
+        { action: "anchor" }
+      );
+      if (!res.ok) {
+        throw new Error(res.error ?? "Anchoring failed.");
+      }
+      setAnchorMessage(`Anchored ${res.count ?? "batch"} decisions onchain.`);
+      router.refresh();
+    } catch (err) {
+      setAnchorError(err instanceof Error ? err.message : "Anchoring failed.");
+    } finally {
+      setAnchoring(false);
+    }
+  }
 
   // Fee top-up state
   const [fundingOpen, setFundingOpen] = useState(false);
@@ -442,7 +471,38 @@ export function StewardClient({
         )}
       </section>
 
-      {/* Recent Decisions (S14) */}
+      {/* Onchain Anchoring (A10) */}
+      <section aria-labelledby="anchoring-heading" className="space-y-4 border-t border-rule pt-8">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 id="anchoring-heading" className="font-display text-2xl">Onchain Anchoring</h2>
+            <p className="mt-1 text-xs text-graphite">
+              Decision hashes are batched into a Merkle tree and anchored into the Vault on Arc.
+            </p>
+          </div>
+          {canRun ? (
+            <button
+              type="button"
+              disabled={anchoring || (pendingAnchorCount ?? 0) === 0}
+              onClick={() => void handleAnchorNow()}
+              className="rounded-doc bg-ink px-4 py-2 text-sm font-medium text-paper transition-opacity disabled:opacity-40"
+            >
+              {anchoring ? "Anchoring decisions…" : `Anchor now (${pendingAnchorCount ?? 0} pending)`}
+            </button>
+          ) : null}
+        </div>
+
+        {anchorMessage ? <p className="text-sm text-emerald-600">{anchorMessage}</p> : null}
+        {anchorError ? <p role="alert" className="text-sm text-red">{anchorError}</p> : null}
+
+        <p className="text-xs text-graphite">
+          {(pendingAnchorCount ?? 0) === 0
+            ? "All decisions for this business are anchored onchain."
+            : `${pendingAnchorCount} decision${pendingAnchorCount === 1 ? "" : "s"} waiting to be anchored into the Vault.`}
+        </p>
+      </section>
+
+      {/* Recent Decisions (S14 / A9) */}
       <section aria-labelledby="decisions-heading" className="space-y-4 border-t border-rule pt-8">
         <div>
           <h2 id="decisions-heading" className="font-display text-2xl">Recent Decisions</h2>
@@ -456,13 +516,24 @@ export function StewardClient({
             {recentDecisions.map((d) => (
               <li key={d.id} className="p-4 hover:bg-paper-raised/40 transition-colors">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="font-medium text-ink">{d.summary.sentence}</span>
+                  <Link
+                    href={`/business/decisions/${d.id}`}
+                    className="font-medium text-ink underline decoration-rule underline-offset-2 hover:text-seal"
+                  >
+                    {d.summary.sentence}
+                  </Link>
                   <span className="text-xs text-graphite">{new Date(d.createdAt).toLocaleString()}</span>
                 </div>
                 {d.summary.explanation ? (
                   <p className="mt-1 text-xs italic text-graphite">{d.summary.explanation}</p>
                 ) : null}
                 <div className="mt-2 flex items-center gap-3 text-xs font-mono text-graphite">
+                  <Link
+                    href={`/business/decisions/${d.id}`}
+                    className="underline decoration-rule underline-offset-2 hover:text-ink"
+                  >
+                    record
+                  </Link>
                   <span>kind: {d.kind}</span>
                   {d.subject ? (
                     <Link

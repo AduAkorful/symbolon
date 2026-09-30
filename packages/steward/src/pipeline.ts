@@ -228,6 +228,18 @@ export async function processInvoice(ctx: InvoiceContext, deps: Deps): Promise<S
     });
   }
 
+  // A13: cross-chain payouts are held until a fee is quoted (stricter, safe)
+  if (facts.localDomain !== undefined && inv.payoutDomain !== facts.localDomain) {
+    return finish("held", {
+      kind: "hold",
+      subject,
+      inputs: { ...inputs, payoutDomain: inv.payoutDomain, localDomain: facts.localDomain },
+      options,
+      rule: "cross-chain payouts need a fee quote the Steward doesn't fetch yet",
+      outcome: "held",
+    });
+  }
+
   // 8. act by mode; the record hash travels with the transaction
   const recordBody = {
     kind: "pay",

@@ -106,6 +106,19 @@ export function summarizeDecision(record: Record<string, unknown>): DecisionSumm
       return { sentence: reason ? `Delivery rejected: ${reason}` : "Delivery rejected", explanation };
     }
 
+    case "approval_granted": {
+      return { sentence: "Payment approval granted by authorized signer", explanation };
+    }
+
+    case "approval_rejected": {
+      const reason = String(inputs.reason ?? "");
+      return { sentence: reason ? `Payment approval rejected: ${reason}` : "Payment approval rejected", explanation };
+    }
+
+    case "hold_released": {
+      return { sentence: "Hold released by owner; invoice reopened for evaluation", explanation };
+    }
+
     default: {
       return { sentence: `Recorded: ${kind || "decision"}`, explanation };
     }

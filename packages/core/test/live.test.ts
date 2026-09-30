@@ -95,13 +95,13 @@ describe.skipIf(!process.env.LIVE)("core against Arc testnet", () => {
     await runSteward(env, biz!.id);
     expect(await db.select().from(decisions)).toHaveLength(1); // unchanged decision isn't re-recorded
 
-    const anchor = await anchorDecisions(db, biz!.id);
+    const anchor = await anchorDecisions(db, biz!.id, undefined, { dryRun: true });
     expect(anchor?.count).toBe(1);
     const [stored] = await db.select().from(decisionAnchors);
     const tree = buildTree(stored!.leaves as `0x${string}`[]);
     expect(tree.root).toBe(anchor!.root);
     expect(verifyProof(proofFor(tree, 0), tree.root, stored!.leaves[0] as `0x${string}`)).toBe(true);
-    expect(await anchorDecisions(db, biz!.id)).toBeUndefined();
+    expect(await anchorDecisions(db, biz!.id, undefined, { dryRun: true })).toBeUndefined();
   }, 180_000);
 
   it("runs a whole cycle: sync, Steward, treasury, anchoring, for every business", async () => {

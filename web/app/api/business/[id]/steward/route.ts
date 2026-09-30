@@ -3,10 +3,11 @@ import { getAddress } from "viem";
 
 import { symbolonContracts } from "@symbolon/chain";
 import { shadowAgreement } from "@symbolon/core";
-import { businesses } from "@symbolon/db";
+import { businesses, decisionAnchors, decisions } from "@symbolon/db";
 import { eq } from "drizzle-orm";
 
 import { requireMember } from "@/lib/server/access";
+import { anchorPending } from "@/lib/server/anchoring";
 import { prepareFeeTransfer, recordFeeTransfer } from "@/lib/server/business";
 import { getClient } from "@/lib/server/chain";
 import { getConfig } from "@/lib/server/config";
@@ -101,6 +102,18 @@ export const GET = routeWith<Ctx>(async (_request, ctx) => {
       : null,
     recentDecisions,
     shadow: await shadowAgreement(db, businessId),
+    pendingAnchorCount: await (async () => {
+      const anchoredBatches = await db
+        .select({ leaves: decisionAnchors.leaves })
+        .from(decisionAnchors)
+        .where(eq(decisionAnchors.businessId, businessId));
+      const anchored = new Set(anchoredBatches.flatMap((b) => b.leaves));
+      const allBizDecs = await db
+        .select({ hash: decisions.hash })
+        .from(decisions)
+        .where(eq(decisions.businessId, businessId));
+      return allBizDecs.filter((d) => !anchored.has(d.hash)).length;
+    })(),
   });
 });
 
@@ -119,6 +132,12 @@ export const POST = routeWith<Ctx>(async (request, ctx) => {
     rateLimit(`steward-run:${businessId}`, 1, 30_000, Date.now(), "Runs are limited to one every 30 seconds. Try again in a moment.");
     const run = await runForBusiness(db, client, config, businessId, "manual", session.user.id);
     return NextResponse.json({ ok: true, run });
+  }
+
+  if (action === "anchor") {
+    await requireMember(db, session.user.id, businessId, "owner", "approver");
+    const result = await anchorPending(db, client, config, businessId, session.user.id);
+    return NextResponse.json(result);
   }
 
   if (action === "mode") {

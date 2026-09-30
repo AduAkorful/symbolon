@@ -5,7 +5,7 @@ import { symbolonVaultAbi, type ContractCall } from "@symbolon/chain";
 import { signSealMessage, sealDomain, typedData } from "@symbolon/seal";
 
 import { ApprovalLevel, DEFAULT_EARLY_PAY, FakeStewardModel, hashRecord, processInvoice, type InvoiceContext, type StewardMode } from "../src/index.js";
-import { CHAIN_ID, DAY, facts, LEDGER, NOW, sealAccount, sealed, USDC, VAULT } from "./fixtures.js";
+import { CHAIN_ID, DAY, facts, LEDGER, NOW, payee, payout, sealAccount, sealed, USDC, VAULT } from "./fixtures.js";
 
 async function context(mode: StewardMode, overrides: Partial<InvoiceContext> = {}, docOverrides = {}) {
   const s = await sealed(docOverrides);
@@ -143,5 +143,16 @@ describe("Steward pipeline", () => {
     expect(r.outcome).toBe("paid");
     const [params] = decodePay(r.call);
     expect(params.discount).toMatchObject({ kind: 2 });
+  });
+
+  it("holds cross-chain payouts until a fee is quoted (A13)", async () => {
+    const { ctx } = await context(
+      "auto",
+      { facts: facts({ localDomain: 26, payee: payee({ payoutDomain: 0 }) }) },
+      { payout: { address: payout.toLowerCase(), domain: 0 } },
+    );
+    const r = await processInvoice(ctx, deps());
+    expect(r.outcome).toBe("held");
+    expect(r.record.rule).toBe("cross-chain payouts need a fee quote the Steward doesn't fetch yet");
   });
 });
