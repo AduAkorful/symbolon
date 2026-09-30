@@ -127,6 +127,13 @@
       "when": 1790781698096,
       "tag": "0017_aberrant_thundra",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790798007134,
+      "tag": "0018_oval_nick_fury",
+      "breakpoints": true
     }
   ]
 }

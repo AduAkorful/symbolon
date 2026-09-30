@@ -43,6 +43,8 @@ export const users = pgTable(
     wallet: address("wallet"),
     /** Privy's id for this person: the stable key for sign-in. Accounts are never found or merged by email or wallet (plan 05k, P3). */
     privyUserId: text("privy_user_id"),
+    /** Optional display name (1..80 chars, only a label; plan 05u N7) */
+    displayName: text("display_name"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -51,6 +53,7 @@ export const users = pgTable(
     uniqueIndex("users_privy_user_key").on(t.privyUserId),
     check("users_email_lower", sql`${t.email} = lower(${t.email})`),
     check("users_wallet_format", sql`${t.wallet} ~ ${sql.raw(`'${ADDRESS}'`)}`),
+    check("users_display_name_len", sql`${t.displayName} is null or (length(${t.displayName}) >= 1 and length(${t.displayName}) <= 80)`),
   ],
 );
 
@@ -616,9 +619,14 @@ export const notifications = pgTable(
     body: jsonb("body").$type<Record<string, unknown>>().notNull(),
     readAt: timestamp("read_at", { withTimezone: true }),
     sentVia: text("sent_via"),
+    /** Idempotency key for event deduplication (plan 05u N2) */
+    dedupeKey: text("dedupe_key"),
     createdAt: createdAt(),
   },
-  (t) => [index("notifications_user_unread").on(t.userId, t.readAt)],
+  (t) => [
+    index("notifications_user_unread").on(t.userId, t.readAt),
+    uniqueIndex("notifications_user_dedupe_key").on(t.userId, t.dedupeKey).where(sql`${t.dedupeKey} is not null`),
+  ],
 );
 
 export const queuedChangeStatus = pgEnum("queued_change_status", ["queued", "applied", "cancelled"]);

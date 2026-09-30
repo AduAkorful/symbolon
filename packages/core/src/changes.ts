@@ -2,7 +2,8 @@ import { and, eq } from "drizzle-orm";
 import { getAddress, type Address, type Hex } from "viem";
 
 import { ledgerCall, vaultCall } from "@symbolon/chain";
-import { members, notifications, vendorRequests, type Database } from "@symbolon/db";
+import { members, vendorRequests, type Database } from "@symbolon/db";
+import { notifyMany } from "./notify.js";
 import {
   decodeSealedInvoice,
   deriveInvoice,
@@ -86,12 +87,14 @@ export async function submitVendorRequest(
   if (businessId) {
     const owners = await db.select({ userId: members.userId }).from(members).where(and(eq(members.businessId, businessId), eq(members.role, "owner")));
     if (owners.length) {
-      await db.insert(notifications).values(
+      await notifyMany(
+        db,
         owners.map((o) => ({
           userId: o.userId,
           kind: `vendor_${request.kind}`,
           subject: row!.id,
           body: { seal: signer.toLowerCase(), kind: request.kind, loud: request.kind === "payout_change" || request.kind === "seal_rotation" },
+          dedupeKey: `vendor_req:${row!.id}:${o.userId}`,
         })),
       );
     }

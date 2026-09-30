@@ -36,10 +36,30 @@ export const extractionSchema = z.object({
 
 export type Extraction = z.infer<typeof extractionSchema>;
 
+export interface IntentDescriptor {
+  name: string;
+  description: string;
+  params?: Record<string, { type: string; description: string; required?: boolean }>;
+}
+
+export interface RouteSuccess {
+  intent: string;
+  params: Record<string, unknown>;
+}
+
+export interface RouteUnsupported {
+  intent: "unsupported";
+  reason?: string;
+}
+
+export type RouteResult = RouteSuccess | RouteUnsupported;
+
 export interface StewardModel {
   extractInvoice(input: { pdfBase64?: string; text?: string }): Promise<Extraction>;
   /** Plain-language summary of a decision, from the record's own numbers only */
   explain(record: DecisionRecord): Promise<string>;
+  /** Routes a question to one of the registered intents (plan 05u N10, N12) */
+  route?: (question: string, intents: IntentDescriptor[]) => Promise<RouteResult>;
 }
 
 export class ModelRefusal extends Error {
@@ -112,6 +132,45 @@ export class AnthropicStewardModel implements StewardModel {
       .join("")
       .trim();
   }
+
+  async route(question: string, intents: IntentDescriptor[]): Promise<RouteResult> {
+    const routeSchema = z.object({
+      intent: z.string().describe("The name of the matched intent, or 'unsupported' if none match"),
+      params: z.record(z.string(), z.unknown()).default({}).describe("Extracted parameters for the intent"),
+      reason: z.string().optional().describe("Why the question is unsupported, if applicable"),
+    });
+
+    const system = [
+      "You route financial and operational questions about a business to registered deterministic queries.",
+      "You MUST select one of the provided intent names or return 'unsupported'.",
+      "Do NOT invent answers, numbers, or facts. Your only job is classification and parameter extraction.",
+      `Available intents:\n${JSON.stringify(intents, null, 2)}`,
+    ].join("\n");
+
+    const response = await this.client.messages.parse({
+      model: this.model,
+      max_tokens: 1_000,
+      system,
+      messages: [{ role: "user", content: question }],
+      output_config: { format: zodOutputFormat(routeSchema) },
+    });
+
+    if (response.stop_reason === "refusal") {
+      return { intent: "unsupported", reason: "Question declined." };
+    }
+    const parsed = response.parsed_output;
+    if (!parsed) {
+      return { intent: "unsupported", reason: "Could not route question." };
+    }
+    const matched = intents.find((i) => i.name === parsed.intent);
+    if (!matched || parsed.intent === "unsupported") {
+      return parsed.reason ? { intent: "unsupported", reason: parsed.reason } : { intent: "unsupported" };
+    }
+    return {
+      intent: matched.name,
+      params: (parsed.params as Record<string, unknown>) ?? {},
+    };
+  }
 }
 
 /**
@@ -153,6 +212,7 @@ export class FakeStewardModel implements StewardModel {
   constructor(
     private readonly extraction?: Extraction,
     private readonly explanation = "Decision recorded.",
+    private readonly routes: Record<string, RouteResult> = {},
   ) {}
 
   async extractInvoice(): Promise<Extraction> {
@@ -162,5 +222,49 @@ export class FakeStewardModel implements StewardModel {
 
   async explain(): Promise<string> {
     return this.explanation;
+  }
+
+  async route(question: string, intents: IntentDescriptor[]): Promise<RouteResult> {
+    if (this.routes[question]) return this.routes[question];
+    const q = question.toLowerCase();
+    for (const intent of intents) {
+      const name = intent.name.replace(/_/g, " ");
+      if (q.includes(name) || q.includes(intent.name)) {
+        return { intent: intent.name, params: {} };
+      }
+    }
+    if (q.includes("paying") || q.includes("due")) {
+      const found = intents.find((i) => i.name === "payments_due");
+      if (found) return { intent: "payments_due", params: { days: 7 } };
+    }
+    if (q.includes("recent") || q.includes("paid")) {
+      const found = intents.find((i) => i.name === "recent_payments");
+      if (found) return { intent: "recent_payments", params: { days: 30 } };
+    }
+    if (q.includes("held") || q.includes("hold")) {
+      const found = intents.find((i) => i.name === "held_invoices");
+      if (found) return { intent: "held_invoices", params: {} };
+    }
+    if (q.includes("approval")) {
+      const found = intents.find((i) => i.name === "awaiting_approval");
+      if (found) return { intent: "awaiting_approval", params: {} };
+    }
+    if (q.includes("cash") || q.includes("runway") || q.includes("position")) {
+      const found = intents.find((i) => i.name === "cash_position");
+      if (found) return { intent: "cash_position", params: {} };
+    }
+    if (q.includes("steward") || q.includes("status")) {
+      const found = intents.find((i) => i.name === "steward_status");
+      if (found) return { intent: "steward_status", params: {} };
+    }
+    if (q.includes("reserve")) {
+      const found = intents.find((i) => i.name === "reserve_status");
+      if (found) return { intent: "reserve_status", params: {} };
+    }
+    if (q.includes("early pay") || q.includes("savings")) {
+      const found = intents.find((i) => i.name === "early_pay_savings");
+      if (found) return { intent: "early_pay_savings", params: {} };
+    }
+    return { intent: "unsupported", reason: "No matching intent found." };
   }
 }

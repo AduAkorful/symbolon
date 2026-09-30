@@ -21,6 +21,9 @@ import { checkReleaseNudge } from "@/lib/server/release";
 
 import { BusinessNav } from "./BusinessNav";
 
+import { Avatar } from "@/components/Avatar";
+import { Bell } from "@/components/notifications/Bell";
+import { getUnreadNotificationCount } from "@/lib/server/notifications";
 import { SpaceSwitcher, type Current } from "./SpaceSwitcher";
 import { VendorNav } from "./VendorNav";
 
@@ -39,6 +42,7 @@ export async function Shell(props: {
   children: ReactNode;
   inboxCount?: number;
   approvalsCount?: number;
+  unreadCount?: number;
 }) {
   return (
     <PrivyBoundary>
@@ -53,16 +57,31 @@ async function Frame({
   children,
   inboxCount,
   approvalsCount,
+  unreadCount: initialUnreadCount,
 }: {
   where: Where;
   current: Current;
   children: ReactNode;
   inboxCount?: number;
   approvalsCount?: number;
+  unreadCount?: number;
 }) {
   const config = getConfig();
   const testnet = config.testnet;
   const chain = <span className={pill}>{testnet ? "Arc testnet" : "Arc mainnet"}</span>;
+
+  let unreadCount = initialUnreadCount;
+  if (unreadCount === undefined) {
+    try {
+      const session = await getSession();
+      if (session) {
+        const db = await getDb();
+        unreadCount = await getUnreadNotificationCount(db, session.user.id);
+      }
+    } catch {
+      unreadCount = 0;
+    }
+  }
 
   if (current.kind === "vendor") {
     return (
@@ -79,6 +98,10 @@ async function Frame({
                 New invoice
               </Link>
             ) : null}
+            <Bell unreadCount={unreadCount ?? 0} />
+            <Link href="/profile" aria-label="Your profile" className="transition hover:opacity-80">
+              <Avatar name={where.who} size={28} />
+            </Link>
             <SpaceSwitcher spaces={where.spaces} current={current} who={where.who} compact />
           </div>
         </header>
@@ -182,6 +205,12 @@ async function Frame({
           </div>
 
           <div className="flex items-center gap-3">
+            <Link
+              href="/business/ask"
+              className="rounded-doc border border-rule px-3 py-1.5 text-xs font-medium text-graphite transition hover:border-ink/50 hover:text-ink"
+            >
+              Ask the Steward
+            </Link>
             {biz && biz.role === "owner" && standing && (standing.kind === "paused" || standing.kind === "active") ? (
               <PauseControl
                 businessId={biz.id}
@@ -192,6 +221,10 @@ async function Frame({
               />
             ) : null}
             {chain}
+            <Bell unreadCount={unreadCount ?? 0} />
+            <Link href="/profile" aria-label="Your profile" className="transition hover:opacity-80">
+              <Avatar name={where.who} size={28} />
+            </Link>
           </div>
         </header>
 

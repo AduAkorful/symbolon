@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { budgets, businesses, chainEvents, createTestDb, decisions, deliveries, earlyPayOffers, invoices, payees, purchaseOrders, queuedChanges, screenings, seals, sessions, stewardRuns, teamInvitations, unsignedBills, users, vendorClients, vendorInvitations, vendorRequests, vendorVerifications } from "../src/index.js";
+import { budgets, businesses, chainEvents, createTestDb, decisions, deliveries, earlyPayOffers, invoices, notifications, payees, purchaseOrders, queuedChanges, screenings, seals, sessions, stewardRuns, teamInvitations, unsignedBills, users, vendorClients, vendorInvitations, vendorRequests, vendorVerifications } from "../src/index.js";
 
 type TestDb = Awaited<ReturnType<typeof createTestDb>>;
 
@@ -659,6 +659,64 @@ describe("schema", () => {
         createdBy: user.id,
       }),
     ).rejects.toThrow();
+  });
+
+  it("enforces notifications dedupe_key per-user uniqueness and users display_name bounds", async () => {
+    const { user } = await seed(db);
+    const [user2] = await db.insert(users).values({ email: "bob@studio.example" }).returning();
+
+    // Valid display name
+    const [u3] = await db.insert(users).values({ email: "carol@studio.example", displayName: "Carol Danvers" }).returning();
+    expect(u3!.displayName).toBe("Carol Danvers");
+
+    // Empty display name (< 1 char) rejects
+    await expect(db.insert(users).values({ email: "empty@studio.example", displayName: "" })).rejects.toThrow();
+
+    // Too long display name (> 80 chars) rejects
+    await expect(db.insert(users).values({ email: "toolong@studio.example", displayName: "a".repeat(81) })).rejects.toThrow();
+
+    // Dedupe key insertion
+    await db.insert(notifications).values({
+      userId: user.id,
+      kind: "approval_needed",
+      subject: FP,
+      body: { test: true },
+      dedupeKey: `approval:${FP}`,
+    });
+
+    // Duplicate dedupeKey for the same user rejects
+    await expect(
+      db.insert(notifications).values({
+        userId: user.id,
+        kind: "approval_needed",
+        subject: FP,
+        body: { test: true },
+        dedupeKey: `approval:${FP}`,
+      }),
+    ).rejects.toThrow();
+
+    // Same dedupeKey for a different user is allowed
+    await db.insert(notifications).values({
+      userId: user2!.id,
+      kind: "approval_needed",
+      subject: FP,
+      body: { test: true },
+      dedupeKey: `approval:${FP}`,
+    });
+
+    // Multiple null dedupeKey for the same user is allowed
+    await db.insert(notifications).values({
+      userId: user.id,
+      kind: "other",
+      body: {},
+      dedupeKey: null,
+    });
+    await db.insert(notifications).values({
+      userId: user.id,
+      kind: "other",
+      body: {},
+      dedupeKey: null,
+    });
   });
 });
 

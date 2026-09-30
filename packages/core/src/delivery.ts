@@ -2,7 +2,8 @@ import { and, eq } from "drizzle-orm";
 import { keccak256, stringToBytes, type Address, type Hex } from "viem";
 
 import { vaultCall } from "@symbolon/chain";
-import { deliveries, invoices, notifications, seals, type Database } from "@symbolon/db";
+import { deliveries, invoices, seals, type Database } from "@symbolon/db";
+import { notify } from "./notify.js";
 
 // ─── Pure call-builders (no DB access) ───────────────────────────────────────
 
@@ -141,15 +142,13 @@ export async function recordDeliveryOutcome(
         .where(eq(seals.address, inv.seal))
         .limit(1);
       if (vendor) {
-        await db
-          .insert(notifications)
-          .values({
-            userId: vendor.userId,
-            kind: "delivery_rejected",
-            subject: fp,
-            body: { reason: a.reason ?? "", reasonHash: a.reasonHash ?? "" },
-          })
-          .onConflictDoNothing();
+        await notify(db, {
+          userId: vendor.userId,
+          kind: "delivery_rejected",
+          subject: fp,
+          body: { reason: a.reason ?? "", reasonHash: a.reasonHash ?? "" },
+          dedupeKey: `delivery_rejected:${fp}`,
+        });
       }
     }
   }
