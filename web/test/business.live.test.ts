@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
 import { arcTestnet, createArcClient, getDeployment } from "@symbolon/chain";
 import { businesses, createTestDb, members, users } from "@symbolon/db";
 import { AuthError } from "@/lib/server/errors";

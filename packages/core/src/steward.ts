@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, ne, or } from "drizzle-orm";
 import { getAddress, keccak256, stringToBytes, type Hex, type PublicClient } from "viem";
 
 import { simulateCall, type Deployment, type SymbolonContracts } from "@symbolon/chain";
@@ -29,6 +29,7 @@ export interface StewardEnv {
   reserveYieldBps: number;
   model?: StewardModel;
   wallet?: StewardWallet;
+  walletFor?: (business: { id: string; vault: string; stewardWallet: string | null }) => Promise<StewardWallet | undefined>;
 }
 
 const OPEN = ["verified", "scheduled", "awaiting_approval"] as const;
@@ -49,11 +50,20 @@ export async function runSteward(env: StewardEnv, businessId: string): Promise<S
   if (!biz?.vault) throw new Error(`business ${businessId} has no Vault yet`);
   const vault = getAddress(biz.vault);
   const mode = biz.stewardMode as "shadow" | "assist" | "auto";
+  const wallet = (env.walletFor ? await env.walletFor({ id: businessId, vault, stewardWallet: biz.stewardWallet }) : undefined) ?? env.wallet;
 
   const open = await db
     .select()
     .from(invoices)
-    .where(and(eq(invoices.businessId, businessId), inArray(invoices.status, [...OPEN])));
+    .where(
+      and(
+        eq(invoices.businessId, businessId),
+        or(
+          inArray(invoices.status, [...OPEN]),
+          and(eq(invoices.status, "held"), eq(invoices.holdSource, "steward")),
+        ),
+      ),
+    );
   const cash = await env.contracts.token(env.deployment.tokens.usdc).read.balanceOf([vault]);
   const earlyPayCommitted = await committedToEarlyPay(db, businessId);
   const results: StewardResult[] = [];
@@ -113,21 +123,26 @@ export async function runSteward(env: StewardEnv, businessId: string): Promise<S
       {
         ...(env.model ? { model: env.model } : {}),
         simulate: async (call) => {
-          if (!env.wallet) throw new Error("no Steward wallet");
-          return simulateCall(env.client, call, env.wallet.address);
+          if (!wallet) throw new Error("no Steward wallet");
+          return simulateCall(env.client, call, wallet.address);
         },
-        ...(env.wallet ? { send: (call) => env.wallet!.send(call) } : {}),
+        ...(wallet ? { send: (call) => wallet.send(call) } : {}),
       },
     );
     await storeDecision(db, businessId, result);
-    const status = statusFor(result, mode);
-    if (status && status !== row.status) await db.update(invoices).set({ status }).where(eq(invoices.fingerprint, row.fingerprint));
+    const status = statusFor(result, mode, row.status);
+    if (status && status !== row.status) {
+      const holdSource = status === "held" ? "steward" : null;
+      await db.update(invoices).set({ status, holdSource }).where(eq(invoices.fingerprint, row.fingerprint));
+    } else if (status === "held" && row.holdSource !== "steward") {
+      await db.update(invoices).set({ holdSource: "steward" }).where(eq(invoices.fingerprint, row.fingerprint));
+    }
     results.push(result);
   }
   return results;
 }
 
-function statusFor(r: StewardResult, mode: string): (typeof invoices.$inferSelect)["status"] | undefined {
+function statusFor(r: StewardResult, mode: string, currentStatus?: string): (typeof invoices.$inferSelect)["status"] | undefined {
   switch (r.outcome) {
     case "rejected":
       return "rejected";
@@ -139,7 +154,9 @@ function statusFor(r: StewardResult, mode: string): (typeof invoices.$inferSelec
     case "awaiting_approval":
       return "awaiting_approval";
     case "proposed":
-      return mode === "assist" ? "awaiting_approval" : undefined;
+      if (mode === "assist") return "awaiting_approval";
+      if (currentStatus === "held") return "verified";
+      return undefined;
     default:
       return undefined; // paid / already_settled: chain sync sets the status from the ledger
   }

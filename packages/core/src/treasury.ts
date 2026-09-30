@@ -102,9 +102,10 @@ export async function runTreasury(env: StewardEnv, businessId: string, opts: Tre
   const { hash } = hashRecord(record);
   const call = build(hash);
   await env.db.insert(decisions).values({ businessId, kind: record.kind, record: record as unknown as Record<string, unknown>, hash });
-  if (mode !== "auto" || !env.wallet) return { action: plan.action, reason: plan.reason, record, hash, call };
+  const wallet = (env.walletFor ? await env.walletFor({ id: businessId, vault, stewardWallet: biz.stewardWallet }) : undefined) ?? env.wallet;
+  if (mode !== "auto" || !wallet) return { action: plan.action, reason: plan.reason, record, hash, call };
 
-  await simulateCall(env.client, call, env.wallet.address);
-  const txHash = await env.wallet.send(call);
+  await simulateCall(env.client, call, wallet.address);
+  const txHash = await wallet.send(call);
   return { action: plan.action, reason: plan.reason, record, hash, call, txHash };
 }

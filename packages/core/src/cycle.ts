@@ -31,10 +31,12 @@ export async function runCycle(
   const all = await env.db.select().from(businesses).where(isNotNull(businesses.vault));
   for (const biz of all) {
     try {
-      await syncVault(env.db, env.client, env.deployment, getAddress(biz.vault!));
+      const vault = getAddress(biz.vault!);
+      await syncVault(env.db, env.client, env.deployment, vault);
       const decisions = await runSteward(env, biz.id);
       const treasury = await runTreasury(env, biz.id, opts.treasury ?? DEFAULT_TREASURY);
-      const anchored = opts.anchor ? await anchorDecisions(env.db, biz.id, env.wallet) : undefined;
+      const wallet = (env.walletFor ? await env.walletFor({ id: biz.id, vault, stewardWallet: biz.stewardWallet }) : undefined) ?? env.wallet;
+      const anchored = opts.anchor ? await anchorDecisions(env.db, biz.id, wallet) : undefined;
       report.businesses.push({ id: biz.id, decisions: decisions.length, treasury: treasury.action, ...(anchored ? { anchored: anchored.count } : {}) });
     } catch (error) {
       report.businesses.push({ id: biz.id, decisions: 0, treasury: "none", error: String((error as Error).message ?? error).slice(0, 300) });

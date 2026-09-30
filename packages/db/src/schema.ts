@@ -130,12 +130,17 @@ export const businesses = pgTable(
     stewardWallet: address("steward_wallet"),
     /** How far the Steward may act: shadow (records only), assist (asks), auto (acts within the Vault's rules) */
     stewardMode: text("steward_mode").notNull().default("shadow"),
+    /** Early Pay program settings; null means disabled */
+    earlyPay: jsonb("early_pay").$type<{ enabled: boolean; minSpreadBps: number; cashCapBps: number } | null>(),
+    /** Block number where the Vault was deployed (sync start point) */
+    vaultBlock: bigint("vault_block", { mode: "bigint" }),
     createdAt: createdAt(),
   },
   (t) => [
     uniqueIndex("businesses_vault_key").on(t.chainId, t.vault),
     check("businesses_vault_format", sql`${t.vault} ~ ${sql.raw(`'${ADDRESS}'`)}`),
     check("businesses_steward_mode", sql`${t.stewardMode} in ('shadow', 'assist', 'auto')`),
+    check("businesses_vault_block_check", sql`${t.vaultBlock} is null or ${t.vaultBlock} >= 0`),
   ],
 );
 
@@ -289,7 +294,7 @@ export const invoices = pgTable(
     syncedBlock: bigint("synced_block", { mode: "bigint" }),
     source: text("source").notNull(),
     /**
-     * Who placed the hold (plan 05n, N2). `steward` = the Steward holds it and can reconsider each run.
+     * Who placed the hold. `steward` = the Steward holds it and can reconsider each run.
      * `human` = a delivery rejection; never released by a Steward re-run — only by a delivery confirmation.
      * Null when status is not `held`.
      */
@@ -512,6 +517,30 @@ export const decisionAnchors = pgTable("decision_anchors", {
   txHash: hash("tx_hash"),
   createdAt: createdAt(),
 });
+
+/** Execution history and leases for Steward passes */
+export const stewardRuns = pgTable(
+  "steward_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id").notNull().references(() => businesses.id),
+    trigger: text("trigger").notNull(),
+    mode: text("mode").notNull(),
+    status: text("status").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    startedBy: uuid("started_by").references(() => users.id),
+    summary: jsonb("summary").$type<Record<string, unknown>>().notNull().default({}),
+    error: text("error"),
+  },
+  (t) => [
+    uniqueIndex("steward_runs_active_unique").on(t.businessId).where(sql`${t.status} = 'running'`),
+    index("steward_runs_business_started_idx").on(t.businessId, t.startedAt),
+    check("steward_runs_trigger_check", sql`${t.trigger} in ('manual', 'schedule')`),
+    check("steward_runs_mode_check", sql`${t.mode} in ('shadow', 'assist', 'auto')`),
+    check("steward_runs_status_check", sql`${t.status} in ('running', 'done', 'failed', 'skipped_paused', 'skipped_fees')`),
+  ],
+);
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Chain sync

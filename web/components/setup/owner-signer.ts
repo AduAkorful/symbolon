@@ -17,6 +17,7 @@ export type SignerPlan =
 export interface Call {
   to: string;
   data: string;
+  value?: string;
 }
 
 /** EIP-1193 code for "the person closed the request" and for "this wallet doesn't know that chain" */
@@ -59,7 +60,9 @@ export async function sendWithWallet(providers: Eip1193[], plan: Extract<SignerP
   if (!p) throw new Error(wrongWalletMessage(plan.address));
   await ensureChain(p, plan.chain);
   await requireFees(p, plan.address);
-  const hash = (await p.request({ method: "eth_sendTransaction", params: [{ from: plan.address, to: call.to, data: call.data }] })) as string;
+  const params: Record<string, string> = { from: plan.address, to: call.to, data: call.data };
+  if (call.value) params.value = call.value;
+  const hash = (await p.request({ method: "eth_sendTransaction", params: [params] })) as string;
   if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) throw new Error("The wallet didn't return a transaction hash.");
   return hash;
 }

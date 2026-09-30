@@ -17,6 +17,7 @@ export function BusinessNav({ inboxCount }: { inboxCount?: number }) {
     { name: "Inbox", href: "/business/inbox", count: inboxCount },
     { name: "Vendors", href: "/business/vendors" },
     { name: "Orders", href: "/business/orders" },
+    { name: "Steward", href: "/business/steward" },
   ];
 
   const isActive = (href: string) =>

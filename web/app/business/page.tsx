@@ -64,14 +64,21 @@ export default async function BusinessHome() {
                   ) : standing.kind === "mismatch" ? (
                     <span className="text-red">The Steward this Vault reports isn’t the wallet we set up for this business. Don’t rely on it.</span>
                   ) : (
-                    <StewardSwitch
-                      businessId={b.id}
-                      state={standing.kind}
-                      block={standing.block.toString()}
-                      steward={standing.steward}
-                      signer={b.role === "owner" ? signerPlanFor(session, config) : null}
-                      explorer={explorer}
-                    />
+                    <>
+                      <StewardSwitch
+                        businessId={b.id}
+                        state={standing.kind}
+                        block={standing.block.toString()}
+                        steward={standing.steward}
+                        signer={b.role === "owner" ? signerPlanFor(session, config) : null}
+                        explorer={explorer}
+                      />
+                      <div className="mt-2">
+                        <Link href="/business/steward" className="text-xs text-graphite hover:text-ink underline decoration-rule underline-offset-4">
+                          Steward settings & activity →
+                        </Link>
+                      </div>
+                    </>
                   )}
                 </dd>
               </div>

@@ -1,4 +1,6 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
 import { symbolonVaultAbi } from "@symbolon/chain";
 import { decodeFunctionData, encodeAbiParameters, encodeFunctionData, encodeEventTopics, erc20Abi, getAddress, decodeFunctionData as decode, type Hex, type PublicClient } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
@@ -47,7 +49,7 @@ function receipt(o: { status?: "success" | "reverted"; to?: string; logAddress?:
     topics: encodeEventTopics({ abi: vaultFactoryAbi, eventName: "VaultCreated", args: { vault: getAddress(vault), owner: getAddress(o.owner), steward: getAddress(o.steward) } }),
     data: encodeAbiParameters([{ type: "address" }], [fresh()]),
   };
-  return { vault, r: { status: o.status ?? "success", to: o.to ?? factory, logs: Array.from({ length: o.logs ?? 1 }, () => log) } };
+  return { vault, r: { status: o.status ?? "success", to: o.to ?? factory, blockNumber: 1000n, logs: Array.from({ length: o.logs ?? 1 }, () => log) } };
 }
 
 /** A chain that knows one transaction, and says which vaults the factory made and who owns them */

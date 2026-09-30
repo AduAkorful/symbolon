@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { businesses, createTestDb, decisions, deliveries, invoices, payees, purchaseOrders, seals, sessions, unsignedBills, users, vendorClients, vendorInvitations, vendorVerifications } from "../src/index.js";
+import { businesses, createTestDb, decisions, deliveries, invoices, payees, purchaseOrders, seals, sessions, stewardRuns, unsignedBills, users, vendorClients, vendorInvitations, vendorVerifications } from "../src/index.js";
 
 type TestDb = Awaited<ReturnType<typeof createTestDb>>;
 
@@ -223,4 +223,77 @@ describe("schema", () => {
     // Both together is fine
     await db.update(purchaseOrders).set({ closedAt: new Date(), closedTx: `0x${"bb".repeat(32)}` }).where(eq(purchaseOrders.poRef, po.poRef));
   });
+
+  // S6 (05o): steward_runs checks and partial unique index
+  it("enforces steward_runs status/trigger checks and single active running lease", async () => {
+    const { biz, user } = await seed(db);
+    // Invalid trigger
+    await expect(
+      db.insert(stewardRuns).values({
+        businessId: biz.id,
+        trigger: "api" as never,
+        mode: "shadow",
+        status: "running",
+      }),
+    ).rejects.toThrow();
+
+    // Invalid status
+    await expect(
+      db.insert(stewardRuns).values({
+        businessId: biz.id,
+        trigger: "manual",
+        mode: "shadow",
+        status: "pending" as never,
+      }),
+    ).rejects.toThrow();
+
+    // Valid running run
+    const [run1] = await db
+      .insert(stewardRuns)
+      .values({
+        businessId: biz.id,
+        trigger: "manual",
+        mode: "shadow",
+        status: "running",
+        startedBy: user.id,
+      })
+      .returning();
+    expect(run1!.status).toBe("running");
+
+    // Second simultaneous running run for the same business fails unique partial index
+    await expect(
+      db.insert(stewardRuns).values({
+        businessId: biz.id,
+        trigger: "schedule",
+        mode: "shadow",
+        status: "running",
+      }),
+    ).rejects.toThrow();
+
+    // Mark first as done
+    await db.update(stewardRuns).set({ status: "done", finishedAt: new Date() }).where(eq(stewardRuns.id, run1!.id));
+
+    // Now a new running run can be inserted
+    const [run2] = await db
+      .insert(stewardRuns)
+      .values({
+        businessId: biz.id,
+        trigger: "schedule",
+        mode: "shadow",
+        status: "running",
+      })
+      .returning();
+    expect(run2!.status).toBe("running");
+  });
+
+  // S9 (05o): businesses vault_block check
+  it("enforces non-negative vault_block on businesses", async () => {
+    const [b] = await db.insert(businesses).values({ name: "BlockTest", chainId: 5_042_002, vaultBlock: 100n }).returning();
+    expect(b!.vaultBlock).toBe(100n);
+
+    await expect(
+      db.insert(businesses).values({ name: "NegBlock", chainId: 5_042_002, vaultBlock: -1n }),
+    ).rejects.toThrow();
+  });
 });
+

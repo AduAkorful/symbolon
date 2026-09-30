@@ -8,7 +8,7 @@ export type Role = (typeof members.$inferSelect)["role"];
 export interface Spaces {
   /** The person's current Seal (the newest one not replaced by a rotation), if they have one */
   seal: { address: string; handle: string; displayName: string } | null;
-  businesses: { id: string; name: string; role: Role; vault: string | null; stewardWallet: string | null }[];
+  businesses: { id: string; name: string; role: Role; vault: string | null; stewardWallet: string | null; stewardMode: string }[];
 }
 
 async function currentSeal(db: Database, userId: string): Promise<Spaces["seal"]> {
@@ -24,7 +24,7 @@ async function currentSeal(db: Database, userId: string): Promise<Spaces["seal"]
 /** Everything a person belongs to on this chain: their Seal and each business they're a member of */
 export async function spacesFor(db: Database, userId: string, chainId: number): Promise<Spaces> {
   const rows = await db
-    .select({ id: businesses.id, name: businesses.name, role: members.role, vault: businesses.vault, stewardWallet: businesses.stewardWallet })
+    .select({ id: businesses.id, name: businesses.name, role: members.role, vault: businesses.vault, stewardWallet: businesses.stewardWallet, stewardMode: businesses.stewardMode })
     .from(members)
     .innerJoin(businesses, eq(businesses.id, members.businessId))
     .where(and(eq(members.userId, userId), eq(businesses.chainId, chainId)))

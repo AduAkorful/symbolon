@@ -1,9 +1,10 @@
 import { and, count, eq, isNull } from "drizzle-orm";
-import { encodeFunctionData, erc20Abi, getAddress, parseEventLogs, parseUnits, type Address, type Hex, type PublicClient } from "viem";
+import { encodeFunctionData, erc20Abi, getAddress, parseAbiItem, parseEventLogs, parseUnits, type Address, type Hex, type PublicClient } from "viem";
 import { createVaultCall, policyTemplate, recordVault, registerBusiness, type PolicyTemplate } from "@symbolon/core";
 import { symbolonContracts, toTransaction, vaultCall, vaultFactoryAbi, type Deployment } from "@symbolon/chain";
 import { businesses, members, type Database } from "@symbolon/db";
 import { requireMember } from "./access";
+import { appendAppDecision } from "./app-decisions";
 import { AuthError } from "./errors";
 import { describePolicy, isTemplate, type PolicyText } from "./policy-text";
 import type { SessionUser } from "./session";
@@ -122,14 +123,23 @@ export async function confirmVault(
   const { vault, owner: madeFor, steward: madeWith } = created[0]!.args;
   if (getAddress(madeFor) !== owner) throw new AuthError(403, "That Vault is owned by a different wallet than yours.");
 
+  const blockNumber = receipt.blockNumber !== undefined ? BigInt(receipt.blockNumber) : null;
   if (b.vault) {
-    if (getAddress(b.vault) === getAddress(vault)) return { vault: b.vault, txHash };
+    if (getAddress(b.vault) === getAddress(vault)) {
+      if ((b.vaultBlock === null || b.vaultBlock === undefined) && blockNumber !== null) {
+        await db.update(businesses).set({ vaultBlock: blockNumber }).where(eq(businesses.id, businessId));
+      }
+      return { vault: b.vault, txHash };
+    }
     throw new AuthError(409, "This business already has a different Vault.");
   }
   // H12: the chain must have got the Steward the server prepared for this business
   if (!b.stewardWallet || getAddress(madeWith) !== getAddress(b.stewardWallet)) throw new AuthError(409, "That Vault was made with a different Steward than this business's.");
   try {
     await recordVault(db, symbolonContracts(client, cfg.deployment), { businessId, vault, expectedOwner: owner, factories: [symbolonContracts(client, cfg.deployment).factory] });
+    if (blockNumber !== null) {
+      await db.update(businesses).set({ vaultBlock: blockNumber }).where(eq(businesses.id, businessId));
+    }
   } catch (e) {
     // the unique (chain, vault) index: someone recorded this Vault first
     if (/unique|duplicate/i.test(String((e as { cause?: Error }).cause?.message ?? e))) throw new AuthError(409, "That Vault is already recorded for another business.");
@@ -199,4 +209,113 @@ export async function vaultStanding(
     block: standing.kind === "paused" || standing.kind === "active" ? standing.block.toString() : null,
     reason: standing.kind === "unknown" ? standing.reason : standing.kind === "mismatch" ? "The Vault's Steward isn't the wallet we set up for this business." : null,
   };
+}
+
+/** 18-decimal native fee amounts: digits, optional dot, up to 18 decimals */
+export function parseNativeFeeAmount(text: unknown): bigint {
+  if (typeof text !== "string" || !/^\d{1,12}(\.\d{1,18})?$/.test(text.trim())) {
+    throw new AuthError(400, "Enter an amount like 0.1 or 1 (up to 18 decimals).");
+  }
+  const v = parseUnits(text.trim(), 18);
+  if (v <= 0n) throw new AuthError(400, "The amount has to be more than zero.");
+  return v;
+}
+
+export async function prepareFeeTransfer(
+  db: Database,
+  cfg: ChainSettings,
+  user: Pick<SessionUser, "id" | "wallet">,
+  businessId: string,
+  amount: unknown,
+): Promise<{ to: string; data: Hex; value: string; chainId: number; amount: string }> {
+  const b = await ownedBusiness(db, cfg, user, businessId);
+  if (!b.stewardWallet) throw new AuthError(409, "This business has no Steward wallet provisioned yet.");
+  const value = parseNativeFeeAmount(amount);
+  return {
+    to: b.stewardWallet,
+    data: "0x",
+    value: `0x${value.toString(16)}`,
+    chainId: cfg.chainId,
+    amount: value.toString(),
+  };
+}
+
+export async function recordFeeTransfer(
+  db: Database,
+  client: PublicClient,
+  cfg: ChainSettings,
+  user: Pick<SessionUser, "id" | "wallet">,
+  businessId: string,
+  txHash: unknown,
+): Promise<{ ok: boolean; txHash: string; balance: string }> {
+  if (typeof txHash !== "string" || !HASH.test(txHash)) throw new AuthError(400, "That isn't a transaction hash.");
+  const b = await ownedBusiness(db, cfg, user, businessId);
+  if (!b.stewardWallet) throw new AuthError(409, "This business has no Steward wallet provisioned yet.");
+  const owner = ownerWallet(user);
+
+  let receipt;
+  try {
+    receipt = await client.getTransactionReceipt({ hash: txHash as Hex });
+  } catch {
+    throw new AuthError(409, "That transaction isn't confirmed yet, or the chain can't be reached right now. Try again in a moment.");
+  }
+  if (receipt.status !== "success") throw new AuthError(409, "That transaction failed onchain.");
+  if (!receipt.to || getAddress(receipt.to) !== getAddress(b.stewardWallet)) {
+    throw new AuthError(409, "That transaction was not sent to this business's Steward wallet.");
+  }
+  if (getAddress(receipt.from) !== owner) {
+    throw new AuthError(403, "That transaction was not sent from your wallet.");
+  }
+
+  const tx = await client.getTransaction({ hash: txHash as Hex });
+  if (tx.value <= 0n) throw new AuthError(400, "That transaction did not transfer any native fee balance.");
+
+  await appendAppDecision(
+    db,
+    businessId,
+    {
+      kind: "steward_fees_funded",
+      actor: user.id,
+      inputs: {
+        amount: tx.value.toString(),
+        stewardWallet: b.stewardWallet,
+        txHash: (txHash as string).toLowerCase(),
+      },
+      rule: "the owner funded the Steward wallet with network fees",
+      outcome: "funded",
+    },
+  );
+
+  const balance = await client.getBalance({ address: getAddress(b.stewardWallet) });
+  return { ok: true, txHash: (txHash as string).toLowerCase(), balance: balance.toString() };
+}
+
+export async function ensureVaultBlock(
+  db: Database,
+  client: PublicClient,
+  deployment: Deployment,
+  businessId: string,
+  vaultAddress: string,
+): Promise<bigint> {
+  const [b] = await db.select({ vaultBlock: businesses.vaultBlock }).from(businesses).where(eq(businesses.id, businessId)).limit(1);
+  if (b?.vaultBlock !== null && b?.vaultBlock !== undefined) return b.vaultBlock;
+
+  try {
+    const factory = deployment.contracts.vaultFactory;
+    const logs = await client.getLogs({
+      address: factory,
+      event: parseAbiItem("event VaultCreated(address indexed vault, address indexed owner, address indexed steward, uint8 release, address token, bool autoUpdate)"),
+      args: { vault: getAddress(vaultAddress) },
+      fromBlock: BigInt(deployment.startBlock),
+      toBlock: "latest",
+    });
+    if (logs.length > 0 && logs[0]?.blockNumber) {
+      const bn = BigInt(logs[0].blockNumber);
+      await db.update(businesses).set({ vaultBlock: bn }).where(eq(businesses.id, businessId));
+      return bn;
+    }
+  } catch (err) {
+    console.error("ensureVaultBlock failed to backfill:", err);
+  }
+  return BigInt(deployment.startBlock);
 }

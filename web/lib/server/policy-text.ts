@@ -37,8 +37,8 @@ const NAMES: Record<PolicyTemplate, { name: string; blurb: string }> = {
   strict: { name: "Strict", blurb: "Lower limits and longer delays. New vendors’ first invoices go to a person." },
 };
 
-export function describe(key: PolicyTemplate, p: VaultPolicy): PolicyText {
-  const lines = [
+export function describePolicyLines(p: VaultPolicy): string[] {
+  return [
     `Auto-pay up to ${usd(p.autoPayLimit)} to vendors with ${p.newVendorMinPaid} or more paid ${p.newVendorMinPaid === 1 ? "invoice" : "invoices"}`,
     `Owner signs above ${usd(p.ownerThreshold)}`,
     `No single payment above ${usd(p.perTxCap)}`,
@@ -47,7 +47,10 @@ export function describe(key: PolicyTemplate, p: VaultPolicy): PolicyText {
     `Loosening changes wait ${duration(p.looseningDelay)}`,
     `Payout address and Seal changes wait ${duration(p.changeCooldown)}`,
   ];
-  return { key, ...NAMES[key], lines };
+}
+
+export function describe(key: PolicyTemplate, p: VaultPolicy): PolicyText {
+  return { key, ...NAMES[key], lines: describePolicyLines(p) };
 }
 
 export const TEMPLATES: PolicyTemplate[] = ["starter", "standard", "strict"];
