@@ -135,6 +135,8 @@ export const businesses = pgTable(
     earlyPay: jsonb("early_pay").$type<{ enabled: boolean; minSpreadBps: number; cashCapBps: number } | null>(),
     /** Block number where the Vault was deployed (sync start point) */
     vaultBlock: bigint("vault_block", { mode: "bigint" }),
+    /** Treasury buffer days: cash reserved for upcoming obligations (1..90, null = default 30) (plan 05r T9) */
+    bufferDays: integer("buffer_days"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -142,6 +144,7 @@ export const businesses = pgTable(
     check("businesses_vault_format", sql`${t.vault} ~ ${sql.raw(`'${ADDRESS}'`)}`),
     check("businesses_steward_mode", sql`${t.stewardMode} in ('shadow', 'assist', 'auto')`),
     check("businesses_vault_block_check", sql`${t.vaultBlock} is null or ${t.vaultBlock} >= 0`),
+    check("businesses_buffer_days_check", sql`${t.bufferDays} is null or (${t.bufferDays} >= 1 and ${t.bufferDays} <= 90)`),
   ],
 );
 
@@ -616,3 +619,35 @@ export const notifications = pgTable(
   },
   (t) => [index("notifications_user_unread").on(t.userId, t.readAt)],
 );
+
+export const queuedChangeStatus = pgEnum("queued_change_status", ["queued", "applied", "cancelled"]);
+
+/** Queued loosening changes delayed by the Vault (spec §9, plan 05t Q1) */
+export const queuedChanges = pgTable(
+  "queued_changes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id").notNull().references(() => businesses.id),
+    kind: text("kind").notNull(),
+    changeId: hash("change_id").notNull(),
+    selector: text("selector").notNull(),
+    calldata: text("calldata"),
+    summary: jsonb("summary").$type<Record<string, unknown>>().notNull(),
+    createdBy: uuid("created_by").references(() => users.id),
+    eta: timestamp("eta", { withTimezone: true }).notNull(),
+    status: queuedChangeStatus("status").notNull().default("queued"),
+    queueTx: text("queue_tx"),
+    appliedTx: text("applied_tx"),
+    cancelledTx: text("cancelled_tx"),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("queued_changes_business_change_id_key").on(t.businessId, t.changeId),
+    index("queued_changes_business_status_idx").on(t.businessId, t.status),
+    index("queued_changes_business_eta_idx").on(t.businessId, t.eta),
+    check("queued_changes_change_id_format", sql`${t.changeId} ~ ${sql.raw(`'${HASH}'`)}`),
+    check("queued_changes_selector_format", sql`${t.selector} ~ '^0x[0-9a-f]{8}$'`),
+  ],
+);
+

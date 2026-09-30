@@ -4,7 +4,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { formatUnits, getAddress, type Address, type PublicClient } from "viem";
 
 import { reserveYield, symbolonContracts } from "@symbolon/chain";
-import { runSteward, syncVault, type StewardEnv } from "@symbolon/core";
+import { runSteward, runTreasury, syncVault, type StewardEnv } from "@symbolon/core";
 import { businesses, decisions, stewardRuns, type Database } from "@symbolon/db";
 import { CircleStewardWallet, createCircleClient, DEFAULT_EARLY_PAY, provisionStewardWallet, type EarlyPayProgram, type StewardWallet } from "@symbolon/steward";
 
@@ -115,7 +115,7 @@ export async function buildStewardEnv(
     contracts,
     deployment: cfg.deployment,
     program,
-    bufferDays: 30,
+    bufferDays: business.bufferDays ?? 30,
     reserveYieldBps,
     model,
     walletFor: async (b) => resolveStewardWallet(client, cfg, b),
@@ -230,6 +230,18 @@ export async function runForBusiness(
     const env = await buildStewardEnv(db, client, cfg, b);
     const results = await runSteward(env, businessId);
 
+    // T8: Treasury run after invoice pass, only when reserve is available
+    let treasuryAction: string | null = null;
+    try {
+      const status = await contracts.lens.read.reserveStatus([vault]);
+      if (status.usycTeller !== "0x0000000000000000000000000000000000000000") {
+        const treasuryResult = await runTreasury(env, businessId);
+        treasuryAction = treasuryResult.action;
+      }
+    } catch (treasuryErr) {
+      console.warn("Treasury run failed; invoice pass succeeded:", treasuryErr);
+    }
+
     const outcomes: Record<string, number> = {};
     for (const r of results) {
       outcomes[r.outcome] = (outcomes[r.outcome] ?? 0) + 1;
@@ -238,6 +250,7 @@ export async function runForBusiness(
     const summary = {
       invoicesConsidered: results.length,
       outcomes,
+      treasuryAction,
     };
 
     const [done] = await db

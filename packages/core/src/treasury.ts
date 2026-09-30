@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { getAddress, type Hex } from "viem";
 
 import { previewRedeem, previewSubscribe, simulateCall, vaultCall, withSlippage, type ContractCall } from "@symbolon/chain";
@@ -101,7 +101,37 @@ export async function runTreasury(env: StewardEnv, businessId: string, opts: Tre
 
   const { hash } = hashRecord(record);
   const call = build(hash);
-  await env.db.insert(decisions).values({ businessId, kind: record.kind, record: record as unknown as Record<string, unknown>, hash });
+  const subject = "treasury:reserve";
+
+  const [last] = await env.db
+    .select()
+    .from(decisions)
+    .where(and(eq(decisions.businessId, businessId), eq(decisions.kind, record.kind), eq(decisions.subject, subject)))
+    .orderBy(desc(decisions.createdAt))
+    .limit(1);
+
+  const lastInputs = (last?.record as { inputs?: { plan?: { action?: string; assets?: string | bigint; shares?: string | bigint } } })?.inputs;
+  const lastPlan = lastInputs?.plan;
+  const lastOutcome = (last?.record as { outcome?: string })?.outcome;
+
+  const isDuplicate =
+    mode !== "auto" &&
+    last &&
+    lastOutcome === record.outcome &&
+    lastPlan?.action === plan.action &&
+    String(lastPlan?.assets ?? "") === String((plan as any).assets ?? "") &&
+    String(lastPlan?.shares ?? "") === String((plan as any).shares ?? "");
+
+  if (!isDuplicate) {
+    await env.db.insert(decisions).values({
+      businessId,
+      kind: record.kind,
+      subject,
+      record: record as unknown as Record<string, unknown>,
+      hash,
+    }).onConflictDoNothing();
+  }
+
   const wallet = (env.walletFor ? await env.walletFor({ id: businessId, vault, stewardWallet: biz.stewardWallet }) : undefined) ?? env.wallet;
   if (mode !== "auto" || !wallet) return { action: plan.action, reason: plan.reason, record, hash, call };
 
@@ -109,3 +139,4 @@ export async function runTreasury(env: StewardEnv, businessId: string, opts: Tre
   const txHash = await wallet.send(call);
   return { action: plan.action, reason: plan.reason, record, hash, call, txHash };
 }
+

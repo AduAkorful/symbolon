@@ -196,6 +196,9 @@ importers:
       '@symbolon/db':
         specifier: workspace:*
         version: link:../packages/db
+      '@symbolon/kits':
+        specifier: workspace:*
+        version: link:../packages/kits
       '@symbolon/seal':
         specifier: workspace:*
         version: link:../packages/seal

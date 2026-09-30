@@ -1,13 +1,13 @@
 import Link from "next/link";
-
-import type { NeedsYouSummary, TodaySummary } from "@/lib/server/home";
+import type { AheadSummary, NeedsYouSummary, TodaySummary } from "@/lib/server/home";
 
 interface Props {
   needsYou: NeedsYouSummary;
   today: TodaySummary;
+  ahead?: AheadSummary;
 }
 
-export function HomeQueues({ needsYou, today }: Props) {
+export function HomeQueues({ needsYou, today, ahead }: Props) {
   const totalNeedsCount =
     needsYou.awaitingApproval.count +
     needsYou.stewardHeld.count +
@@ -231,6 +231,64 @@ export function HomeQueues({ needsYou, today }: Props) {
           </Link>
         </div>
       </section>
+
+      {/* Ahead section across bottom */}
+      {ahead && (
+        <section aria-labelledby="ahead-title" className="space-y-4 xl:col-span-2 border-t border-rule pt-8">
+          <div className="flex items-baseline justify-between border-b border-rule pb-3">
+            <div>
+              <h2 id="ahead-title" className="font-display text-3xl text-ink">
+                Ahead
+              </h2>
+              <p className="mt-1 text-xs text-graphite">{ahead.runwayStatement}</p>
+            </div>
+            <Link
+              href="/business/treasury"
+              className="text-xs text-graphite underline decoration-rule underline-offset-4 hover:text-ink"
+            >
+              Full treasury & forecast →
+            </Link>
+          </div>
+
+          {/* Shortfalls banner if any */}
+          {ahead.shortfalls.length > 0 && (
+            <div className="space-y-2">
+              {ahead.shortfalls.map((sf, idx) => (
+                <div key={idx} className="rounded-doc border border-red/40 bg-red-wash/20 p-4 text-xs text-red">
+                  <span className="font-bold">{sf.tokenSymbol} shortfall: </span>
+                  Upcoming bills total {sf.tokenSymbol} {sf.dueFormatted}, which is {sf.tokenSymbol} {sf.shortFormatted} short.
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Upcoming 5 invoices */}
+          {ahead.upcomingInvoices.length === 0 ? (
+            <p className="rounded-doc border border-rule-soft bg-paper-raised p-6 text-sm text-graphite text-center">
+              No unpaid invoices coming due in the forecast.
+            </p>
+          ) : (
+            <div className="divide-y divide-rule border-y border-rule text-xs">
+              {ahead.upcomingInvoices.map((inv) => (
+                <div key={inv.fingerprint} className="py-2.5 flex items-center justify-between">
+                  <div>
+                    <span className="font-medium text-ink">{inv.vendorName}</span>
+                    <span className="text-graphite ml-2 font-mono">#{inv.invoiceNumber}</span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-graphite">
+                      Due {new Date(inv.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </span>
+                    <span className="font-mono font-medium text-ink">
+                      {inv.token === "EURC" ? "€" : "$"}{inv.amountFormatted}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

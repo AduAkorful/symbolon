@@ -1,7 +1,7 @@
 import "server-only";
 
 import { and, desc, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
-import { getAddress, type PublicClient } from "viem";
+import { erc20Abi, getAddress, type PublicClient } from "viem";
 
 import {
   businesses,
@@ -15,6 +15,7 @@ import {
   type Database,
 } from "@symbolon/db";
 import { decodeSealedInvoice, verifySealedInvoice } from "@symbolon/seal";
+import { forecast, runwayDays, tokenShortfalls } from "@symbolon/steward";
 
 import { requireMember, type Role } from "./access";
 import type { ChainSettings } from "./business";
@@ -67,6 +68,24 @@ export interface TodaySummary {
   decisionsCount: number;
   asOfBlock?: string;
   asOfTime: Date;
+}
+
+export interface AheadSummary {
+  upcomingInvoices: Array<{
+    fingerprint: string;
+    invoiceNumber: string;
+    vendorName: string;
+    amountFormatted: string;
+    dueDate: Date;
+    token: string;
+  }>;
+  shortfalls: Array<{
+    tokenSymbol: string;
+    shortFormatted: string;
+    dueFormatted: string;
+    earliestDueDate: Date | null;
+  }>;
+  runwayStatement: string;
 }
 
 function formatAmount(raw: bigint, decimals: number): string {
@@ -348,5 +367,138 @@ export async function loadToday(
     decisionsCount: decisionsTodayRows.length,
     asOfBlock,
     asOfTime: now,
+  };
+}
+
+/**
+ * Loads the "Ahead" summary for the home screen (Decision T14).
+ * Upcoming invoices, shortfalls, and runway statement.
+ */
+export async function loadAhead(
+  db: Database,
+  client: PublicClient,
+  cfg: ChainSettings,
+  user: Pick<SessionUser, "id">,
+  businessId: string,
+): Promise<AheadSummary> {
+  await requireMember(db, user.id, businessId, ...VIEW_ROLES);
+
+  const [biz] = await db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1);
+  if (!biz || !biz.vault) {
+    return {
+      upcomingInvoices: [],
+      shortfalls: [],
+      runwayStatement: "No Vault created yet.",
+    };
+  }
+
+  const vault = getAddress(biz.vault);
+  const usdcToken = cfg.deployment.tokens.usdc;
+  const eurcToken = cfg.deployment.tokens.eurc;
+
+  let usdcBal = 0n;
+  let eurcBal = 0n;
+
+  try {
+    const [u, e] = await Promise.all([
+      client.readContract({
+        address: usdcToken,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [vault],
+      }),
+      client.readContract({
+        address: eurcToken,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [vault],
+      }),
+    ]);
+    usdcBal = u;
+    eurcBal = e;
+  } catch {
+    // balance read may fail in offline or mock test
+  }
+
+  const unpaid = await db
+    .select({
+      fingerprint: invoices.fingerprint,
+      invoiceNumber: invoices.invoiceNumber,
+      vendorName: seals.displayName,
+      vendorHandle: seals.handle,
+      token: invoices.token,
+      total: invoices.total,
+      credited: invoices.credited,
+      dueDate: invoices.dueDate,
+    })
+    .from(invoices)
+    .leftJoin(seals, eq(invoices.seal, seals.address))
+    .where(
+      and(
+        eq(invoices.businessId, businessId),
+        inArray(invoices.status, ["verified", "scheduled", "awaiting_approval", "held"]),
+      ),
+    )
+    .orderBy(invoices.dueDate);
+
+  const nowSec = BigInt(Math.floor(Date.now() / 1000));
+  const flows = unpaid.map((inv) => {
+    const remaining = inv.total > inv.credited ? inv.total - inv.credited : 0n;
+    return {
+      at: BigInt(Math.floor(inv.dueDate.getTime() / 1000)),
+      amount: remaining,
+      direction: "out" as const,
+      ref: inv.fingerprint,
+      token: inv.token.toLowerCase(),
+      vendor: inv.vendorName || inv.vendorHandle || "Unknown vendor",
+      invoiceNumber: inv.invoiceNumber,
+      dueDate: inv.dueDate,
+    };
+  });
+
+  const usdcAddress = usdcToken.toLowerCase();
+  const eurcAddress = eurcToken.toLowerCase();
+
+  const balancesMap = new Map<string, bigint>();
+  balancesMap.set(usdcAddress, usdcBal);
+  balancesMap.set(eurcAddress, eurcBal);
+
+  const rawShortfalls = tokenShortfalls(balancesMap, flows, nowSec, 30);
+  const shortfallsList = rawShortfalls.map((s) => {
+    const isEurc = s.token === eurcAddress;
+    const symbol = isEurc ? "EURC" : "USDC";
+    const invs = flows.filter((f) => f.token === s.token && s.refs.includes(f.ref));
+    return {
+      tokenSymbol: symbol,
+      shortFormatted: formatAmount(s.short, 6),
+      dueFormatted: formatAmount(s.due, 6),
+      earliestDueDate: invs[0] ? invs[0].dueDate : null,
+    };
+  });
+
+  const usdcFlows = flows.filter((f) => f.token === usdcAddress);
+  const runway = runwayDays(usdcBal, usdcFlows, nowSec, 35);
+  let runwayStatement = "Cash covers everything due in the next 35 days.";
+  if (runway !== undefined) {
+    const shortDate = new Date(Date.now() + runway * 86_400_000).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+    runwayStatement = `Cash runs short on ${shortDate} (USDC).`;
+  }
+
+  const upcomingInvoices = unpaid.slice(0, 5).map((inv) => ({
+    fingerprint: inv.fingerprint,
+    invoiceNumber: inv.invoiceNumber,
+    vendorName: inv.vendorName || inv.vendorHandle || "Unknown vendor",
+    amountFormatted: formatAmount(inv.total > inv.credited ? inv.total - inv.credited : 0n, 6),
+    dueDate: inv.dueDate,
+    token: inv.token.toLowerCase() === eurcAddress ? "EURC" : "USDC",
+  }));
+
+  return {
+    upcomingInvoices,
+    shortfalls: shortfallsList,
+    runwayStatement,
   };
 }

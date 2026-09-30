@@ -11,7 +11,7 @@ import { loadSpaces } from "@/lib/server/space";
 import { readVaultState, readVaultSummary, stewardStanding } from "@/lib/server/vault-read";
 import { signerPlanFor } from "@/lib/server/signer-plan";
 import { StewardSwitch } from "@/components/steward/StewardSwitch";
-import { loadNeedsYou, loadToday } from "@/lib/server/home";
+import { loadAhead, loadNeedsYou, loadToday } from "@/lib/server/home";
 import { HomeQueues } from "@/components/home/HomeQueues";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +30,7 @@ export default async function BusinessHome() {
   const db = await getDb();
   const needsYou = b ? await loadNeedsYou(db, getClient(), config, session.user, b.id) : null;
   const today = b ? await loadToday(db, getClient(), config, session.user, b.id) : null;
+  const ahead = b ? await loadAhead(db, getClient(), config, session.user, b.id) : null;
 
   return (
     <Shell
@@ -118,7 +119,7 @@ export default async function BusinessHome() {
           </div>
 
           {needsYou && today ? (
-            <HomeQueues needsYou={needsYou} today={today} />
+            <HomeQueues needsYou={needsYou} today={today} ahead={ahead ?? undefined} />
           ) : null}
         </div>
       ) : (

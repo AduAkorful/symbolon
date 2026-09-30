@@ -22,6 +22,7 @@ export function BusinessNav({
     { name: "Home", href: "/business" },
     { name: "Inbox", href: "/business/inbox", count: inboxCount },
     { name: "Approvals", href: "/business/approvals", count: approvalsCount },
+    { name: "Treasury", href: "/business/treasury" },
     { name: "Vendors", href: "/business/vendors" },
     { name: "Orders", href: "/business/orders" },
     { name: "Steward", href: "/business/steward" },

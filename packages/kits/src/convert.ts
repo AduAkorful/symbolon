@@ -1,6 +1,6 @@
 import { AppKit, SwapChain, type SwapEstimate, type SwapParams, type SwapResult } from "@circle-fin/app-kit";
-import { createViemAdapterFromPrivateKey } from "@circle-fin/adapter-viem-v2";
-import { createPublicClient, createWalletClient, fallback, formatUnits, http, type Address, type Hex } from "viem";
+import { createViemAdapterFromPrivateKey, createViemAdapterFromProvider } from "@circle-fin/adapter-viem-v2";
+import { createPublicClient, createWalletClient, fallback, formatUnits, http, type Address, type EIP1193Provider, type Hex } from "viem";
 
 import { arcChain, arcMainnet, arcTestnet } from "@symbolon/chain";
 
@@ -35,6 +35,17 @@ export function conversionKitFromPrivateKey(privateKey: Hex, chainId: number): C
     privateKey,
     getPublicClient: () => createPublicClient({ chain, transport }) as never,
     getWalletClient: ({ account }) => createWalletClient({ chain, account, transport }),
+  });
+  return { kit: new AppKit(), adapter: adapter as never, chainId };
+}
+
+/** A browser-side kit signing with an EIP-1193 provider (e.g. wallet), pinned to the docs.arc.io RPCs */
+export async function conversionKitFromProvider(provider: EIP1193Provider | unknown, chainId: number): Promise<ConversionKit> {
+  const chain = arcChain(chainId);
+  const transport = fallback(chain.rpcUrls.default.http.map((u) => http(u)));
+  const adapter = await createViemAdapterFromProvider({
+    provider: provider as never,
+    getPublicClient: () => createPublicClient({ chain, transport }) as never,
   });
   return { kit: new AppKit(), adapter: adapter as never, chainId };
 }

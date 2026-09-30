@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { businesses, createTestDb, decisions, deliveries, earlyPayOffers, invoices, payees, purchaseOrders, screenings, seals, sessions, stewardRuns, unsignedBills, users, vendorClients, vendorInvitations, vendorRequests, vendorVerifications } from "../src/index.js";
+import { businesses, createTestDb, decisions, deliveries, earlyPayOffers, invoices, payees, purchaseOrders, queuedChanges, screenings, seals, sessions, stewardRuns, unsignedBills, users, vendorClients, vendorInvitations, vendorRequests, vendorVerifications } from "../src/index.js";
 
 type TestDb = Awaited<ReturnType<typeof createTestDb>>;
 
@@ -441,5 +441,106 @@ describe("schema", () => {
       }),
     ).rejects.toThrow();
   });
+
+  it("enforces businesses.buffer_days bounds (1..90 or null)", async () => {
+    // Allows null
+    const [b1] = await db.insert(businesses).values({ name: "NullBuffer", chainId: 5_042_002, bufferDays: null }).returning();
+    expect(b1!.bufferDays).toBeNull();
+
+    // Allows 1 and 90
+    const [b2] = await db.insert(businesses).values({ name: "MinBuffer", chainId: 5_042_002, bufferDays: 1 }).returning();
+    expect(b2!.bufferDays).toBe(1);
+
+    const [b3] = await db.insert(businesses).values({ name: "MaxBuffer", chainId: 5_042_002, bufferDays: 90 }).returning();
+    expect(b3!.bufferDays).toBe(90);
+
+    // Rejects 0
+    await expect(
+      db.insert(businesses).values({ name: "ZeroBuffer", chainId: 5_042_002, bufferDays: 0 }),
+    ).rejects.toThrow();
+
+    // Rejects 91
+    await expect(
+      db.insert(businesses).values({ name: "HighBuffer", chainId: 5_042_002, bufferDays: 91 }),
+    ).rejects.toThrow();
+  });
+
+  it("enforces queued_changes format, status, and per-business uniqueness", async () => {
+    const { user, biz } = await seed(db);
+    const [biz2] = await db.insert(businesses).values({ name: "Beta", chainId: 5_042_002 }).returning();
+
+    const changeId = `0x${"11".repeat(32)}`;
+    const selector = "0x12345678";
+    const eta = new Date(Date.now() + 86400000);
+
+    // Valid insertion
+    const [qc] = await db
+      .insert(queuedChanges)
+      .values({
+        businessId: biz.id,
+        kind: "set_policy",
+        changeId,
+        selector,
+        calldata: "0x12345678abcdef",
+        summary: { what: "update policy" },
+        createdBy: user.id,
+        eta,
+        status: "queued",
+      })
+      .returning();
+    expect(qc!.id).toBeDefined();
+    expect(qc!.status).toBe("queued");
+
+    // Rejects duplicate (businessId, changeId)
+    await expect(
+      db.insert(queuedChanges).values({
+        businessId: biz.id,
+        kind: "set_policy",
+        changeId,
+        selector,
+        summary: { what: "another update" },
+        eta,
+      }),
+    ).rejects.toThrow();
+
+    // Allows same changeId for a different business
+    const [qc2] = await db
+      .insert(queuedChanges)
+      .values({
+        businessId: biz2!.id,
+        kind: "set_policy",
+        changeId,
+        selector,
+        summary: { what: "beta update" },
+        eta,
+      })
+      .returning();
+    expect(qc2!.id).toBeDefined();
+
+    // Rejects invalid selector format
+    await expect(
+      db.insert(queuedChanges).values({
+        businessId: biz.id,
+        kind: "set_policy",
+        changeId: `0x${"22".repeat(32)}`,
+        selector: "not-a-selector",
+        summary: {},
+        eta,
+      }),
+    ).rejects.toThrow();
+
+    // Rejects invalid changeId format
+    await expect(
+      db.insert(queuedChanges).values({
+        businessId: biz.id,
+        kind: "set_policy",
+        changeId: "0xbad",
+        selector,
+        summary: {},
+        eta,
+      }),
+    ).rejects.toThrow();
+  });
 });
+
 

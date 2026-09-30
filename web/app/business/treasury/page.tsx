@@ -1,0 +1,74 @@
+import Link from "next/link";
+import { Shell } from "@/components/shell/Shell";
+import { TreasuryView } from "@/components/treasury/TreasuryView";
+import { getClient } from "@/lib/server/chain";
+import { getConfig } from "@/lib/server/config";
+import { getDb } from "@/lib/server/db";
+import { requirePageSession } from "@/lib/server/http";
+import { signerPlanFor } from "@/lib/server/signer-plan";
+import { loadSpaces } from "@/lib/server/space";
+import { loadTreasury } from "@/lib/server/treasury";
+
+export const dynamic = "force-dynamic";
+
+export default async function BusinessTreasuryPage() {
+  const session = await requirePageSession("/business/treasury");
+  const where = await loadSpaces(session);
+  const business = where.business;
+
+  if (!business) {
+    return (
+      <Shell where={where} current={{ kind: "business", id: "" }}>
+        <div className="max-w-[760px]">
+          <h1 className="font-display text-4xl">No business yet</h1>
+          <p className="mt-2 text-graphite">
+            You don’t belong to a business.{" "}
+            <Link href="/setup" className="text-ink underline decoration-rule underline-offset-4">
+              Set up a business
+            </Link>
+            .
+          </p>
+        </div>
+      </Shell>
+    );
+  }
+
+  if (!business.vault) {
+    return (
+      <Shell where={where} current={{ kind: "business", id: business.id }}>
+        <div className="max-w-[760px]">
+          <h1 className="font-display text-4xl">Vault not created yet</h1>
+          <p className="mt-2 text-graphite">
+            This business does not have an active Vault yet.{" "}
+            {business.role === "owner" ? (
+              <Link href={`/setup?business=${business.id}`} className="text-ink underline decoration-rule underline-offset-4">
+                Finish setting up
+              </Link>
+            ) : (
+              "Its owner hasn't finished setting up."
+            )}
+          </p>
+        </div>
+      </Shell>
+    );
+  }
+
+  const db = await getDb();
+  const config = getConfig();
+  const client = getClient();
+
+  const state = await loadTreasury(db, client, config.deployment, business.id, session.user);
+  const signer = signerPlanFor(session, config);
+
+  return (
+    <Shell where={where} current={{ kind: "business", id: business.id }}>
+      <TreasuryView
+        businessId={business.id}
+        initialState={state}
+        signer={signer}
+        explorer={config.deployment.explorer}
+        isOwner={business.role === "owner"}
+      />
+    </Shell>
+  );
+}

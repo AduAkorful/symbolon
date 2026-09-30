@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { decodeFunctionData, type Hex, type PublicClient } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -88,6 +89,17 @@ describe("treasury run", () => {
     expect((await runTreasury(env(db, status({ policy: { enabled: false, maxReserveBps: 0, minOperating: 0n } })), businessId)).action).toBe("none");
     expect((await runTreasury(env(db, status({ entitled: false })), businessId)).reason).toMatch(/allowlisted/);
     expect(await db.select().from(decisions)).toHaveLength(0);
+  });
+
+  it("deduplicates treasury decision rows across consecutive shadow runs with the same plan per T10", async () => {
+    await db.update(businesses).set({ stewardMode: "shadow" }).where(eq(businesses.id, businessId));
+    const r1 = await runTreasury(env(db, status()), businessId);
+    expect(r1.action).toBe("subscribe");
+    expect(await db.select().from(decisions)).toHaveLength(1);
+
+    const r2 = await runTreasury(env(db, status()), businessId);
+    expect(r2.action).toBe("subscribe");
+    expect(await db.select().from(decisions)).toHaveLength(1);
   });
 });
 
