@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { and, desc, eq } from "drizzle-orm";
+import { vendorRequests } from "@symbolon/db";
+import { VendorRequestsSection } from "@/components/business/VendorRequestsSection";
 import { AddPayee } from "@/components/inbox/AddPayee";
 import { ManageVendorBlock } from "@/components/inbox/ManageVendorBlock";
 import { VerifyVendor } from "@/components/inbox/VerifyVendor";
@@ -32,13 +35,20 @@ export default async function BusinessVendorDetailPage({ params }: { params: Pro
   if (!business) notFound();
   const { seal } = await params;
   const config = getConfig();
+  const db = await getDb();
   let vendor;
   try {
-    vendor = await vendorDetail(await getDb(), getClient(), config.deployment, session.user, business.id, seal);
+    vendor = await vendorDetail(db, getClient(), config.deployment, session.user, business.id, seal);
   } catch (error) {
     if (error instanceof AuthError && error.status === 404) notFound();
     throw error;
   }
+  const requests = await db
+    .select()
+    .from(vendorRequests)
+    .where(and(eq(vendorRequests.businessId, business.id), eq(vendorRequests.seal, seal.toLowerCase())))
+    .orderBy(desc(vendorRequests.createdAt));
+
   const isBlocked = vendor.status === "blocked";
   const mayVerify = business.role === "owner" || business.role === "approver";
   const signer = signerPlanFor(session, config);
@@ -104,6 +114,29 @@ export default async function BusinessVendorDetailPage({ params }: { params: Pro
           </li>)}
         </ul> : <p className="mt-3 text-sm text-graphite">No invoices on file for this business.</p>}
       </section>
+
+      {/* Payout change requests */}
+      <VendorRequestsSection
+        businessId={business.id}
+        seal={vendor.seal}
+        isOwner={business.role === "owner"}
+        isApprover={business.role === "approver"}
+        requests={requests.map((r) => {
+          const m = r.message as Record<string, unknown>;
+          return {
+            id: r.id,
+            seal: r.seal,
+            newPayout: String(m.newPayout ?? ""),
+            payoutDomain: Number(m.payoutDomain ?? 0),
+            nonce: String(m.nonce ?? ""),
+            status: r.status as any,
+            createdAt: r.createdAt.toISOString(),
+          };
+        })}
+        pendingPayout={vendor.canBePaid.confirmed && vendor.canBePaid.exists ? (vendor.canBePaid as any).pendingPayout : undefined}
+        pendingActiveAt={vendor.canBePaid.confirmed && vendor.canBePaid.exists && (vendor.canBePaid as any).pendingActiveAt ? Number((vendor.canBePaid as any).pendingActiveAt) : undefined}
+        signer={signer}
+      />
 
       <section className="mt-8 border-t border-rule pt-6">
         <h2 className="font-display text-2xl">Relationship controls</h2>

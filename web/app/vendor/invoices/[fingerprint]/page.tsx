@@ -1,11 +1,13 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { InvoiceDoc } from "@/components/InvoiceDoc";
+import { CancelInvoiceAction } from "@/components/vendor/CancelInvoiceAction";
 import { CopyLink } from "@/components/vendor/CopyLink";
+import { InvoiceDoc } from "@/components/InvoiceDoc";
 import { Shell } from "@/components/shell/Shell";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
 import { myInvoice } from "@/lib/server/invoice-send";
+import { signerPlanFor } from "@/lib/server/signer-plan";
 import { requireVendorPage } from "@/lib/server/vendor-page";
 import { toneClass, vendorStatus } from "@/lib/invoice-status";
 
@@ -15,11 +17,14 @@ export const dynamic = "force-dynamic";
 export default async function VendorInvoice({ params }: { params: Promise<{ fingerprint: string }> }) {
   const { fingerprint } = await params;
   const { session, seal, where } = await requireVendorPage(`/vendor/invoices/${fingerprint}`);
+  const config = getConfig();
+  const signer = signerPlanFor(session, config);
   const found = await myInvoice(await getDb(), session.user, fingerprint);
   if (!found) notFound();
   const st = vendorStatus(found.row.status);
-  const link = `${getConfig().appOrigin}/invoice/${found.row.fingerprint}`;
+  const link = `${config.appOrigin}/invoice/${found.row.fingerprint}`;
   const isSettled = found.row.status === "paid" || found.row.credited > 0n;
+  const isCancelled = found.row.status === "cancelled";
 
   return (
     <Shell where={where} current={{ kind: "vendor" }}>
@@ -29,7 +34,29 @@ export default async function VendorInvoice({ params }: { params: Promise<{ fing
           <p className={`font-mono text-xs uppercase tracking-[0.16em] ${toneClass[st.tone]}`}>{st.label}</p>
           <h1 className="mt-2 font-display text-4xl leading-none">Invoice {found.row.invoiceNumber}</h1>
           <p className="mt-3 max-w-[52ch] text-graphite">To {found.sealed.document.payer.name}. Send them this link; anyone who has it can open the invoice and check it.</p>
+          {found.sealed.document.replaces ? (
+            <p className="mt-2 text-xs font-mono text-seal">
+              Replaces invoice {found.sealed.document.replaces.slice(0, 10)}… (original cancels when settled)
+            </p>
+          ) : null}
           <CopyLink link={link} />
+
+          {/* Early pay and cancel actions for unpaid invoices */}
+          {!isSettled && !isCancelled ? (
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <Link
+                href={`/vendor/invoices/${found.row.fingerprint}/early`}
+                className="rounded-doc bg-ink px-4 py-2 text-xs font-medium text-paper hover:opacity-90"
+              >
+                Get paid early →
+              </Link>
+              <CancelInvoiceAction
+                fingerprint={found.row.fingerprint}
+                invoiceNumber={found.row.invoiceNumber}
+                signer={signer}
+              />
+            </div>
+          ) : null}
 
           {/* Public receipt link if settled onchain (Fact 4 / Decision A11 / A12) */}
           {isSettled ? (

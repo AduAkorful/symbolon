@@ -436,7 +436,7 @@ export const earlyPayOffers = pgTable(
   (t) => [
     index("early_pay_offers_fp").on(t.fingerprint),
     check("early_pay_offers_bps", sql`${t.discountBps} between 1 and 5000`),
-    check("early_pay_offers_status", sql`${t.status} in ('open', 'accepted', 'countered', 'declined', 'expired', 'used')`),
+    check("early_pay_offers_status", sql`${t.status} in ('open', 'accepted', 'countered', 'declined', 'expired', 'used', 'withdrawn')`),
   ],
 );
 
@@ -503,9 +503,10 @@ export const vendorRequests = pgTable(
   },
   (t) => [
     index("vendor_requests_business_status").on(t.businessId, t.status),
-    uniqueIndex("vendor_requests_signature_key").on(t.signature),
+    uniqueIndex("vendor_requests_business_signature").on(t.businessId, t.signature),
+    uniqueIndex("vendor_requests_null_business_signature").on(t.signature).where(sql`${t.businessId} is null`),
     check("vendor_requests_kind", sql`${t.kind} in ('payout_change', 'seal_rotation', 'cancel', 'credit_note')`),
-    check("vendor_requests_status", sql`${t.status} in ('pending', 'confirmed', 'rejected', 'applied')`),
+    check("vendor_requests_status", sql`${t.status} in ('pending', 'confirmed', 'rejected', 'applied', 'cancelled')`),
   ],
 );
 

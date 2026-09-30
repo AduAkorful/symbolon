@@ -1,11 +1,17 @@
+import { ChangePayoutAddressSection } from "@/components/vendor/ChangePayoutAddressSection";
 import { PayoutForm } from "@/components/vendor/PayoutForm";
 import { Shell } from "@/components/shell/Shell";
+import { getConfig } from "@/lib/server/config";
+import { signerPlanFor } from "@/lib/server/signer-plan";
 import { requireVendorPage } from "@/lib/server/vendor-page";
 
 export const dynamic = "force-dynamic";
 
 export default async function VendorSettings() {
-  const { seal, where } = await requireVendorPage("/vendor/settings");
+  const { session, seal, where } = await requireVendorPage("/vendor/settings");
+  const config = getConfig();
+  const signer = signerPlanFor(session, config);
+
   return (
     <Shell where={where} current={{ kind: "vendor" }}>
       <div className="max-w-[760px]">
@@ -23,8 +29,14 @@ export default async function VendorSettings() {
             </div>
           ))}
         </dl>
-        <h2 className="mt-10 font-display text-2xl">Getting paid</h2>
+        <h2 className="mt-10 font-display text-2xl">Default payout address</h2>
         <PayoutForm initial={seal.payoutAddress} sealAddress={seal.address} />
+
+        <ChangePayoutAddressSection
+          currentPayout={seal.payoutAddress}
+          sealAddress={seal.address}
+          signer={signer}
+        />
       </div>
     </Shell>
   );

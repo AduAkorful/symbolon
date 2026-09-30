@@ -22,6 +22,8 @@ export interface ComposerDraft {
   notes?: unknown;
   /** Up to three tiers: a discount percentage (under 10) if paid within some days */
   earlyPay?: unknown;
+  /** Fingerprint of an unpaid invoice this one replaces (Plan 05q, Decision V11) */
+  replaces?: unknown;
 }
 
 export interface ComposeContext {
@@ -107,6 +109,13 @@ export function buildDocument(draft: ComposerDraft, ctx: ComposeContext): Invoic
   const terms = optionalBlock(draft.terms, "The terms", 2000);
   const notes = optionalBlock(draft.notes, "The notes", 4000);
 
+  let replaces: string | undefined;
+  if (typeof draft.replaces === "string" && draft.replaces.trim() !== "") {
+    const r = draft.replaces.trim().toLowerCase();
+    if (!/^0x[0-9a-f]{64}$/.test(r)) bad("The replaced invoice fingerprint must be a 32-byte hex hash.");
+    replaces = r;
+  }
+
   let doc: InvoiceDocument;
   try {
     doc = completeTotals({
@@ -131,6 +140,7 @@ export function buildDocument(draft: ComposerDraft, ctx: ComposeContext): Invoic
       payout: { address: (ctx.seal.payoutAddress ?? ctx.seal.address).toLowerCase(), domain: ctx.payoutDomain },
       earlyPay,
       attachments: [],
+      ...(replaces ? { replaces } : {}),
     } as never);
   } catch (e) {
     if (e instanceof AuthError) throw e;

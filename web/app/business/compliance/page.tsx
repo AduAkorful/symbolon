@@ -29,7 +29,7 @@ export default async function BusinessCompliancePage() {
     session.user,
     where.business.id,
   );
-  const signer = await signerPlanFor(session.user, config);
+  const signer = await signerPlanFor(session, config);
 
   return (
     <Shell where={where} current={{ kind: "business", id: where.business.id }}>

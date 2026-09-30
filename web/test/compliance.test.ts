@@ -132,9 +132,10 @@ describe("Compliance screening service (05s Part A)", () => {
     chainState.getPayee.mockResolvedValue({ exists: true, payout: address(21), pendingActiveAt: 0n });
 
     const provider = mockProvider();
+    const cfg = { chainId: arcTestnet.id, testnet: true, deployment, appOrigin: "http://localhost:3000", production: false };
     const row = await screenPayee(
       db,
-      { chainId: arcTestnet.id, testnet: true, deployment, appOrigin: "http://localhost:3000", production: false },
+      cfg,
       owner,
       business.id,
       seal,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { annualizedBps, decideTiming, DEFAULT_EARLY_PAY, forecast, outflowsWithin, planReserve, runwayDays, tokenShortfalls } from "../src/index.js";
+import { annualizedBps, counterFor, decideTiming, DEFAULT_EARLY_PAY, forecast, outflowsWithin, planReserve, runwayDays, tokenShortfalls } from "../src/index.js";
 import { DAY, NOW, TOKEN, USDC } from "./fixtures.js";
 
 describe("Early Pay timing", () => {
@@ -47,6 +47,46 @@ describe("Early Pay timing", () => {
     });
     expect(d.action === "pay_now_discounted" && d.option.discountBps).toBe(200);
     expect(decideTiming({ ...base, dueDate: NOW - DAY }).action).toBe("pay_now_overdue");
+  });
+});
+
+describe("counterFor", () => {
+  const base = {
+    now: NOW,
+    dueDate: NOW + 30n * DAY,
+    credit: 10_000n * USDC,
+    options: [],
+    reserveYieldBps: 460,
+    program: DEFAULT_EARLY_PAY,
+    operatingCash: 100_000n * USDC,
+    buffer: 20_000n * USDC,
+    earlyPayCommitted: 0n,
+  };
+
+  it("returns undefined if the offer already clears hurdle, buffer, and cap", () => {
+    const offer = { kind: "offer" as const, discountBps: 150, payBy: NOW + 3n * DAY };
+    expect(counterFor({ ...base, offer })).toBeUndefined();
+  });
+
+  it("proposes the minimal discount that clears the hurdle when offer is too low", () => {
+    const offer = { kind: "offer" as const, discountBps: 50, payBy: NOW + 3n * DAY };
+    // hurdle = 460 + 300 = 760 bps. For 30 days early, 63 bps gives annualized 766 bps >= 760.
+    const counter = counterFor({ ...base, offer });
+    expect(counter).toBeDefined();
+    expect(counter?.discountBps).toBe(63);
+  });
+
+  it("returns undefined when program is disabled, expired, or already due", () => {
+    const offer = { kind: "offer" as const, discountBps: 50, payBy: NOW + 3n * DAY };
+    expect(counterFor({ ...base, offer, program: { ...DEFAULT_EARLY_PAY, enabled: false } })).toBeUndefined();
+    expect(counterFor({ ...base, offer, now: NOW + 4n * DAY })).toBeUndefined();
+    expect(counterFor({ ...base, offer, dueDate: NOW - DAY })).toBeUndefined();
+  });
+
+  it("returns undefined when cash buffer or cap cannot be satisfied even at max discount", () => {
+    const offer = { kind: "offer" as const, discountBps: 50, payBy: NOW + 3n * DAY };
+    // Operating cash is 24k, buffer 20k, available cash is 4k < min paid at max discount 5k
+    expect(counterFor({ ...base, offer, operatingCash: 24_000n * USDC })).toBeUndefined();
   });
 });
 

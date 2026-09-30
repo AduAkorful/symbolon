@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { businesses, createTestDb, decisions, deliveries, invoices, payees, purchaseOrders, screenings, seals, sessions, stewardRuns, unsignedBills, users, vendorClients, vendorInvitations, vendorVerifications } from "../src/index.js";
+import { businesses, createTestDb, decisions, deliveries, earlyPayOffers, invoices, payees, purchaseOrders, screenings, seals, sessions, stewardRuns, unsignedBills, users, vendorClients, vendorInvitations, vendorRequests, vendorVerifications } from "../src/index.js";
 
 type TestDb = Awaited<ReturnType<typeof createTestDb>>;
 
@@ -371,6 +371,73 @@ describe("schema", () => {
         result: "APPROVED",
         provider: "circle",
         screenedAt: new Date(),
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("handles early pay offer statuses and vendor requests multi-business signatures", async () => {
+    const { biz } = await seed(db);
+    const [biz2] = await db.insert(businesses).values({ name: "Beta", chainId: 5_042_002 }).returning();
+
+    // earlyPayOffers allows withdrawn status
+    const [offer] = await db
+      .insert(earlyPayOffers)
+      .values({
+        fingerprint: FP,
+        discountBps: 150,
+        validUntil: new Date(Date.now() + 86400000),
+        status: "withdrawn",
+      })
+      .returning();
+    expect(offer!.status).toBe("withdrawn");
+
+    // earlyPayOffers rejects invalid status
+    await expect(
+      db.insert(earlyPayOffers).values({
+        fingerprint: FP,
+        discountBps: 150,
+        validUntil: new Date(Date.now() + 86400000),
+        status: "invalid_status",
+      }),
+    ).rejects.toThrow();
+
+    // vendorRequests allows same signature across distinct businesses
+    const sig = "0x" + "aa".repeat(65);
+    const [r1] = await db
+      .insert(vendorRequests)
+      .values({
+        businessId: biz.id,
+        seal: SEAL,
+        kind: "payout_change",
+        message: { newPayout: SEAL },
+        signature: sig,
+        status: "pending",
+      })
+      .returning();
+    expect(r1!.id).toBeDefined();
+
+    const [r2] = await db
+      .insert(vendorRequests)
+      .values({
+        businessId: biz2!.id,
+        seal: SEAL,
+        kind: "payout_change",
+        message: { newPayout: SEAL },
+        signature: sig,
+        status: "cancelled",
+      })
+      .returning();
+    expect(r2!.id).toBeDefined();
+    expect(r2!.status).toBe("cancelled");
+
+    // vendorRequests rejects duplicate signature for SAME business
+    await expect(
+      db.insert(vendorRequests).values({
+        businessId: biz.id,
+        seal: SEAL,
+        kind: "payout_change",
+        message: { newPayout: SEAL },
+        signature: sig,
       }),
     ).rejects.toThrow();
   });
