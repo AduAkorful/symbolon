@@ -77,7 +77,7 @@ export function Overlay({ label, onClose, children }: OverlayProps) {
 
   // Make the rest of the page inert and lock scroll.
   useEffect(() => {
-    const main = document.getElementById("app-main");
+    const main = document.getElementById("main-content") || document.getElementById("app-main");
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     if (main) main.inert = true;

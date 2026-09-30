@@ -105,8 +105,8 @@ async function Frame({
             <SpaceSwitcher spaces={where.spaces} current={current} who={where.who} compact />
           </div>
         </header>
-        {/* id="app-main" lets Overlay make this inert while a dialog is open */}
-        <main id="app-main" className="mx-auto max-w-[1180px] px-6 py-10 md:px-10">{children}</main>
+        {/* id="main-content" lets the skip-link jump here and lets Overlay make this inert while a dialog is open */}
+        <main id="main-content" className="mx-auto max-w-[1180px] px-6 py-10 md:px-10">{children}</main>
       </div>
     );
   }
@@ -246,8 +246,8 @@ async function Frame({
           </div>
         ) : null}
 
-        {/* id="app-main" lets Overlay make this inert while a dialog is open */}
-        <main id="app-main" className="px-6 py-10 md:px-10">{children}</main>
+        {/* id="main-content" lets the skip-link jump here and lets Overlay make this inert while a dialog is open */}
+        <main id="main-content" className="px-6 py-10 md:px-10">{children}</main>
       </div>
     </div>
   );
