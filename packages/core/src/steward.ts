@@ -1,8 +1,8 @@
-import { and, desc, eq, gte, inArray, ne, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, ne, or, sql } from "drizzle-orm";
 import { getAddress, keccak256, stringToBytes, type Hex, type PublicClient } from "viem";
 
 import { simulateCall, type Deployment, type SymbolonContracts } from "@symbolon/chain";
-import { businesses, decisions, earlyPayOffers, invoices, payees, type Database } from "@symbolon/db";
+import { businesses, decisions, earlyPayOffers, invoices, payees, screenings, type Database } from "@symbolon/db";
 import { canonicalJson, decodeSealedInvoice, deriveInvoice } from "@symbolon/seal";
 import {
   outflowsWithin,
@@ -95,6 +95,21 @@ export async function runSteward(env: StewardEnv, businessId: string): Promise<S
     const credit = seen ? remaining : invoice.amount;
     const held = await collectApprovals(db, env.contracts, vault, businessId, fp, credit, budgetId, now);
 
+    const [latestScreening] = await db
+      .select({ address: screenings.address })
+      .from(screenings)
+      .innerJoin(
+        decisions,
+        and(
+          eq(decisions.businessId, businessId),
+          eq(decisions.kind, "screening_recorded"),
+          sql`${decisions.record}->'inputs'->>'screeningId' = ${screenings.id}::text`,
+        ),
+      )
+      .where(and(eq(screenings.businessId, businessId), eq(screenings.seal, row.seal)))
+      .orderBy(desc(screenings.screenedAt))
+      .limit(1);
+
     const result = await processInvoice(
       {
         business: { id: businessId, vault, mode, program: env.program },
@@ -119,6 +134,7 @@ export async function runSteward(env: StewardEnv, businessId: string): Promise<S
         approvalHeld: held.level,
         approvals: held.approvals,
         blockedSeal: vendor?.status === "blocked",
+        latestScreenedAddress: (latestScreening?.address as Hex | undefined),
       },
       {
         ...(env.model ? { model: env.model } : {}),

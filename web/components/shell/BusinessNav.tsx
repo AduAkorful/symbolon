@@ -25,6 +25,7 @@ export function BusinessNav({
     { name: "Vendors", href: "/business/vendors" },
     { name: "Orders", href: "/business/orders" },
     { name: "Steward", href: "/business/steward" },
+    { name: "Compliance", href: "/business/compliance" },
   ];
 
   const isActive = (href: string) =>

@@ -10,6 +10,7 @@ import {
   pgEnum,
   pgTable,
   primaryKey,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -184,6 +185,34 @@ export const payees = pgTable(
       "payees_verified_has_method",
       sql`${t.status} <> 'verified' or (${t.verificationMethod} is not null and ${t.verifiedAt} is not null)`,
     ),
+  ],
+);
+
+/** Counterparty compliance screenings (spec §12, plan 05s K1). Rows are never updated. */
+export const screenings = pgTable(
+  "screenings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id").notNull().references(() => businesses.id),
+    seal: address("seal").notNull(),
+    address: address("address").notNull(),
+    risk: smallint("risk").notNull(),
+    result: text("result").notNull(),
+    ruleName: text("rule_name"),
+    actions: text("actions").array().notNull().default(sql`'{}'`),
+    categories: text("categories").array().notNull().default(sql`'{}'`),
+    provider: text("provider").notNull(),
+    screenedAt: timestamp("screened_at", { withTimezone: true }).notNull(),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("screenings_business_seal_idx").on(t.businessId, t.seal),
+    index("screenings_business_screened_idx").on(t.businessId, t.screenedAt),
+    check("screenings_seal_format", sql`${t.seal} ~ ${sql.raw(`'${ADDRESS}'`)}`),
+    check("screenings_address_format", sql`${t.address} ~ ${sql.raw(`'${ADDRESS}'`)}`),
+    check("screenings_risk_range", sql`${t.risk} between 0 and 3`),
+    check("screenings_result_check", sql`${t.result} in ('APPROVED', 'DENIED')`),
   ],
 );
 

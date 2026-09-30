@@ -155,4 +155,34 @@ describe("Steward pipeline", () => {
     expect(r.outcome).toBe("held");
     expect(r.record.rule).toBe("cross-chain payouts need a fee quote the Steward doesn't fetch yet");
   });
+
+  it("holds when policy requires screening and invoice payout address differs from latest screened address (K5)", async () => {
+    // When screeningMaxAge is > 0 and latestScreenedAddress is set to a different address
+    const { ctx } = await context("auto", {
+      facts: facts({ policy: { ...facts().policy, screeningMaxAge: 30n * DAY } }),
+      latestScreenedAddress: `0x${"88".repeat(20)}`,
+    });
+    const d = deps();
+    const r = await processInvoice(ctx, d);
+    expect(r.outcome).toBe("held");
+    expect(r.record.rule).toBe("the payout address hasn't been screened");
+    expect(d.simulate).not.toHaveBeenCalled();
+
+    // When screeningMaxAge is 0 (Starter policy: not required), it is not held
+    const { ctx: starterCtx } = await context("auto", {
+      facts: facts({ policy: { ...facts().policy, screeningMaxAge: 0n } }),
+      latestScreenedAddress: `0x${"88".repeat(20)}`,
+    });
+    const starterResult = await processInvoice(starterCtx, deps());
+    expect(starterResult.outcome).toBe("paid");
+
+    // When latestScreenedAddress matches invoice payout, it is not held
+    const base = await context("auto");
+    const { ctx: matchingCtx } = await context("auto", {
+      facts: facts({ policy: { ...facts().policy, screeningMaxAge: 30n * DAY } }),
+      latestScreenedAddress: base.invoice.payoutAddress,
+    });
+    const matchingResult = await processInvoice(matchingCtx, deps());
+    expect(matchingResult.outcome).toBe("paid");
+  });
 });

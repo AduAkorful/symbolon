@@ -58,6 +58,8 @@ export interface InvoiceContext {
   approvals?: readonly SignedApproval[];
   /** Business-side block state is an immediate hold even though the Vault payee itself is unchanged. */
   blockedSeal?: boolean;
+  /** The address screened most recently by compliance for this Seal, if any (plan 05s K5) */
+  latestScreenedAddress?: Address | undefined;
   signatureClient?: SignatureClient;
 }
 
@@ -126,6 +128,22 @@ export async function processInvoice(ctx: InvoiceContext, deps: Deps): Promise<S
       inputs: { seal: inv.seal },
       options: [],
       rule: "this business has blocked the vendor Seal; owner review is required",
+      outcome: "held",
+    });
+  }
+
+  // K5 (05s): hold when policy requires screening and payout address differs from screened address
+  if (
+    facts.policy.screeningMaxAge > 0 &&
+    ctx.latestScreenedAddress &&
+    inv.payoutAddress.toLowerCase() !== ctx.latestScreenedAddress.toLowerCase()
+  ) {
+    return finish("held", {
+      kind: "hold",
+      subject,
+      inputs: { payoutAddress: inv.payoutAddress, latestScreenedAddress: ctx.latestScreenedAddress },
+      options: [],
+      rule: "the payout address hasn't been screened",
       outcome: "held",
     });
   }

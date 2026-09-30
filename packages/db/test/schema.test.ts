@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { businesses, createTestDb, decisions, deliveries, invoices, payees, purchaseOrders, seals, sessions, stewardRuns, unsignedBills, users, vendorClients, vendorInvitations, vendorVerifications } from "../src/index.js";
+import { businesses, createTestDb, decisions, deliveries, invoices, payees, purchaseOrders, screenings, seals, sessions, stewardRuns, unsignedBills, users, vendorClients, vendorInvitations, vendorVerifications } from "../src/index.js";
 
 type TestDb = Awaited<ReturnType<typeof createTestDb>>;
 
@@ -293,6 +293,85 @@ describe("schema", () => {
 
     await expect(
       db.insert(businesses).values({ name: "NegBlock", chainId: 5_042_002, vaultBlock: -1n }),
+    ).rejects.toThrow();
+  });
+
+  // K1 (05s Part A): screenings table checks
+  it("enforces risk range, result check, and address formats on screenings", async () => {
+    const { biz, user } = await seed(db);
+    const PAYOUT = `0x${"12".repeat(20)}`;
+
+    // Valid insert
+    const [row] = await db
+      .insert(screenings)
+      .values({
+        businessId: biz.id,
+        seal: SEAL,
+        address: PAYOUT,
+        risk: 0,
+        result: "APPROVED",
+        ruleName: "pass-rule",
+        actions: ["APPROVE"],
+        categories: ["CLEAN"],
+        provider: "circle-compliance-engine",
+        screenedAt: new Date(),
+        createdBy: user.id,
+      })
+      .returning();
+    expect(row!.result).toBe("APPROVED");
+    expect(row!.risk).toBe(0);
+    expect(row!.actions).toEqual(["APPROVE"]);
+    expect(row!.categories).toEqual(["CLEAN"]);
+
+    // Invalid risk (< 0 or > 3)
+    await expect(
+      db.insert(screenings).values({
+        businessId: biz.id,
+        seal: SEAL,
+        address: PAYOUT,
+        risk: 4,
+        result: "APPROVED",
+        provider: "circle",
+        screenedAt: new Date(),
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      db.insert(screenings).values({
+        businessId: biz.id,
+        seal: SEAL,
+        address: PAYOUT,
+        risk: -1,
+        result: "APPROVED",
+        provider: "circle",
+        screenedAt: new Date(),
+      }),
+    ).rejects.toThrow();
+
+    // Invalid result (not APPROVED or DENIED)
+    await expect(
+      db.insert(screenings).values({
+        businessId: biz.id,
+        seal: SEAL,
+        address: PAYOUT,
+        risk: 1,
+        result: "UNKNOWN",
+        provider: "circle",
+        screenedAt: new Date(),
+      }),
+    ).rejects.toThrow();
+
+    // Invalid seal/address format
+    await expect(
+      db.insert(screenings).values({
+        businessId: biz.id,
+        seal: "not-an-address",
+        address: PAYOUT,
+        risk: 0,
+        result: "APPROVED",
+        provider: "circle",
+        screenedAt: new Date(),
+      }),
     ).rejects.toThrow();
   });
 });

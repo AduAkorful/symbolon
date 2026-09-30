@@ -14,7 +14,9 @@ export async function appendAppDecision(
     inputs: Record<string, unknown>;
     rule: string;
     outcome: string;
+    txHash?: string;
   },
+  txHash?: string,
 ): Promise<void> {
   const record: DecisionRecord = {
     version: 1,
@@ -35,5 +37,6 @@ export async function appendAppDecision(
     subject: input.subject ?? null,
     record: record as unknown as Record<string, unknown>,
     hash,
+    txHash: txHash ?? input.txHash ?? null,
   }).onConflictDoNothing();
 }
