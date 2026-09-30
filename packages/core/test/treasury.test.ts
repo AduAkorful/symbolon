@@ -6,7 +6,7 @@ import { symbolonVaultAbi, toTransaction, type Deployment, type SymbolonContract
 import { businesses, chainEvents, createTestDb, decisions, invoices } from "@symbolon/db";
 import { DEFAULT_EARLY_PAY, type StewardWallet } from "@symbolon/steward";
 
-import { paymentsCsv, runTreasury } from "../src/index.js";
+import { paymentsBeancount, paymentsCsv, runTreasury } from "../src/index.js";
 
 const VAULT = "0x5f5e2cd9f87a81724cc48ec0c193630a60692984";
 const TELLER = "0x9fdF14c5B14173D74C08Af27AebFf39240dC105A";
@@ -134,8 +134,54 @@ describe("payments export", () => {
     const csv = await paymentsCsv(db, b!.id);
     const [header, row] = csv.trim().split("\n");
     expect(header).toMatch(/^block,tx_hash,fingerprint/);
+    expect(header).toContain("vendor_name");
+    expect(header).toContain("token");
+    expect(header).toContain("settled_at");
     expect(row).toContain("4326.000001");
     expect(row).toContain("4261.110001");
     expect(row).toContain(`"'=HYPERLINK(""x"")"`);
+  });
+
+  it("generates balanced plain-text Beancount ledger entries", async () => {
+    const db = await createTestDb();
+    const [b] = await db.insert(businesses).values({ name: "Acme", chainId: 5_042_002, vault: VAULT }).returning();
+    const fp = `0x${"ee".repeat(32)}`;
+    await db.insert(invoices).values({
+      fingerprint: fp,
+      chainId: 5_042_002,
+      ledger: `0x${"11".repeat(20)}`,
+      seal: `0x${"22".repeat(20)}`,
+      businessId: b!.id,
+      payerRef: `0x${"00".repeat(32)}`,
+      invoiceNumber: "INV-2024",
+      token: `0x${"36".repeat(20)}`,
+      total: 2_000_000_000n,
+      dueDate: new Date(),
+      envelope: "{}",
+      source: "link",
+    });
+    await db.insert(chainEvents).values({
+      chainId: 5_042_002,
+      txHash: `0x${"ff".repeat(32)}`,
+      logIndex: 0,
+      blockNumber: 150n,
+      blockTime: new Date("2026-09-28T14:00:00Z"),
+      address: `0x${"11".repeat(20)}`,
+      eventName: "Settled",
+      args: { fingerprint: fp, credit: "2000000000", paid: "1985000000", discountBps: 75, payoutDomain: 0, payoutAddress: "0xABC" },
+    });
+
+    const bc = await paymentsBeancount(db, b!.id);
+    expect(bc).toContain("2026-09-28 *");
+    expect(bc).toContain('Invoice INV-2024"');
+    expect(bc).toContain("Expenses:Payables:");
+    expect(bc).toContain("2000.000000 USDC");
+    expect(bc).toContain("Assets:Symbolon:Vault:USDC  -1985.000000 USDC");
+    expect(bc).toContain("Income:EarlyPayDiscounts  -15.000000 USDC");
+
+    // Verify balance: +2000 - 1985 - 15 == 0
+    const matches = [...bc.matchAll(/(-?\d+\.\d{6}) USDC/g)];
+    const sum = matches.reduce((acc, m) => acc + Math.round(parseFloat(m[1]) * 1e6), 0);
+    expect(sum).toBe(0);
   });
 });

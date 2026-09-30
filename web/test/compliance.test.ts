@@ -203,12 +203,25 @@ describe("Compliance screening service (05s Part A)", () => {
     });
   });
 
-  it("screenPayee: throws 502 when Circle key is missing and no provider injected", async () => {
+  it("screenPayee: throws 502 when no client and no provider injected (can't read lens)", async () => {
+    const { owner, business, seal } = await fixture();
+    // No client, no provider → can't call lens → 502
+    const cfg = { chainId: arcTestnet.id, testnet: true, deployment, appOrigin: "http://localhost:3000", production: false };
+    await expect(screenPayee(db, cfg, owner, business.id, seal)).rejects.toMatchObject({
+      status: 502,
+      message: expect.stringContaining("Can't confirm this Vault's payees right now"),
+    });
+  });
+
+  it("screenPayee: throws 502 when Circle key missing but client present and no provider", async () => {
     const { owner, business, seal } = await fixture();
     chainState.getPayee.mockResolvedValue({ exists: true, payout: address(21), pendingActiveAt: 0n });
 
     const cfgNoCircle = { chainId: arcTestnet.id, testnet: true, deployment, appOrigin: "http://localhost:3000", production: false };
-    await expect(screenPayee(db, cfgNoCircle, owner, business.id, seal)).rejects.toMatchObject({
+    // client injected so lens read works; provider missing and Circle key absent → 502 Circle
+    await expect(
+      screenPayee(db, cfgNoCircle, owner, business.id, seal, { client: clientFor({}) as any, deployment }),
+    ).rejects.toMatchObject({
       status: 502,
       message: expect.stringContaining("Circle's Compliance Engine isn't enabled"),
     });

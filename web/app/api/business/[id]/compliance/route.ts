@@ -26,7 +26,7 @@ export const POST = routeWith<Ctx>(async (request, ctx) => {
       session.user,
       businessId,
       body.seal,
-      { target: body.target as any },
+      { target: body.target as any, client: getClient(), deployment: config.deployment },
     );
     return NextResponse.json({ ok: true, screening: row });
   }

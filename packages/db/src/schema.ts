@@ -586,6 +586,7 @@ export const chainEvents = pgTable(
     txHash: hash("tx_hash").notNull(),
     logIndex: integer("log_index").notNull(),
     blockNumber: bigint("block_number", { mode: "bigint" }).notNull(),
+    blockTime: timestamp("block_time", { withTimezone: true }),
     address: address("address").notNull(),
     eventName: text("event_name").notNull(),
     args: jsonb("args").$type<Record<string, unknown>>().notNull(),

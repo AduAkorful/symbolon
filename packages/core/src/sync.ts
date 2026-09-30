@@ -19,6 +19,25 @@ export interface SyncReport {
   invoicesUpdated: number;
 }
 
+async function resolveBlockTimes(
+  client: PublicClient,
+  blockNumbers: bigint[],
+  cache: Map<bigint, Date> = new Map(),
+): Promise<Map<bigint, Date>> {
+  const missing = [...new Set(blockNumbers)].filter((b) => !cache.has(b));
+  await Promise.all(
+    missing.map(async (bn) => {
+      try {
+        const block = await client.getBlock({ blockNumber: bn });
+        cache.set(bn, new Date(Number(block.timestamp) * 1000));
+      } catch {
+        // Leave unpopulated if getBlock fails or client doesn't support it
+      }
+    }),
+  );
+  return cache;
+}
+
 /**
  * Pulls the ledger's events since the last cursor, stores them, and refreshes every affected invoice from the ledger's
  * own state (the chain decides what "paid" means; events only say what to re-read). Idempotent and resumable.
@@ -50,6 +69,7 @@ export async function syncLedger(
 
   await db.transaction(async (tx) => {
     if (logs.length) {
+      const blockTimes = await resolveBlockTimes(client, logs.map((l) => l.blockNumber));
       await tx
         .insert(chainEvents)
         .values(
@@ -58,12 +78,18 @@ export async function syncLedger(
             txHash: l.transactionHash.toLowerCase(),
             logIndex: l.logIndex,
             blockNumber: l.blockNumber,
+            blockTime: blockTimes.get(l.blockNumber),
             address: l.address.toLowerCase(),
             eventName: l.eventName,
             args: json(l.args),
           })),
         )
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: [chainEvents.chainId, chainEvents.txHash, chainEvents.logIndex],
+          set: {
+            blockTime: sql`coalesce(chain_events.block_time, excluded.block_time)`,
+          },
+        });
     }
     for (const [fp, s] of states) {
       const status = s.cancelled ? "cancelled" : s.paid ? "paid" : s.credited > 0n ? "partially_paid" : undefined;
@@ -103,6 +129,7 @@ export async function syncVault(
   const { logs, scannedTo } = await scanLogs(client, { address: vault, events: VAULT_EVENTS, fromBlock: from, toBlock: to });
   await db.transaction(async (tx) => {
     if (logs.length) {
+      const blockTimes = await resolveBlockTimes(client, logs.map((l) => l.blockNumber));
       await tx
         .insert(chainEvents)
         .values(
@@ -111,12 +138,18 @@ export async function syncVault(
             txHash: l.transactionHash.toLowerCase(),
             logIndex: l.logIndex,
             blockNumber: l.blockNumber,
+            blockTime: blockTimes.get(l.blockNumber),
             address: l.address.toLowerCase(),
             eventName: l.eventName,
             args: json(l.args),
           })),
         )
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: [chainEvents.chainId, chainEvents.txHash, chainEvents.logIndex],
+          set: {
+            blockTime: sql`coalesce(chain_events.block_time, excluded.block_time)`,
+          },
+        });
     }
     await tx
       .insert(syncCursors)

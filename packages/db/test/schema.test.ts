@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { businesses, createTestDb, decisions, deliveries, earlyPayOffers, invoices, payees, purchaseOrders, queuedChanges, screenings, seals, sessions, stewardRuns, unsignedBills, users, vendorClients, vendorInvitations, vendorRequests, vendorVerifications } from "../src/index.js";
+import { businesses, chainEvents, createTestDb, decisions, deliveries, earlyPayOffers, invoices, payees, purchaseOrders, queuedChanges, screenings, seals, sessions, stewardRuns, unsignedBills, users, vendorClients, vendorInvitations, vendorRequests, vendorVerifications } from "../src/index.js";
 
 type TestDb = Awaited<ReturnType<typeof createTestDb>>;
 
@@ -540,6 +540,28 @@ describe("schema", () => {
         eta,
       }),
     ).rejects.toThrow();
+  });
+
+  it("stores chain_events with optional block_time", async () => {
+    const blockTime = new Date("2026-09-30T12:00:00Z");
+    const txHash = `0x${"aa".repeat(32)}`;
+    const address = `0x${"bb".repeat(20)}`;
+
+    await db.insert(chainEvents).values({
+      chainId: 5_042_002,
+      txHash,
+      logIndex: 0,
+      blockNumber: 12345n,
+      blockTime,
+      address,
+      eventName: "Paid",
+      args: { amount: "1000" },
+    });
+
+    const [row] = await db.select().from(chainEvents);
+    expect(row).toBeDefined();
+    expect(row!.blockTime?.toISOString()).toBe(blockTime.toISOString());
+    expect(row!.eventName).toBe("Paid");
   });
 });
 
