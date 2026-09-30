@@ -652,3 +652,47 @@ export const queuedChanges = pgTable(
   ],
 );
 
+/** Team invitations by secret link (plan 05t, Q9) */
+export const teamInvitations = pgTable(
+  "team_invitations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id").notNull().references(() => businesses.id),
+    role: memberRole("role").notNull(),
+    budgets: jsonb("budgets").$type<string[]>().notNull().default([]),
+    label: text("label"),
+    tokenHash: text("token_hash").notNull(),
+    createdBy: uuid("created_by").notNull().references(() => users.id),
+    createdAt: createdAt(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedBy: uuid("accepted_by").references(() => users.id),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("team_invitations_token_hash_key").on(t.tokenHash),
+    index("team_invitations_business_idx").on(t.businessId, t.createdAt),
+    check("team_invitations_token_hash_format", sql`${t.tokenHash} ~ '^[0-9a-f]{64}$'`),
+    check("team_invitations_role_not_owner", sql`${t.role} in ('approver', 'requester', 'viewer')`),
+    check("team_invitations_single_terminal_state", sql`not (${t.acceptedAt} is not null and ${t.revokedAt} is not null)`),
+  ],
+);
+
+/** Budgets configured for a business (plan 05t, Q17) */
+export const budgets = pgTable(
+  "budgets",
+  {
+    businessId: uuid("business_id").notNull().references(() => businesses.id),
+    budgetId: hash("budget_id").notNull(),
+    name: text("name").notNull(),
+    createdBy: uuid("created_by").notNull().references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.businessId, t.budgetId] }),
+    uniqueIndex("budgets_business_name_lower_key").on(t.businessId, sql`lower(${t.name})`),
+    check("budgets_budget_id_format", sql`${t.budgetId} ~ ${sql.raw(`'${HASH}'`)}`),
+  ],
+);
+
+

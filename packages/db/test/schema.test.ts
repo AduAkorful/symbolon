@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { businesses, chainEvents, createTestDb, decisions, deliveries, earlyPayOffers, invoices, payees, purchaseOrders, queuedChanges, screenings, seals, sessions, stewardRuns, unsignedBills, users, vendorClients, vendorInvitations, vendorRequests, vendorVerifications } from "../src/index.js";
+import { budgets, businesses, chainEvents, createTestDb, decisions, deliveries, earlyPayOffers, invoices, payees, purchaseOrders, queuedChanges, screenings, seals, sessions, stewardRuns, teamInvitations, unsignedBills, users, vendorClients, vendorInvitations, vendorRequests, vendorVerifications } from "../src/index.js";
 
 type TestDb = Awaited<ReturnType<typeof createTestDb>>;
 
@@ -563,6 +563,104 @@ describe("schema", () => {
     expect(row!.blockTime?.toISOString()).toBe(blockTime.toISOString());
     expect(row!.eventName).toBe("Paid");
   });
+
+  it("enforces team_invitations constraints: role, token format, single terminal state", async () => {
+    const { user, biz } = await seed(db);
+    const tokenHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    // Valid insert
+    const [inv] = await db
+      .insert(teamInvitations)
+      .values({
+        businessId: biz.id,
+        role: "approver",
+        tokenHash,
+        createdBy: user.id,
+        expiresAt: new Date(Date.now() + 14 * 86400_000),
+      })
+      .returning();
+    expect(inv).toBeDefined();
+    expect(inv!.role).toBe("approver");
+
+    // Rejects duplicate token hash
+    await expect(
+      db.insert(teamInvitations).values({
+        businessId: biz.id,
+        role: "requester",
+        tokenHash,
+        createdBy: user.id,
+        expiresAt: new Date(Date.now() + 14 * 86400_000),
+      }),
+    ).rejects.toThrow();
+
+    // Rejects 'owner' role
+    await expect(
+      db.insert(teamInvitations).values({
+        businessId: biz.id,
+        role: "owner" as any,
+        tokenHash: "1123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        createdBy: user.id,
+        expiresAt: new Date(Date.now() + 14 * 86400_000),
+      }),
+    ).rejects.toThrow();
+
+    // Rejects invalid token hash format
+    await expect(
+      db.insert(teamInvitations).values({
+        businessId: biz.id,
+        role: "viewer",
+        tokenHash: "short-token",
+        createdBy: user.id,
+        expiresAt: new Date(Date.now() + 14 * 86400_000),
+      }),
+    ).rejects.toThrow();
+
+    // Rejects terminal state with both acceptedAt and revokedAt non-null
+    await expect(
+      db
+        .update(teamInvitations)
+        .set({
+          acceptedAt: new Date(),
+          revokedAt: new Date(),
+        })
+        .where(eq(teamInvitations.id, inv!.id)),
+    ).rejects.toThrow();
+  });
+
+  it("enforces budgets constraints: unique per business and lowercase name, valid budgetId format", async () => {
+    const { user, biz } = await seed(db);
+    const budgetId1 = `0x${"11".repeat(32)}`;
+    const budgetId2 = `0x${"22".repeat(32)}`;
+
+    // Valid budget insert
+    await db.insert(budgets).values({
+      businessId: biz.id,
+      budgetId: budgetId1,
+      name: "Engineering",
+      createdBy: user.id,
+    });
+
+    // Rejects case-insensitive duplicate budget name in same business
+    await expect(
+      db.insert(budgets).values({
+        businessId: biz.id,
+        budgetId: budgetId2,
+        name: "engineering",
+        createdBy: user.id,
+      }),
+    ).rejects.toThrow();
+
+    // Rejects invalid budgetId format
+    await expect(
+      db.insert(budgets).values({
+        businessId: biz.id,
+        budgetId: "0xinvalid",
+        name: "Marketing",
+        createdBy: user.id,
+      }),
+    ).rejects.toThrow();
+  });
 });
+
 
 

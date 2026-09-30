@@ -24,12 +24,12 @@ export async function listVendors(db: Database, client: PublicClient, deployment
   const vendors = await Promise.all([...rows, ...missing].map(async ({ payee, vendor }) => {
     const [verification] = await db.select().from(vendorVerifications).where(and(eq(vendorVerifications.businessId, businessId), eq(vendorVerifications.seal, payee.seal))).orderBy(desc(vendorVerifications.createdAt)).limit(1);
     const [invoice] = await db.select({ n: invoices.fingerprint }).from(invoices).where(and(eq(invoices.businessId, businessId), eq(invoices.seal, payee.seal))).limit(1);
-    let canBePaid: { confirmed: true; exists: boolean; activeAt: string; payout: string; payoutDomain: number; paidCount: number; terms: { monthlyCap: string; requirePo: boolean; requireDelivery: boolean }; screening: { risk: string; at: string } } | { confirmed: false } = { confirmed: false };
+    let canBePaid: { confirmed: true; exists: boolean; activeAt: string; payout: string; payoutDomain: number; paidCount: number; terms: { budget: string; monthlyCap: string; requirePo: boolean; requireDelivery: boolean }; screening: { risk: string; at: string } } | { confirmed: false } = { confirmed: false };
     if (business.vault && blockNumber !== null && contracts) {
       try {
         const p = await contracts.lens.read.getPayee([getAddress(business.vault) as Address, getAddress(payee.seal) as Address], { blockNumber });
         const risks = ["Low", "Medium", "High", "Blocked"];
-        canBePaid = { confirmed: true, exists: p.exists, activeAt: p.activeAt.toString(), payout: p.payout, payoutDomain: p.payoutDomain, paidCount: p.paidCount, terms: { monthlyCap: p.terms.monthlyCap.toString(), requirePo: p.terms.requirePo, requireDelivery: p.terms.requireDelivery }, screening: { risk: p.screenedAt === 0n ? "Not screened" : risks[p.risk] ?? "Unknown", at: p.screenedAt.toString() } };
+        canBePaid = { confirmed: true, exists: p.exists, activeAt: p.activeAt.toString(), payout: p.payout, payoutDomain: p.payoutDomain, paidCount: p.paidCount, terms: { budget: p.terms.budget, monthlyCap: p.terms.monthlyCap.toString(), requirePo: p.terms.requirePo, requireDelivery: p.terms.requireDelivery }, screening: { risk: p.screenedAt === 0n ? "Not screened" : risks[p.risk] ?? "Unknown", at: p.screenedAt.toString() } };
       } catch { /* Unknown chain state stays unknown; never infer from the offchain row. */ }
     }
     return { seal: payee.seal, name: vendor?.displayName ?? payee.seal, handle: vendor?.handle ?? null, status: payee.status, verification: verification ? { id: verification.id, method: verification.method, status: verification.status, contacted: verification.contacted, channel: verification.channel, raisedBy: verification.raisedBy, confirmedBy: verification.confirmedBy, secondBy: verification.secondBy, at: verification.updatedAt } : null, invoiceOnFile: Boolean(invoice), canBePaid, blockNumber: blockNumber?.toString() ?? null };

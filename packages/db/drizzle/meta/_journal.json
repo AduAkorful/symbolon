@@ -120,6 +120,13 @@
       "when": 1790779669571,
       "tag": "0016_mature_vance_astro",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790781698096,
+      "tag": "0017_aberrant_thundra",
+      "breakpoints": true
     }
   ]
 }

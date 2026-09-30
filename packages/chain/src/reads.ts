@@ -67,3 +67,17 @@ export function withSlippage(amount: bigint, toleranceBps: number): bigint {
   }
   return (amount * BigInt(10_000 - toleranceBps)) / 10_000n;
 }
+
+import { getAddress } from "viem";
+import { releases, type ReleaseInfo } from "./generated/releases.js";
+
+/** Looks up verified release notes for a given implementation address, if known */
+export function getReleaseNotes(implementation: string): ReleaseInfo | undefined {
+  try {
+    const checksummed = getAddress(implementation);
+    return (releases as Record<string, ReleaseInfo>)[checksummed];
+  } catch {
+    return undefined;
+  }
+}
+

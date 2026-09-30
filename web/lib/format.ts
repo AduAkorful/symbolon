@@ -28,3 +28,24 @@ export function discounted(total: string, decimals: number, bps: number): string
   const raw = parseAmount(total, decimals);
   return formatAmount(raw - (raw * BigInt(bps)) / 10_000n, decimals);
 }
+
+const HOUR = 3_600n;
+const DAY = 24n * HOUR;
+
+/** Whole dollars from raw 6-decimal units, with the cents the UI always shows */
+export function usd(raw: bigint, decimals = 6): string {
+  const unit = 10n ** BigInt(decimals);
+  const whole = raw / unit;
+  const cents = ((raw % unit) * 100n) / unit;
+  return `$${whole.toLocaleString("en-US")}.${cents.toString().padStart(2, "0")}`;
+}
+
+export function duration(seconds: bigint): string {
+  if (seconds % DAY === 0n) {
+    const d = seconds / DAY;
+    return d === 1n ? "1 day" : `${d} days`;
+  }
+  const h = seconds / HOUR;
+  return h === 1n ? "1 hour" : `${h} hours`;
+}
+

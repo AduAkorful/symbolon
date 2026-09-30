@@ -18,8 +18,9 @@ import {
   toTransaction,
   vaultCall,
   withSlippage,
+  getReleaseNotes,
 } from "../src/index.js";
-import { generateAbis, generateDeployments } from "../scripts/generate.js";
+import { generateAbis, generateDeployments, generateReleases } from "../scripts/generate.js";
 
 const generated = (name: string) =>
   readFileSync(fileURLToPath(new URL(`../src/generated/${name}`, import.meta.url)), "utf8");
@@ -28,8 +29,10 @@ describe("generated files", () => {
   it("match the current forge build and deployment registry (run `pnpm generate` after changes)", () => {
     expect(generateAbis()).toBe(generated("abis.ts"));
     expect(generateDeployments()).toBe(generated("deployments.ts"));
+    expect(generateReleases()).toBe(generated("releases.ts"));
   });
 });
+
 
 describe("chains", () => {
   it("uses docs.arc.io URLs, never viem's stale ones", () => {
@@ -219,3 +222,20 @@ describe("Gateway", () => {
     await expect(submitBurnIntents("testnet", [], failing)).rejects.toThrow(/insufficient balance/);
   });
 });
+
+describe("release notes", () => {
+  it("fetches verified release notes by implementation address", () => {
+    const v1Impl = "0x02bCb1288338d47e31342737772D0b32bBA3842A";
+    const v2Impl = "0xA6aA3c4DB43f36b061939feF1f822E14bF06BcF8";
+    const n1 = getReleaseNotes(v1Impl);
+    expect(n1?.version).toBe(1);
+    expect(n1?.notes).toContain("SymbolonVault release 1");
+
+    const n2 = getReleaseNotes(v2Impl.toLowerCase());
+    expect(n2?.version).toBe(2);
+    expect(n2?.notes).toContain("SymbolonVault release 2");
+
+    expect(getReleaseNotes("0x0000000000000000000000000000000000000000")).toBeUndefined();
+  });
+});
+

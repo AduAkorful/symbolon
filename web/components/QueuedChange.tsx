@@ -199,3 +199,103 @@ export function QueuedChangeList({
     </div>
   );
 }
+
+export interface SingleQueuedChangeProps {
+  businessId: string;
+  changeId: string;
+  kind?: string;
+  state: "ready" | "will-queue" | "apply-now" | "already-queued";
+  eta?: string | Date | null;
+  looseningDelaySeconds?: number;
+  summary?: { title?: string; details?: Record<string, unknown> };
+  signer: SignerPlan;
+  onApplied?: () => void;
+  onCancelled?: () => void;
+  explorer?: string;
+}
+
+export function QueuedChange({
+  businessId,
+  changeId,
+  state,
+  eta,
+  looseningDelaySeconds,
+  summary,
+  signer,
+  onApplied,
+  onCancelled,
+  explorer = "https://explorer.testnet.arc.io",
+}: SingleQueuedChangeProps) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const getProviders = useWalletProviders();
+
+  const isReady = state === "ready" || (eta ? Date.now() >= new Date(eta).getTime() : false);
+
+  async function handleCancel() {
+    setBusy(true);
+    setError(null);
+    try {
+      const prep = await postJson<{ ok: boolean; to: string; data: string }>(
+        `/api/business/${businessId}/queued-changes`,
+        {
+          action: "prepare-cancel",
+          changeId,
+        },
+      );
+      if (!prep.ok) throw new Error("Could not prepare cancellation.");
+      if (signer.kind !== "wallet") throw new Error("Wallet not connected.");
+
+      const providers = await getProviders();
+      const txHash = await sendWithWallet(providers, signer, {
+        to: prep.to,
+        data: prep.data,
+      });
+
+      const rec = await postJson<{ ok: boolean }>(
+        `/api/business/${businessId}/queued-changes`,
+        {
+          action: "record-cancel",
+          txHash,
+        },
+      );
+      if (rec.ok) onCancelled?.();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to cancel change.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded border border-amber-300 bg-paper p-4 text-xs">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="font-medium text-ink">{summary?.title || "Queued change"}</div>
+          <div className="mt-0.5 text-graphite">
+            {isReady ? (
+              <span className="font-medium text-forest">Ready to apply</span>
+            ) : eta ? (
+              <span>Ready at {new Date(eta).toLocaleString()}</span>
+            ) : looseningDelaySeconds !== undefined ? (
+              <span>Waits {Math.round(looseningDelaySeconds / 3600)}h delay</span>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={busy || signer.kind !== "wallet"}
+            onClick={handleCancel}
+            className="rounded border border-rule px-2.5 py-1 text-graphite hover:text-ink disabled:opacity-50"
+          >
+            {busy ? "Cancelling…" : "Cancel"}
+          </button>
+        </div>
+      </div>
+      {error && <p className="mt-2 text-red">{error}</p>}
+    </div>
+  );
+}
+

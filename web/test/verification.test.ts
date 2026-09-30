@@ -88,6 +88,17 @@ describe("vendor callback verification", () => {
     await expect(confirmSecond(db, f.approver, request.id)).resolves.toEqual({ status: "verified" });
   });
 
+  it("three-member scenario: distinct second approver can confirm when first approver entered code (Q12)", async () => {
+    const f = await fixture(101n);
+    const request = await startCodeVerification(db, f.approver, f.business.id, f.seal);
+    const code = (await showCodeToSeal(db, f.vendor)).find((x) => x.id === request.id)!.code;
+    await expect(submitCode(db, f.approver, client, deployment, request.id, code, "Jordan", "known switchboard")).resolves.toEqual({ status: "awaiting_second" });
+    // Same approver who entered the code cannot confirm
+    await expect(confirmSecond(db, f.approver, request.id)).rejects.toThrow();
+    // Distinct second approver confirms
+    await expect(confirmSecond(db, f.second, request.id)).resolves.toEqual({ status: "verified" });
+  });
+
   it("refuses a member who owns the Seal, and a Seal that has never invoiced the business", async () => {
     const f = await fixture(50n);
     await db.insert(members).values({ businessId: f.business.id, userId: f.vendor.id, role: "owner" });

@@ -17,8 +17,10 @@ import { getSession } from "@/lib/server/http";
 import { signerPlanFor } from "@/lib/server/signer-plan";
 import type { Where } from "@/lib/server/space";
 import { readVaultState, stewardStanding } from "@/lib/server/vault-read";
+import { checkReleaseNudge } from "@/lib/server/release";
 
 import { BusinessNav } from "./BusinessNav";
+
 import { SpaceSwitcher, type Current } from "./SpaceSwitcher";
 import { VendorNav } from "./VendorNav";
 
@@ -95,14 +97,19 @@ async function Frame({
   let vaultPaused = false;
   let pauseTxHash: string | null = null;
   let signer = null;
+  let hasReleaseNudge = false;
   const explorer = arcChain(config.chainId).blockExplorers?.default.url ?? "";
 
   if (biz?.vault) {
     try {
       const client = getClient();
-      const vaultState = await readVaultState(client, config.deployment, biz.vault);
+      const [vaultState, nudgeRes] = await Promise.all([
+        readVaultState(client, config.deployment, biz.vault),
+        checkReleaseNudge(client, config.deployment, getAddress(biz.vault)).catch(() => ({ hasNudge: false })),
+      ]);
       standing = stewardStanding(biz.stewardWallet, vaultState);
       vaultPaused = vaultState.ok && vaultState.paused;
+      hasReleaseNudge = nudgeRes.hasNudge;
 
       if (vaultPaused) {
         try {
@@ -142,8 +149,9 @@ async function Frame({
             <SpaceSwitcher spaces={where.spaces} current={current} who={where.who} />
           </div>
         </div>
-        <BusinessNav inboxCount={inboxCount} approvalsCount={approvalsCount} />
+        <BusinessNav inboxCount={inboxCount} approvalsCount={approvalsCount} hasReleaseNudge={hasReleaseNudge} />
       </aside>
+
 
       <div className="min-w-0">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-rule px-6 py-4 md:px-10">

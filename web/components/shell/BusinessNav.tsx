@@ -12,13 +12,16 @@ import { usePathname } from "next/navigation";
 export function BusinessNav({
   inboxCount,
   approvalsCount,
+  hasReleaseNudge,
 }: {
   inboxCount?: number;
   approvalsCount?: number;
+  hasReleaseNudge?: boolean;
 }) {
   const path = usePathname();
 
-  const nav = [
+  const nav: { name: string; href: string; count?: number; hasDot?: boolean }[] = [
+
     { name: "Home", href: "/business" },
     { name: "Inbox", href: "/business/inbox", count: inboxCount },
     { name: "Approvals", href: "/business/approvals", count: approvalsCount },
@@ -29,7 +32,11 @@ export function BusinessNav({
     { name: "Activity", href: "/business/activity" },
     { name: "Accounting", href: "/business/accounting" },
     { name: "Compliance", href: "/business/compliance" },
+    { name: "Team", href: "/business/team" },
+    { name: "Policy", href: "/business/policy" },
+    { name: "Settings", href: "/business/settings", hasDot: hasReleaseNudge },
   ];
+
 
   const isActive = (href: string) =>
     href === "/business" ? path === "/business" : path.startsWith(href);
@@ -48,8 +55,17 @@ export function BusinessNav({
                   active ? "bg-ink text-paper" : "text-ink/80 hover:bg-rule-soft/70"
                 }`}
               >
-                <span>{item.name}</span>
+                <span className="flex items-center gap-1.5">
+                  <span>{item.name}</span>
+                  {item.hasDot ? (
+                    <span
+                      className="h-1.5 w-1.5 rounded-full bg-seal"
+                      aria-label="Release update available"
+                    />
+                  ) : null}
+                </span>
                 {item.count !== undefined && item.count > 0 ? (
+
                   <span
                     aria-label={`${item.count} item${item.count === 1 ? "" : "s"}`}
                     className={`ml-2 rounded-full px-1.5 py-0.5 font-mono text-[10px] tabular-nums leading-none ${

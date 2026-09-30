@@ -6,7 +6,9 @@ export * from "./reads.js";
 export * from "./calls.js";
 export * from "./logs.js";
 export * from "./generated/abis.js";
+export * from "./generated/releases.js";
 export * from "./verify.js";
 export * from "./yield.js";
 export * from "./cctp.js";
 export * from "./gateway.js";
+

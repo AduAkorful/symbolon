@@ -1,7 +1,6 @@
-// Generates src/generated/{abis,deployments}.ts from Forge's build output and contracts/deployments.
-// Run after `forge build` or a deploy: pnpm --filter @symbolon/chain generate
 import { readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { getAddress, keccak256, stringToBytes } from "viem";
 
 const contracts = fileURLToPath(new URL("../../../contracts/", import.meta.url));
 const out = fileURLToPath(new URL("../src/generated/", import.meta.url));
@@ -45,8 +44,52 @@ export function generateDeployments(): string {
   return `${HEADER}\nexport const deployments = ${JSON.stringify(registry, null, 2)} as const;\n`;
 }
 
+export function generateReleases(): string {
+  const dir = `${contracts}deployments/releases/`;
+  if (!existsSync(dir)) {
+    return `${HEADER}\nexport const releases = {} as const;\n`;
+  }
+  const files = readdirSync(dir).filter((f) => /^\d+-v\d+\.json$/.test(f)).sort();
+  const rels: Record<string, {
+    chainId: number;
+    version: number;
+    implementation: string;
+    notesHash: string;
+    notes: string;
+  }> = {};
+
+  for (const file of files) {
+    const chainId = parseInt(file.split("-v")[0], 10);
+    const content = JSON.parse(readFileSync(`${dir}${file}`, "utf8"));
+    const implementation = getAddress(content.SymbolonVaultImplementation);
+    const version = Number(content.version);
+    const notesHash = (content.notesHash as string).toLowerCase();
+    const notesFile = `${contracts}${content.notes}`;
+    if (!existsSync(notesFile)) {
+      throw new Error(`missing release notes file: ${notesFile}`);
+    }
+    const notesText = readFileSync(notesFile, "utf8");
+    const computedHash = keccak256(stringToBytes(notesText)).toLowerCase();
+    if (computedHash !== notesHash) {
+      throw new Error(
+        `release notes hash mismatch for ${file}: expected ${notesHash}, computed ${computedHash}`
+      );
+    }
+    rels[implementation] = {
+      chainId,
+      version,
+      implementation,
+      notesHash: content.notesHash,
+      notes: notesText,
+    };
+  }
+
+  return `${HEADER}\nexport interface ReleaseInfo {\n  chainId: number;\n  version: number;\n  implementation: \`0x\${string}\`;\n  notesHash: \`0x\${string}\`;\n  notes: string;\n}\n\nexport const releases = ${JSON.stringify(rels, null, 2)} as const;\n`;
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   writeFileSync(`${out}abis.ts`, generateAbis());
   writeFileSync(`${out}deployments.ts`, generateDeployments());
-  console.log(`wrote ${out}abis.ts and ${out}deployments.ts`);
+  writeFileSync(`${out}releases.ts`, generateReleases());
+  console.log(`wrote ${out}abis.ts, ${out}deployments.ts, and ${out}releases.ts`);
 }

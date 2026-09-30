@@ -15,6 +15,8 @@ import { requirePageSession } from "@/lib/server/http";
 import { loadSpaces } from "@/lib/server/space";
 import { signerPlanFor } from "@/lib/server/signer-plan";
 import { vendorDetail } from "@/lib/server/vendors";
+import { listBudgets } from "@/lib/server/budgets";
+import { PayeeTermsEditor } from "@/components/vendors/PayeeTermsEditor";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +54,7 @@ export default async function BusinessVendorDetailPage({ params }: { params: Pro
   const isBlocked = vendor.status === "blocked";
   const mayVerify = business.role === "owner" || business.role === "approver";
   const signer = signerPlanFor(session, config);
+  const budgetsData = await listBudgets(db, getClient(), config.deployment, session.user, business.id).catch(() => ({ budgets: [] }));
 
   return <Shell where={where} current={{ kind: "business", id: business.id }}>
     <article className="mx-auto max-w-[900px]">
@@ -100,6 +103,21 @@ export default async function BusinessVendorDetailPage({ params }: { params: Pro
               <div><dt className="text-graphite">Matching requirements</dt><dd>PO {vendor.canBePaid.terms.requirePo ? "required" : "not required"} · delivery {vendor.canBePaid.terms.requireDelivery ? "required" : "not required"}</dd></div>
               <div><dt className="text-graphite">Screening</dt><dd>{vendor.canBePaid.screening.risk}{vendor.canBePaid.screening.at !== "0" ? " · read at block " + vendor.blockNumber : ""}</dd></div>
             </dl>
+            {business.role === "owner" ? (
+              <PayeeTermsEditor
+                businessId={business.id}
+                seal={vendor.seal}
+                currentTerms={{
+                  budget: vendor.canBePaid.terms.budget,
+                  requirePo: vendor.canBePaid.terms.requirePo,
+                  requireDelivery: vendor.canBePaid.terms.requireDelivery,
+                  monthlyCap: String(vendor.canBePaid.terms.monthlyCap),
+                }}
+                budgets={budgetsData.budgets.map((b) => ({ id: b.id, name: b.name }))}
+                signer={signer}
+                looseningDelaySeconds={86400}
+              />
+            ) : null}
           </> : <p className="mt-2 text-sm text-graphite">Not added to this Vault as a payee.</p>}
           {business.role === "owner" && vendor.status === "verified" && vendor.canBePaid.confirmed && !vendor.canBePaid.exists ? <AddPayee businessId={business.id} seal={vendor.seal} signer={signer} explorer={config.deployment.explorer} /> : null}
         </div>

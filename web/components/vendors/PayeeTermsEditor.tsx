@@ -1,0 +1,240 @@
+"use client";
+
+import { useState } from "react";
+import { isLooseningTerms } from "@/lib/server/loosening";
+import { sendWithWallet, type SignerPlan } from "@/components/setup/owner-signer";
+import { useWalletProviders } from "@/components/wallet/useWalletProviders";
+import { postJson } from "@/lib/client/api";
+import { duration } from "@/lib/format";
+
+
+
+
+interface PayeeTermsEditorProps {
+  businessId: string;
+  seal: string;
+  currentTerms: {
+    budget: string;
+    requirePo: boolean;
+    requireDelivery: boolean;
+    monthlyCap: string; // raw bigint string
+  };
+  budgets: { id: string; name: string }[];
+  signer: SignerPlan;
+  looseningDelaySeconds: number;
+}
+
+export function PayeeTermsEditor({
+  businessId,
+  seal,
+  currentTerms,
+  budgets,
+  signer,
+  looseningDelaySeconds,
+}: PayeeTermsEditorProps) {
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const [draftBudget, setDraftBudget] = useState(currentTerms.budget);
+  const [draftRequirePo, setDraftRequirePo] = useState(currentTerms.requirePo);
+  const [draftRequireDelivery, setDraftRequireDelivery] = useState(currentTerms.requireDelivery);
+  const [draftMonthlyCapUsd, setDraftMonthlyCapUsd] = useState(
+    String(Number(currentTerms.monthlyCap) / 1e6),
+  );
+
+  const getProviders = useWalletProviders();
+
+  const currentCapRaw = BigInt(currentTerms.monthlyCap);
+  const draftCapRaw = BigInt(Math.floor(Number(draftMonthlyCapUsd || 0) * 1e6));
+
+  const isLooser = isLooseningTerms(
+    {
+      budget: currentTerms.budget,
+      requirePo: currentTerms.requirePo,
+      requireDelivery: currentTerms.requireDelivery,
+      monthlyCap: currentCapRaw,
+    },
+    {
+      budget: draftBudget,
+      requirePo: draftRequirePo,
+      requireDelivery: draftRequireDelivery,
+      monthlyCap: draftCapRaw,
+    },
+  );
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (signer.kind !== "wallet") {
+      alert("Please connect the business owner's wallet to update terms.");
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    setStatus("Preparing payee terms transaction...");
+
+    try {
+      const prep = await postJson<{
+        ok: boolean;
+        to: string;
+        data: string;
+        state: string;
+        isLooser: boolean;
+      }>(`/api/business/${businessId}/payee-terms`, {
+        action: "prepare",
+        seal,
+        terms: {
+          budget: draftBudget,
+          requirePo: draftRequirePo,
+          requireDelivery: draftRequireDelivery,
+          monthlyCap: draftCapRaw.toString(),
+        },
+      });
+
+      setStatus("Please confirm transaction in your wallet...");
+      const providers = await getProviders();
+      const txHash = await sendWithWallet(providers, signer, {
+        to: prep.to,
+        data: prep.data,
+      });
+
+      setStatus("Recording terms update...");
+      await postJson(`/api/business/${businessId}/payee-terms`, {
+        action: "record",
+        seal,
+        txHash,
+      });
+
+      setStatus("Payee terms successfully updated.");
+      setTimeout(() => {
+        window.location.reload();
+      }, 1200);
+    } catch (err: any) {
+      setError(err?.message || "Failed to update payee terms.");
+      setStatus(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <div className="mt-4">
+        <button
+          onClick={() => setEditing(true)}
+          className="rounded-doc border border-rule px-3 py-1.5 text-xs font-medium hover:bg-paper"
+        >
+          Edit payee terms
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSave} className="mt-4 rounded-doc border border-ink/20 bg-paper-raised p-4 text-sm">
+      <h3 className="font-display text-base">Edit Payee Terms</h3>
+      <p className="mt-1 text-xs text-graphite">
+        Making terms stricter applies immediately. Making terms looser waits for the Vault’s loosening delay.
+      </p>
+
+      {status ? (
+        <p className="mt-3 rounded border border-seal/30 bg-seal-wash/40 p-2 text-xs">{status}</p>
+      ) : null}
+
+      {error ? (
+        <p className="mt-3 rounded border border-red-300 bg-red-50 p-2 text-xs text-red-800">{error}</p>
+      ) : null}
+
+      <div className="mt-4 space-y-3">
+        <div>
+          <label htmlFor="termsBudget" className="block text-xs font-medium text-graphite">
+            Budget
+          </label>
+          <select
+            id="termsBudget"
+            value={draftBudget}
+            onChange={(e) => setDraftBudget(e.target.value)}
+            className="mt-1 w-full rounded border border-rule bg-paper px-2.5 py-1.5 text-xs"
+          >
+            {budgets.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="termsMonthlyCap" className="block text-xs font-medium text-graphite">
+            Monthly cap ($)
+          </label>
+          <input
+            id="termsMonthlyCap"
+            type="number"
+            step="any"
+            value={draftMonthlyCapUsd}
+            onChange={(e) => setDraftMonthlyCapUsd(e.target.value)}
+            className="mt-1 w-full rounded border border-rule bg-paper px-2.5 py-1.5 text-xs"
+            required
+          />
+        </div>
+
+        <div className="flex items-center gap-4 pt-1">
+          <label className="flex items-center gap-2 text-xs cursor-pointer">
+            <input
+              type="checkbox"
+              checked={draftRequirePo}
+              onChange={(e) => setDraftRequirePo(e.target.checked)}
+              className="rounded border-rule text-ink focus:ring-0"
+            />
+            Require purchase order
+          </label>
+
+          <label className="flex items-center gap-2 text-xs cursor-pointer">
+            <input
+              type="checkbox"
+              checked={draftRequireDelivery}
+              onChange={(e) => setDraftRequireDelivery(e.target.checked)}
+              className="rounded border-rule text-ink focus:ring-0"
+            />
+            Require delivery confirmation
+          </label>
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-rule pt-3">
+        <p className="text-xs">
+          {isLooser ? (
+            <span className="text-amber-700 font-medium">
+              Looser terms: will be queued for {duration(BigInt(looseningDelaySeconds))}.
+            </span>
+          ) : (
+            <span className="text-emerald-700 font-medium">
+              Stricter terms: applies immediately upon signature.
+            </span>
+          )}
+        </p>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            disabled={busy}
+            className="rounded border border-rule px-3 py-1 text-xs text-graphite hover:bg-paper"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={busy}
+            className="rounded bg-ink px-3 py-1 text-xs font-medium text-paper hover:opacity-90 disabled:opacity-50"
+          >
+            {busy ? "Saving..." : isLooser ? "Queue update" : "Apply now"}
+          </button>
+        </div>
+      </div>
+    </form>
+  );
+}

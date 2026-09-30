@@ -49,14 +49,22 @@ export const CHANGE_KINDS: Record<GatedFunctionName, ChangeKindDef> = {
     kind: "set_budget",
     functionName: "setBudget",
     appliedEvent: "BudgetSet",
-    describe([id, budget]: readonly unknown[]) {
-      const b = budget as { cap?: bigint; periodLength?: bigint };
+    describe(args: readonly unknown[]) {
+      const id = args[0];
+      const cap =
+        typeof args[1] === "object" && args[1] !== null && "cap" in args[1]
+          ? (args[1] as { cap?: bigint }).cap
+          : args[1];
+      const periodLength =
+        typeof args[1] === "object" && args[1] !== null && "periodLength" in args[1]
+          ? (args[1] as { periodLength?: bigint }).periodLength
+          : args[2];
       return {
         title: "Set budget",
         details: {
           budgetId: String(id),
-          cap: b?.cap?.toString(),
-          periodLength: b?.periodLength?.toString(),
+          cap: cap?.toString(),
+          periodLength: periodLength?.toString(),
         },
       };
     },
