@@ -59,7 +59,7 @@ export function generateReleases(): string {
   }> = {};
 
   for (const file of files) {
-    const chainId = parseInt(file.split("-v")[0], 10);
+    const chainId = parseInt(file.slice(0, file.indexOf("-v")), 10);
     const content = JSON.parse(readFileSync(`${dir}${file}`, "utf8"));
     const implementation = getAddress(content.SymbolonVaultImplementation);
     const version = Number(content.version);

@@ -229,6 +229,39 @@ describe("Treasury Service", () => {
     expect(res.shortfalls[0]?.invoices[0]?.invoiceNumber).toBe("EUR-001");
   });
 
+  it("failed cash and reserve reads cannot manufacture forecast or reserve facts", async () => {
+    const { user, business } = await setupBusiness();
+    chainState.readContract.mockRejectedValue(new Error("offline"));
+    chainState.reserveStatus.mockRejectedValue(new Error("offline"));
+    const result = await loadTreasury(db, mockClient, cfg.deployment, business.id, user);
+    expect(result.forecast.days).toEqual([]);
+    expect(result.forecast.runwayStatement).toMatch(/unavailable/i);
+    expect(result.operatingSplit).toBeNull();
+    expect(result.reserve.readAvailable).toBe(false);
+  });
+
+  it("home Ahead failed balances remain unavailable instead of zero", async () => {
+    const {user,business}=await setupBusiness();
+    chainState.readContract.mockRejectedValue(new Error("offline"));
+    const result=await loadAhead(db,mockClient,cfg,user,business.id);
+    expect(result.runwayStatement).toMatch(/unavailable/i);
+    expect(result.shortfalls).toEqual([]);
+  });
+
+  it("coverage respects EURC and the selected buffer", async () => {
+    const { user, business } = await setupBusiness();
+    await db.update(businesses).set({ bufferDays: 7 }).where(eq(businesses.id, business.id));
+    await db.insert(invoices).values({ fingerprint: randHash(), chainId: cfg.chainId, ledger: cfg.deployment.contracts.invoiceLedger,
+      seal: randAddr(), businessId: business.id, payerRef: randHash(), invoiceNumber: "Buffer EURC", token: cfg.deployment.tokens.eurc,
+      total: 2_000_000_000n, dueDate: new Date(Date.now() + 5 * 86400000), envelope: "{}", status: "verified", source: "link" });
+    const result = await loadTreasury(db, mockClient, cfg.deployment, business.id, user);
+    expect(result.forecast.runwayStatement).toMatch(/EURC/);
+    expect(result.forecast.runwayStatement).not.toMatch(/covers everything/);
+    expect(result.shortfalls).toHaveLength(1);
+    await db.update(businesses).set({ bufferDays: 2 }).where(eq(businesses.id, business.id));
+    expect((await loadTreasury(db, mockClient, cfg.deployment, business.id, user)).shortfalls).toHaveLength(0);
+  });
+
   describe("Settings (Early Pay & Buffer)", () => {
     it("updates Early Pay settings with decision recording", async () => {
       const { user, business } = await setupBusiness();
@@ -452,6 +485,20 @@ describe("Treasury Service", () => {
   });
 
   describe("EURC Conversion Recording", () => {
+    it("rejects a successful unrelated swap receipt with no gained EURC", async () => {
+      const {user,business}=await setupBusiness();
+      const owner=getAddress(user.wallet!);
+      const vault=getAddress(business.vault!);
+      const swapTx=randHash(),transferTx=randHash();
+      const abi=parseAbiItem("event Transfer(address indexed from,address indexed to,uint256 value)");
+      chainState.getTransactionReceipt.mockImplementation(async ({hash}: {hash:Hex}) => hash.toLowerCase()===swapTx.toLowerCase()
+        ? {status:"success",from:owner,logs:[]}
+        : {status:"success",from:owner,logs:[{address:cfg.deployment.tokens.eurc,
+          topics:encodeEventTopics({abi:[abi],eventName:"Transfer",args:{from:owner,to:vault}}),
+          data:`0x${(1000000n).toString(16).padStart(64,"0")}`}]} );
+      await expect(recordConversion(db,cfg,user,business.id,mockClient,{swapTxHash:swapTx,transferTxHash:transferTx})).rejects.toThrow(/gain/);
+    });
+
     it("verifies receipts on chain and records conversion decision", async () => {
       const { user, business } = await setupBusiness();
       const swapTx = randHash();
@@ -471,7 +518,9 @@ describe("Treasury Service", () => {
 
       chainState.getTransactionReceipt.mockImplementation(async ({ hash }: { hash: Hex }) => {
         if (hash.toLowerCase() === swapTx.toLowerCase()) {
-          return { status: "success", from: owner, logs: [] };
+          return { status: "success", from: owner, logs: [{address:getAddress(cfg.deployment.tokens.eurc),
+            topics:encodeEventTopics({abi:[transferAbi],eventName:"Transfer",args:{from:getAddress(randAddr()),to:owner}}),
+            data:`0x${(500_000_000n).toString(16).padStart(64,"0")}`}] };
         }
         if (hash.toLowerCase() === transferTx.toLowerCase()) {
           return {
@@ -540,7 +589,7 @@ describe("Treasury Service", () => {
       expect(ahead.upcomingInvoices).toHaveLength(1);
       expect(ahead.upcomingInvoices[0]?.invoiceNumber).toBe("INV-AHEAD-1");
       expect(ahead.upcomingInvoices[0]?.amountFormatted).toBe("10000.000000");
-      expect(ahead.runwayStatement).toContain("Cash covers everything");
+      expect(ahead.runwayStatement).toContain("USDC and EURC cash cover recorded bills");
     });
 
     it("isolates ahead summary across multiple businesses", async () => {

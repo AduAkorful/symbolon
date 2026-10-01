@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { arcTestnet, getDeployment } from "@symbolon/chain";
+import { arcTestnet, getDeployment, symbolonVaultAbi } from "@symbolon/chain";
 import {
   businesses,
   createTestDb,
@@ -10,7 +10,7 @@ import {
   users,
 } from "@symbolon/db";
 import { buildTree, hashRecord, proofFor, toRecordValue, type DecisionRecord } from "@symbolon/steward";
-import type { Hex, PublicClient } from "viem";
+import { encodeAbiParameters, encodeEventTopics, type Hex, type PublicClient } from "viem";
 
 vi.mock("server-only", () => ({}));
 
@@ -216,7 +216,11 @@ describe("Decisions Service", () => {
       })
       .returning();
 
-    const client = {} as PublicClient;
+    const client = {
+      getTransactionReceipt: vi.fn().mockResolvedValue({ status: "success", to: business.vault, blockNumber: 100n, logs: [{ address: business.vault, topics: encodeEventTopics({ abi: symbolonVaultAbi, eventName: "DecisionsAnchored", args: { root: tree.root } }), data: encodeAbiParameters([{ type: "uint256" }], [BigInt(leaves.length)]) }] }),
+      getBlock: vi.fn().mockResolvedValue({ timestamp: 1000n }),
+    } as unknown as PublicClient;
+
 
     const view = await loadDecision(db, client, cfg, user, business.id, decRow!.id);
     expect(view).not.toBeNull();

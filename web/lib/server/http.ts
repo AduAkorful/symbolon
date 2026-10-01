@@ -61,7 +61,7 @@ export function assertSameOrigin(request: Request): void {
 export function routeWith<C>(handler: (request: Request, ctx: C) => Promise<Response>): (request: Request, ctx: C) => Promise<Response> {
   return async (request, ctx) => {
     try {
-      assertSameOrigin(request);
+      if (!["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase())) assertSameOrigin(request);
       return await handler(request, ctx);
     } catch (e) {
       if (e instanceof AuthError) return NextResponse.json({ error: e.message }, { status: e.status });

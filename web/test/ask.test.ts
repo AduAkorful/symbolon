@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-import { createTestDb, users, businesses, members, invoices, decisions, stewardRuns, type Database } from "@symbolon/db";
+import { createTestDb, users, businesses, members, invoices, decisions, chainEvents, stewardRuns, type Database } from "@symbolon/db";
+import { getDeployment, arcTestnet } from "@symbolon/chain";
 import { FakeStewardModel } from "@symbolon/steward";
 import { askSteward } from "@/lib/server/ask";
 import { executeIntent, listIntentDescriptors } from "@/lib/server/intents/registry";
@@ -53,7 +54,7 @@ describe("Ask the Steward", () => {
         db,
         businessId: bizId,
         client,
-        deployment: { chainId: 5042002, ledger: LEDGER } as any,
+        deployment: getDeployment(arcTestnet.id),
         now: new Date("2026-10-01T00:00:00Z"),
       };
 
@@ -71,7 +72,7 @@ describe("Ask the Steward", () => {
         businessId: bizId,
         payerRef: `0x${"00".repeat(32)}`,
         invoiceNumber: "INV-001",
-        token: `0x${"36".repeat(20)}`,
+        token: getDeployment(arcTestnet.id).tokens.usdc,
         total: 10_000_000n, // 10 USDC
         credited: 0n,
         dueDate: new Date("2026-10-04T00:00:00Z"),
@@ -80,9 +81,30 @@ describe("Ask the Steward", () => {
       });
 
       const resWithInv = await executeIntent(ctx, "payments_due", { days: 7 });
-      expect(resWithInv.text).toContain("1 invoice totaling 10.00 USDC due within the next 7 days");
+      expect(resWithInv.text).toContain("1 invoice totaling 10.000000 USDC due within the next 7 days");
       expect(resWithInv.links).toHaveLength(1);
       expect(resWithInv.links[0]![1]).toBe(`/business/inbox/${FP1}`);
+    });
+
+    it("savings use signed settled discount, not uncredited partial principal", async () => {
+      const deployment = getDeployment(arcTestnet.id);
+      const vault = `0x${"34".repeat(20)}`;
+      const {eq} = await import("drizzle-orm");
+      await db.update(businesses).set({vault}).where(eq(businesses.id,bizId));
+      await db.insert(invoices).values({fingerprint:FP1,chainId:arcTestnet.id,ledger:deployment.contracts.invoiceLedger,
+        seal:SEAL,businessId:bizId,payerRef:FP2,invoiceNumber:"Partial",token:deployment.tokens.eurc,
+        total:100_000_000n,credited:40_000_000n,dueDate:new Date(),envelope:"{}",source:"link"});
+      const ctx: IntentContext = {db,businessId:bizId,client:mockClient(),deployment,now:new Date("2026-10-01T00:00:00Z")};
+      expect((await executeIntent(ctx,"early_pay_savings",{})).text).toMatch(/No signed Early Pay/);
+      await db.insert(chainEvents).values({chainId:arcTestnet.id,txHash:FP2,logIndex:0,blockNumber:1000n,
+        address:deployment.contracts.invoiceLedger.toLowerCase(),eventName:"Settled",blockTime:new Date("2026-09-30T00:00:00Z"),
+        args:{fingerprint:FP1,payer:vault,token:deployment.tokens.eurc,credit:"40000000",paid:"39200000",discountBps:200}});
+      const savings = await executeIntent(ctx,"early_pay_savings",{});
+      expect(savings.text).toContain("0.800000 EURC");
+      expect(savings.text).not.toContain("60.");
+      const recent = await executeIntent(ctx,"recent_payments",{days:7});
+      expect(recent.text).toContain("39.200000 EURC");
+      expect(recent.text).not.toContain("40.000000");
     });
 
     it("held_invoices distinguishes Steward vs human holds", async () => {
@@ -91,7 +113,7 @@ describe("Ask the Steward", () => {
         db,
         businessId: bizId,
         client,
-        deployment: { chainId: 5042002, ledger: LEDGER } as any,
+        deployment: getDeployment(arcTestnet.id),
         now: new Date("2026-10-01T00:00:00Z"),
       };
 
@@ -103,7 +125,7 @@ describe("Ask the Steward", () => {
         businessId: bizId,
         payerRef: `0x${"00".repeat(32)}`,
         invoiceNumber: "INV-HELD-1",
-        token: `0x${"36".repeat(20)}`,
+        token: getDeployment(arcTestnet.id).tokens.usdc,
         total: 5_000_000n,
         credited: 0n,
         dueDate: new Date("2026-10-10T00:00:00Z"),
@@ -136,7 +158,7 @@ describe("Ask the Steward", () => {
         db,
         businessId: bizId,
         client,
-        deployment: { chainId: 5042002, ledger: LEDGER } as any,
+        deployment: getDeployment(arcTestnet.id),
         now: new Date("2026-10-01T00:00:00Z"),
       };
 
@@ -148,7 +170,7 @@ describe("Ask the Steward", () => {
         businessId: bizId,
         payerRef: `0x${"00".repeat(32)}`,
         invoiceNumber: "INV-DEC",
-        token: `0x${"36".repeat(20)}`,
+        token: getDeployment(arcTestnet.id).tokens.usdc,
         total: 5_000_000n,
         credited: 0n,
         dueDate: new Date("2026-10-10T00:00:00Z"),
@@ -183,7 +205,7 @@ describe("Ask the Steward", () => {
         db,
         businessId: bizId,
         client,
-        deployment: { chainId: 5042002, ledger: LEDGER } as any,
+        deployment: getDeployment(arcTestnet.id),
         now: new Date("2026-10-01T00:00:00Z"),
       };
 
@@ -207,7 +229,7 @@ describe("Ask the Steward", () => {
         db,
         businessId: bizId,
         client,
-        deployment: { chainId: 5042002, ledger: LEDGER } as any,
+        deployment: getDeployment(arcTestnet.id),
         now: new Date("2026-10-01T00:00:00Z"),
       };
 

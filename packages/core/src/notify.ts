@@ -13,7 +13,7 @@ export interface NotifyInput {
  * Returns { id, duplicate: boolean }.
  */
 export async function notify(
-  db: Database,
+  db: Pick<Database, "insert">,
   input: NotifyInput,
 ): Promise<{ id?: string; duplicate: boolean }> {
   const [row] = await db
@@ -38,7 +38,7 @@ export async function notify(
  * Inserts multiple notifications idempotently (plan 05u N1, N2).
  */
 export async function notifyMany(
-  db: Database,
+  db: Pick<Database, "insert">,
   inputs: NotifyInput[],
 ): Promise<{ inserted: number; duplicates: number }> {
   if (inputs.length === 0) return { inserted: 0, duplicates: 0 };

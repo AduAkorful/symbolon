@@ -1,6 +1,7 @@
 import { and, eq, gte, inArray, lte } from "drizzle-orm";
 
 import { businesses, chainEvents, deliveries, invoices, purchaseOrders, seals, type Database } from "@symbolon/db";
+import { getDeployment } from "@symbolon/chain";
 import { formatAmount } from "@symbolon/seal";
 
 export const PAYMENTS_CSV_HEADER = [
@@ -48,18 +49,14 @@ export const BEANCOUNT_ACCOUNTS = {
   incomeDiscounts: "Income:EarlyPayDiscounts",
 } as const;
 
-export function resolveTokenSymbol(tokenAddress: string): string {
-  const t = tokenAddress.toLowerCase();
-  if (t === "0x1800000000000000000000000000000000000001" || t === "0x3600000000000000000000000000000000000000" || t.includes("usdc")) {
-    return "USDC";
-  }
-  if (t === "0x8900000000000000000000000000000000000000" || t.includes("eurc")) {
-    return "EURC";
-  }
-  if (t.includes("usyc")) {
-    return "USYC";
-  }
-  return "USDC";
+/** Token identity comes only from the generated deployment registry, never guessed from an address. */
+export function resolveTokenSymbol(tokenAddress: string, chainId?: number): string {
+  if (chainId === undefined) return "UNKNOWN";
+  try {
+    const tokens = getDeployment(chainId).tokens;
+    const entry = Object.entries(tokens).find(([, address]) => address.toLowerCase() === tokenAddress.toLowerCase());
+    return entry?.[0].toUpperCase() ?? "UNKNOWN";
+  } catch { return "UNKNOWN"; }
 }
 
 interface LoadedPaymentData {
@@ -100,7 +97,7 @@ async function loadSettledPaymentData(
   if (opts.toDate !== undefined) conditions.push(lte(chainEvents.blockTime, opts.toDate));
 
   const events = (await db.select().from(chainEvents).where(and(...conditions))).filter((e) =>
-    byFp.has(String((e.args as { fingerprint?: string }).fingerprint).toLowerCase()),
+    (() => { const inv = byFp.get(String((e.args as { fingerprint?: string }).fingerprint).toLowerCase()); return inv && e.chainId === inv.chainId && e.address.toLowerCase() === inv.ledger.toLowerCase(); })(),
   );
   events.sort((a, b) => (a.blockNumber === b.blockNumber ? a.logIndex - b.logIndex : a.blockNumber < b.blockNumber ? -1 : 1));
 
@@ -126,7 +123,7 @@ async function loadSettledPaymentData(
     for (const pe of paidEvents) {
       const a = pe.args as { fingerprint?: string; decisionHash?: string };
       if (a.fingerprint && a.decisionHash) {
-        decisionHashMap.set(a.fingerprint.toLowerCase(), a.decisionHash);
+        decisionHashMap.set(`${pe.txHash.toLowerCase()}:${a.fingerprint.toLowerCase()}`, a.decisionHash);
       }
     }
   }
@@ -147,14 +144,14 @@ async function loadSettledPaymentData(
         ? "pending"
         : "not required";
     const deliveryTx = delivery?.txHash ?? "";
-    const decisionHash = decisionHashMap.get(inv.fingerprint.toLowerCase()) ?? "";
+    const decisionHash = decisionHashMap.get(`${e.txHash.toLowerCase()}:${inv.fingerprint.toLowerCase()}`) ?? "";
     const settledAt = e.blockTime ? e.blockTime.toISOString() : "";
 
     return {
       event: e,
       invoice: inv,
       vendorName,
-      tokenSymbol: resolveTokenSymbol(inv.token),
+      tokenSymbol: resolveTokenSymbol(inv.token, inv.chainId),
       settledAt,
       poRef: inv.poRef ?? "",
       poNumber,
@@ -191,9 +188,9 @@ export async function paymentsCsv(
       item.invoice.fingerprint,
       cleanControlChars(item.invoice.invoiceNumber),
       item.invoice.seal,
-      formatAmount(item.invoice.total, decimals),
-      formatAmount(item.credit, decimals),
-      formatAmount(item.paid, decimals),
+      item.tokenSymbol === "UNKNOWN" ? item.invoice.total.toString() : formatAmount(item.invoice.total, decimals),
+      item.tokenSymbol === "UNKNOWN" ? item.credit.toString() : formatAmount(item.credit, decimals),
+      item.tokenSymbol === "UNKNOWN" ? item.paid.toString() : formatAmount(item.paid, decimals),
       String(item.discountBps),
       String(item.payoutDomain),
       item.payoutAddress,
@@ -238,7 +235,8 @@ export async function paymentsBeancount(
   const txs = items.map((item) => {
     const dateStr = item.event.blockTime
       ? item.event.blockTime.toISOString().slice(0, 10)
-      : "2026-09-30";
+      : (() => { throw new Error("Block time unavailable: re-sync before exporting Beancount."); })();
+    if (item.tokenSymbol === "UNKNOWN") throw new Error("Token identity unavailable: cannot export Beancount.");
     const vendorSafe = cleanControlChars(item.vendorName).replace(/"/g, '\\"');
     const invoiceNumSafe = cleanControlChars(item.invoice.invoiceNumber).replace(/"/g, '\\"');
     const vendorSlug = cleanControlChars(item.vendorName).replace(/[^a-zA-Z0-9]/g, "") || "Vendor";

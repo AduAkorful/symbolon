@@ -86,6 +86,7 @@ export function AccountingView({
     }
   };
 
+  const unavailable = data.reconciliation.status === "unavailable";
   const hasMismatches = data.reconciliation.mismatches.length > 0;
 
   return (
@@ -94,8 +95,8 @@ export function AccountingView({
         <div>
           <h1 className="font-display text-4xl md:text-5xl">Accounting</h1>
           <p className="mt-2 max-w-[68ch] text-sm text-graphite">
-            Every payment exports with its invoice fingerprint, order, delivery, transaction, and decision record.
-            The Vault is the bank, so the books reconcile to the chain line by line.
+            Every payment exports with its invoice fingerprint, order, delivery, transaction, and decision record. Unknown tokens show raw units and are excluded from currency totals.
+            The Vault is the bank, so the books reconcile to the chain line by line. Re-sync records the comparison used by exports; otherwise exports remain unverified.
           </p>
         </div>
 
@@ -136,7 +137,7 @@ export function AccountingView({
       <section
         aria-labelledby="rec-heading"
         className={`mt-8 rounded-sm border p-5 transition-colors ${
-          hasMismatches ? "border-red/60 bg-red/5" : "border-seal/40 bg-paper"
+          hasMismatches || unavailable ? "border-red/60 bg-red/5" : "border-seal/40 bg-paper"
         }`}
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -145,9 +146,9 @@ export function AccountingView({
               Ledger Reconciliation
             </h2>
             <p className="mt-1 text-xs text-graphite">
-              Read up to block <span className="font-mono">{data.reconciliation.syncedBlock}</span> ·{" "}
+              Ledger copy through block <span className="font-mono">{data.reconciliation.syncedBlock}</span> · Comparison block <span className="font-mono">{data.reconciliation.comparedBlock}</span> ·{" "}
               {data.reconciliation.totalCompared} invoices compared ·{" "}
-              {hasMismatches
+              {unavailable ? "Ledger comparison unavailable. Re-sync to retry." : hasMismatches
                 ? `${data.reconciliation.mismatches.length} mismatch(es) found`
                 : "Every line matches"}
             </p>
@@ -182,6 +183,8 @@ export function AccountingView({
               ))}
             </ul>
           </div>
+        ) : unavailable ? (
+          <p className="mt-3 text-xs text-red">Cannot confirm whether the stored payments match the ledger. Exports include this warning.</p>
         ) : (
           <p className="mt-3 text-xs text-seal font-medium">
             ✓ 0 mismatches. All stored payments and statuses match the canonical ledger exactly.

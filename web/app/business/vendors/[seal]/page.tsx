@@ -54,7 +54,7 @@ export default async function BusinessVendorDetailPage({ params }: { params: Pro
   const isBlocked = vendor.status === "blocked";
   const mayVerify = business.role === "owner" || business.role === "approver";
   const signer = signerPlanFor(session, config);
-  const budgetsData = await listBudgets(db, getClient(), config.deployment, session.user, business.id).catch(() => ({ budgets: [] }));
+  const budgetsData = await listBudgets(db, getClient(), config.deployment, session.user, business.id).catch(() => null);
 
   return <Shell where={where} current={{ kind: "business", id: business.id }}>
     <article className="mx-auto max-w-[900px]">
@@ -103,8 +103,9 @@ export default async function BusinessVendorDetailPage({ params }: { params: Pro
               <div><dt className="text-graphite">Matching requirements</dt><dd>PO {vendor.canBePaid.terms.requirePo ? "required" : "not required"} · delivery {vendor.canBePaid.terms.requireDelivery ? "required" : "not required"}</dd></div>
               <div><dt className="text-graphite">Screening</dt><dd>{vendor.canBePaid.screening.risk}{vendor.canBePaid.screening.at !== "0" ? " · read at block " + vendor.blockNumber : ""}</dd></div>
             </dl>
-            {business.role === "owner" ? (
+            {business.role === "owner" && budgetsData ? (
               <PayeeTermsEditor
+                accountingDecimals={budgetsData.accountingDecimals}
                 businessId={business.id}
                 seal={vendor.seal}
                 currentTerms={{
@@ -119,6 +120,7 @@ export default async function BusinessVendorDetailPage({ params }: { params: Pro
               />
             ) : null}
           </> : <p className="mt-2 text-sm text-graphite">Not added to this Vault as a payee.</p>}
+          {business.role === "owner" && !budgetsData ? <p className="mt-2 text-sm text-red">Can't load budget and amount settings. Payee terms cannot be edited until they are confirmed.</p> : null}
           {business.role === "owner" && vendor.status === "verified" && vendor.canBePaid.confirmed && !vendor.canBePaid.exists ? <AddPayee businessId={business.id} seal={vendor.seal} signer={signer} explorer={config.deployment.explorer} /> : null}
         </div>
       </section>

@@ -12,9 +12,12 @@ import {
   withdrawOffer,
 } from "@/lib/server/offers";
 import { requireMySeal } from "@/lib/server/vendor";
+import { invoices } from "@symbolon/db";
+import { and, eq } from "drizzle-orm";
+import { AuthError } from "@/lib/server/errors";
 
 export const GET = routeWith(async (request) => {
-  await requireSession();
+  const session = await requireSession();
   const db = await getDb();
   const url = new URL(request.url);
   const fingerprint = url.searchParams.get("fingerprint");
@@ -23,6 +26,9 @@ export const GET = routeWith(async (request) => {
     return NextResponse.json({ error: "Missing fingerprint query param." }, { status: 400 });
   }
 
+  const seal = await requireMySeal(db, session.user.id);
+  const [invoice] = await db.select({ fingerprint: invoices.fingerprint }).from(invoices).where(and(eq(invoices.fingerprint, fingerprint.toLowerCase()), eq(invoices.seal, seal.address.toLowerCase())));
+  if (!invoice) throw new AuthError(404, "Invoice not found.");
   const offers = await listOffersForInvoice(db, fingerprint);
   return NextResponse.json({ offers });
 });
@@ -43,6 +49,7 @@ export const POST = routeWith(async (request) => {
       body.fingerprint,
       body.discountBps,
       body.durationSeconds,
+      body.counterId,
     );
     return NextResponse.json(res);
   }
@@ -53,6 +60,7 @@ export const POST = routeWith(async (request) => {
       discountBps: body.discountBps,
       validUntil: body.validUntil,
       signature: body.signature,
+      counterId: body.counterId,
     });
     return NextResponse.json(res);
   }

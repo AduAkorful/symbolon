@@ -1,0 +1,2 @@
+ALTER TABLE "invoices" ADD COLUMN "hold_kind" text;--> statement-breakpoint
+ALTER TABLE "invoices" ADD CONSTRAINT "invoices_hold_kind" CHECK ("invoices"."hold_kind" is null or ("invoices"."hold_source" = 'human' and "invoices"."status" = 'held' and "invoices"."hold_kind" in ('delivery', 'payment')));

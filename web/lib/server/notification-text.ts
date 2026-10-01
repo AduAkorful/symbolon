@@ -93,7 +93,7 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
       const invoiceNumber = typeof body.invoiceNumber === "string" ? body.invoiceNumber : subject;
       return {
         title: `Invoice paid: ${invoiceNumber ?? "Settled"}`,
-        body: "Your invoice was settled and paid onchain.",
+        body: body.partial === true ? "A partial payment was settled onchain." : "Your invoice was settled and paid onchain.",
         href: subject ? `/vendor/invoices/${subject}` : "/vendor",
       };
     }
@@ -148,6 +148,7 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
         href: "/vendor",
       };
     }
+    case "payout_change_cancelled": return { title: "Pending payout change cancelled", body: "The business cancelled the pending address change.", href: "/vendor" };
 
     default: {
       return {

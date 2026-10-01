@@ -21,6 +21,7 @@ describe("FakeStewardModel route", () => {
     const model = new FakeStewardModel();
     const res1 = await model.route("What are we paying this week?", intents);
     expect(res1.intent).toBe("payments_due");
+    if (!("params" in res1)) throw new Error("Expected a supported route");
     expect(res1.params).toEqual({ days: 7 });
 
     const res2 = await model.route("Why did you hold Forge Supply?", intents);

@@ -19,7 +19,7 @@ const HASH_RE = /^0x[0-9a-fA-F]{64}$/;
 export interface SettlementItem {
   txHash: string;
   blockNumber: string;
-  timestamp: Date;
+  timestamp: Date | null;
   payer: string;
   token: string;
   creditRaw: string;
@@ -129,19 +129,19 @@ export async function loadReceipt(
     const status = await invoiceStatus(contracts, fingerprint);
     onchainRemaining = status.remaining;
   } catch {
-    // non-fatal if status check fails
+    return { state: "unconfirmed", fingerprint, reason: "Settlements exist, but the remaining invoice balance cannot be confirmed right now." };
   }
 
   const settlements: SettlementItem[] = await Promise.all(
     settledLogs.map(async (l) => {
-      let blockDate = new Date();
+      let blockDate: Date | null = null;
       try {
         if (l.blockNumber) {
           const block = await client.getBlock({ blockNumber: l.blockNumber });
           blockDate = new Date(Number(block.timestamp) * 1000);
         }
       } catch {
-        // fallback to current date
+        // The settlement log remains confirmed; its time is explicitly unavailable.
       }
 
       const creditRaw = l.args.credit ?? 0n;

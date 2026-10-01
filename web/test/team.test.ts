@@ -101,6 +101,7 @@ describe("Team management service (05t Part B)", () => {
         read: {
           getVaultState: async () => ({ owner: owner.wallet }),
           isApprover: async () => false,
+          approverBudgetCount: async () => 0n,
           isRequester: async () => false,
         },
       },
@@ -144,6 +145,7 @@ describe("Team management service (05t Part B)", () => {
       lens: {
         read: {
           getVaultState: async () => ({ owner: owner.wallet }),
+          approverBudgetCount: async () => 1n,
           isApprover: async () => true, // active onchain!
           isRequester: async () => false,
         },
@@ -161,6 +163,7 @@ describe("Team management service (05t Part B)", () => {
         read: {
           getVaultState: async () => ({ owner: owner.wallet }),
           isApprover: async () => false,
+          approverBudgetCount: async () => 0n,
           isRequester: async () => false,
         },
       },
@@ -191,6 +194,7 @@ describe("Team management service (05t Part B)", () => {
       lens: {
         read: {
           getVaultState: async () => ({ owner: owner.wallet }),
+          approverBudgetCount: async () => 1n,
           isApprover: async () => true,
           isRequester: async () => false,
         },
@@ -208,6 +212,7 @@ describe("Team management service (05t Part B)", () => {
         read: {
           getVaultState: async () => ({ owner: owner.wallet }),
           isApprover: async () => false,
+          approverBudgetCount: async () => 0n,
           isRequester: async () => false,
         },
       },

@@ -78,16 +78,17 @@ export async function recordDeliveryOutcome(
         },
       });
 
-    // Release a human-held invoice (N9: only human holds, never Steward holds)
+    // Release only an explicitly delivery-held invoice; legacy/independent payment holds stay held
     await db
       .update(invoices)
-      .set({ status: "verified", holdSource: null })
+      .set({ status: "verified", holdSource: null, holdKind: null })
       .where(
         and(
           eq(invoices.fingerprint, fp),
           eq(invoices.businessId, a.businessId),
           eq(invoices.status, "held"),
           eq(invoices.holdSource!, "human"),
+          eq(invoices.holdKind, "delivery"),
         ),
       );
   } else {
@@ -119,7 +120,7 @@ export async function recordDeliveryOutcome(
     for (const fromStatus of ["verified", "awaiting_approval", "scheduled"] as const) {
       await db
         .update(invoices)
-        .set({ status: "held", holdSource: "human" })
+        .set({ status: "held", holdSource: "human", holdKind: "delivery" })
         .where(
           and(
             eq(invoices.fingerprint, fp),

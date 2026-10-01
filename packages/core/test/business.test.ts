@@ -1,6 +1,6 @@
 import { decodeFunctionData, keccak256, stringToBytes, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getDeployment, toTransaction, vaultFactoryAbi } from "@symbolon/chain";
 import { createTestDb, earlyPayOffers, invoices, members, seals, users } from "@symbolon/db";
@@ -87,9 +87,12 @@ describe("Early Pay offers", () => {
   });
 
   it("counters once, and expires stale offers", async () => {
-    await counterOffer(db, { fingerprint: FP, discountBps: 120, validUntil: new Date(NOW.getTime() + 3_600_000) });
-    await expect(counterOffer(db, { fingerprint: FP, discountBps: 100, validUntil: NOW })).rejects.toThrow(/once/);
-    await recordOffer(db, d, { fingerprint: FP, discountBps: 200, validUntil: in1Day, signature: await sign() }, { now: NOW });
-    expect(await expireOffers(db, new Date(Number(in1Day + 1n) * 1000))).toBe(1);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(NOW.getTime());
+    try {
+      await counterOffer(db, { fingerprint: FP, discountBps: 120, validUntil: new Date(NOW.getTime() + 3_600_000) });
+      await expect(counterOffer(db, { fingerprint: FP, discountBps: 100, validUntil: new Date(NOW.getTime() + 7_200_000) })).rejects.toThrow(/once/);
+      await recordOffer(db, d, { fingerprint: FP, discountBps: 200, validUntil: in1Day, signature: await sign() }, { now: NOW });
+      expect(await expireOffers(db, new Date(Number(in1Day + 1n) * 1000))).toBe(2);
+    } finally { clock.mockRestore(); }
   });
 });

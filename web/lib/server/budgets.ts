@@ -1,8 +1,8 @@
 import "server-only";
 
-import { keccak256, toHex, type Address, type Hex, type PublicClient } from "viem";
+import { decodeFunctionData, parseEventLogs, getAddress, keccak256, toHex, type Address, type Hex, type PublicClient } from "viem";
 import { and, eq, sql } from "drizzle-orm";
-import { symbolonContracts, type Deployment } from "@symbolon/chain";
+import { symbolonVaultAbi, symbolonContracts, type Deployment } from "@symbolon/chain";
 import { budgets, businesses, type Database } from "@symbolon/db";
 import { AuthError } from "./errors";
 import { requireMember } from "./access";
@@ -76,6 +76,9 @@ export async function listBudgets(
   const vault = biz.vault as Address;
 
   const contracts = symbolonContracts(client, deployment);
+  const accountingDecimals = await contracts.lens.read.accountingDecimals([vault]).catch(() => { throw new AuthError(502, "Can't confirm the Vault's accounting decimals."); });
+  if (!Number.isInteger(accountingDecimals) || accountingDecimals < 0 || accountingDecimals > 77) throw new AuthError(502, "Can't confirm the Vault's accounting decimals.");
+
 
   // Read decimals and block timestamp
   let blockTimestamp = BigInt(Math.floor(Date.now() / 1000));
@@ -95,7 +98,7 @@ export async function listBudgets(
     .where(eq(budgets.businessId, businessId));
 
   // Also read queued changes for set_budget
-  const queuedChanges = await listQueuedChanges(db, businessId);
+  const queuedChanges = await listQueuedChanges(db, businessId, user);
   const budgetQueuedMap = new Map<Hex, (typeof queuedChanges)[number]>();
   for (const q of queuedChanges) {
     if (q.kind === "set_budget") {
@@ -174,7 +177,7 @@ export async function listBudgets(
 
   return {
     vault,
-    accountingDecimals: 6,
+    accountingDecimals,
     budgets: items,
   };
 }
@@ -193,8 +196,8 @@ export async function prepareCreateBudget(
 ) {
   await requireMember(db, user.id, businessId, "owner");
 
-  const trimmedName = params.name.trim();
-  if (trimmedName.length < 1 || trimmedName.length > 60) {
+  const trimmedName = params.name.normalize("NFC").trim();
+  if (trimmedName.length < 1 || trimmedName.length > 60 || /[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]/.test(trimmedName)) {
     throw new AuthError(400, "Budget name must be between 1 and 60 characters");
   }
 
@@ -246,17 +249,30 @@ export async function recordCreateBudget(
 ) {
   await requireMember(db, user.id, businessId, "owner");
 
+  const name = params.name.normalize("NFC").trim();
+  if (!name || name.length > 60 || /[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]/.test(name)) throw new AuthError(400, "Invalid budget name.");
+  const budgetId = deriveBudgetId(businessId, name);
+  const [business] = await db.select().from(businesses).where(eq(businesses.id, businessId));
+  if (!business?.vault) throw new AuthError(409, "Business has no Vault.");
+  const vault = getAddress(business.vault);
+  const [receipt, transaction] = await Promise.all([
+    client.getTransactionReceipt({ hash: params.txHash }), client.getTransaction({ hash: params.txHash }),
+  ]).catch(() => { throw new AuthError(409, "Can't confirm the budget transaction."); });
+  if (receipt.status !== "success" || !receipt.to || getAddress(receipt.to) !== vault) throw new AuthError(409, "Not a successful transaction to this Vault.");
+  const decoded = decodeFunctionData({ abi: symbolonVaultAbi, data: transaction.input });
+  if (decoded.functionName !== "setBudget" || decoded.args[0].toLowerCase() !== budgetId) throw new AuthError(409, "The signed budget does not match this name.");
+  const events = parseEventLogs({ abi: symbolonVaultAbi, eventName: "BudgetSet", logs: receipt.logs }).filter((e) => getAddress(e.address) === vault);
+  if (events.length !== 1 || events[0]!.args.budget !== budgetId || events[0]!.args.cap !== decoded.args[1] || events[0]!.args.periodLength !== decoded.args[2]) throw new AuthError(409, "The matching budget was not applied.");
+  const current = await symbolonContracts(client, deployment).lens.read.getBudget([vault, budgetId]);
+  if (!current.exists || current.cap !== decoded.args[1] || current.periodLength !== decoded.args[2]) throw new AuthError(409, "Can't confirm the matching budget state.");
   const result = await recordChange(db, client, deployment, user, businessId, params.txHash);
-
-  // If the change applied or was queued, ensure the budget row is tracked
-  const budgetId = deriveBudgetId(businessId, params.name);
   if (result.status === "applied") {
     await db
       .insert(budgets)
       .values({
         businessId,
         budgetId,
-        name: params.name.trim(),
+        name,
         createdBy: user.id,
       })
       .onConflictDoNothing();

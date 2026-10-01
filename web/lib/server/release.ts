@@ -9,14 +9,17 @@ import {
   type Address,
   type PublicClient,
 } from "viem";
-import { eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, eq } from "drizzle-orm";
 import {
   symbolonVaultAbi,
   symbolonContracts,
   getReleaseNotes,
   type Deployment,
 } from "@symbolon/chain";
-import { businesses, type Database } from "@symbolon/db";
+import { businesses, decisions, type Database } from "@symbolon/db";
+import { hashRecord, type DecisionRecord } from "@symbolon/steward";
+import { captureUpgradeSnapshot, compareUpgradeSnapshots, upgradeScope, type UpgradeSnapshot } from "./upgrade-snapshot";
 import { requireMember } from "./access";
 import { appendAppDecision } from "./app-decisions";
 import { AuthError } from "./errors";
@@ -260,6 +263,8 @@ export function compareVaultSnapshots(
   if (before.owner.toLowerCase() !== after.owner.toLowerCase()) {
     diffs.push(`owner (${before.owner} → ${after.owner})`);
   }
+  if (before.pendingOwner.toLowerCase() !== after.pendingOwner.toLowerCase()) diffs.push("pendingOwner");
+  if (before.screener.toLowerCase() !== after.screener.toLowerCase()) diffs.push("screener");
   if (before.steward.toLowerCase() !== after.steward.toLowerCase()) {
     diffs.push(`steward (${before.steward} → ${after.steward})`);
   }
@@ -502,6 +507,7 @@ export async function prepareUpgrade(
   latestImpl: Address;
   latestVersion: number;
   stateSnapshotBefore: VaultStateSnapshot;
+  operationId: string;
 }> {
   await requireMember(db, user.id, businessId, "owner");
 
@@ -530,7 +536,17 @@ export async function prepareUpgrade(
     throw new AuthError(400, `Upgrade delay has not elapsed yet (ready at ${readyAt}).`);
   }
 
+  const release = await contracts.registry.read.release([latestImpl]);
+  if (release.revoked || release.publishedAt === 0n) throw new AuthError(400, "The target release is revoked or unpublished.");
+  const snapshotBlock = await client.getBlockNumber();
+  const snapshot = await captureUpgradeSnapshot(client, deployment, vault, await upgradeScope(db, businessId), snapshotBlock);
+  const snapshotOwner = (snapshot.state.vaultState as { owner: string }).owner;
+  if (snapshotOwner.toLowerCase() !== owner.toLowerCase()) throw new AuthError(400, "Vault ownership changed during preparation.");
   const stateSnapshotBefore = await snapshotVaultState(client, deployment, vault);
+  const operationId = randomUUID();
+  await appendAppDecision(db, businessId, { kind: "upgrade_prepared", subject: operationId, actor: user.id,
+    inputs: { chainId: deployment.chainId, vault, implementation: latestImpl, owner, snapshot },
+    rule: "capture server-owned pre-upgrade state at one block", outcome: "prepared" });
 
   const data = encodeFunctionData({
     abi: symbolonVaultAbi,
@@ -545,6 +561,7 @@ export async function prepareUpgrade(
     latestImpl,
     latestVersion,
     stateSnapshotBefore,
+    operationId,
   };
 }
 
@@ -555,7 +572,7 @@ export async function recordUpgrade(
   user: Pick<SessionUser, "id">,
   businessId: string,
   txHash: `0x${string}`,
-  stateSnapshotBefore?: VaultStateSnapshot,
+  operationId?: string,
 ): Promise<{
   ok: true;
   stateMatch: boolean;
@@ -585,17 +602,23 @@ export async function recordUpgrade(
     throw new AuthError(400, "No Upgraded event found in transaction receipt.");
   }
 
+  if (logs.length !== 1 || logs[0]!.address.toLowerCase() !== vault.toLowerCase()) throw new AuthError(400, "Expected exactly one upgrade event from this Vault.");
   const implementation = getAddress(logs[0]!.args.implementation);
 
-  const stateSnapshotAfter = await snapshotVaultState(client, deployment, vault);
-
-  let stateMatch = true;
-  let diffs: string[] = [];
-  if (stateSnapshotBefore) {
-    const comparison = compareVaultSnapshots(stateSnapshotBefore, stateSnapshotAfter);
-    stateMatch = comparison.match;
-    diffs = comparison.diffs;
-  }
+  if (typeof operationId !== "string" || !operationId) throw new AuthError(400, "Server-owned upgrade snapshot is missing; state preservation cannot be verified.");
+  const [operation] = operationId ? await db.select().from(decisions).where(and(eq(decisions.businessId, businessId), eq(decisions.kind, "upgrade_prepared"), eq(decisions.subject, operationId))).limit(1) : [];
+  if (!operation) throw new AuthError(400, "Server-owned upgrade snapshot is missing; state preservation cannot be verified.");
+  if (hashRecord(operation.record as unknown as DecisionRecord).hash.toLowerCase() !== operation.hash.toLowerCase()) throw new AuthError(400, "Upgrade snapshot integrity check failed.");
+  const input = (operation.record as { inputs: { actor: string; chainId: number; vault: string; implementation: string; owner: string; snapshot: UpgradeSnapshot } }).inputs;
+  if (input.actor !== user.id || input.chainId !== deployment.chainId || input.vault.toLowerCase() !== vault.toLowerCase() || input.implementation.toLowerCase() !== implementation.toLowerCase()) throw new AuthError(400, "Upgrade operation does not match this actor, Vault or implementation.");
+  const previous = await db.select().from(decisions).where(and(eq(decisions.businessId, businessId), eq(decisions.kind, "upgrade_applied")));
+  if (previous.some(d => (d.record as { inputs?: { operationId?: string; txHash?: string } }).inputs?.operationId === operationId && d.txHash?.toLowerCase() !== txHash.toLowerCase())) throw new AuthError(400, "Upgrade operation has already been used.");
+  const transaction = await client.getTransaction({ hash: txHash });
+  const expectedData = encodeFunctionData({ abi: symbolonVaultAbi, functionName: "upgradeToAndCall", args: [implementation, "0x"] });
+  if (!receipt.to || transaction.to?.toLowerCase() !== vault.toLowerCase() || transaction.from.toLowerCase() !== input.owner.toLowerCase() || transaction.input.toLowerCase() !== expectedData.toLowerCase() || receipt.blockNumber <= BigInt(input.snapshot.block)) throw new AuthError(400, "Receipt does not match the prepared upgrade transaction.");
+  const stateSnapshotBefore = input.snapshot;
+  const stateSnapshotAfter = await captureUpgradeSnapshot(client, deployment, vault, input.snapshot.scope, receipt.blockNumber);
+  const { match: stateMatch, diffs } = compareUpgradeSnapshots(stateSnapshotBefore, stateSnapshotAfter);
 
   await appendAppDecision(db, businessId, {
     kind: "upgrade_applied",
@@ -604,6 +627,7 @@ export async function recordUpgrade(
     inputs: {
       implementation,
       txHash,
+      operationId,
       snapshotBefore: stateSnapshotBefore,
       snapshotAfter: stateSnapshotAfter,
       stateMatch,
@@ -611,6 +635,7 @@ export async function recordUpgrade(
     },
     rule: "the owner applied a scheduled Vault implementation upgrade",
     outcome: stateMatch ? "applied" : "applied_state_diff",
+    txHash,
   });
 
   return {

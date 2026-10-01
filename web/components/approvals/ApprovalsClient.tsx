@@ -8,16 +8,20 @@ import { Overlay } from "@/components/Overlay";
 import { sendCall, type SignerPlan } from "@/components/setup/owner-signer";
 import { TxLink } from "@/components/TxLink";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
+import { signTypedData } from "@/components/vendor/seal-signer";
 import type { ApprovalItem, ApprovalsListResult } from "@/lib/server/approvals";
+import type { businessOffers } from "@/lib/server/offers";
+import { BusinessOffers } from "@/components/inbox/BusinessOffers";
 
 interface Props {
   businessId: string;
   data: ApprovalsListResult;
   signerPlan: SignerPlan;
   explorerUrl: string;
+  offerViews?: Record<string, Awaited<ReturnType<typeof businessOffers>>>;
 }
 
-export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl }: Props) {
+export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, offerViews }: Props) {
   const router = useRouter();
   const discover = useWalletProviders();
 
@@ -92,32 +96,11 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl }: P
         throw new Error(prepData.error || "Failed to prepare approval message.");
       }
 
-      if (signerPlan.kind === "none") {
-        throw new Error(signerPlan.reason);
+      if (typeof prepData.typedDataJson !== "string") {
+        throw new Error("The prepared approval signing payload is missing.");
       }
-
-      const providers = await discover();
-      let activeProvider: any = null;
-      for (const p of providers) {
-        try {
-          const accounts = (await p.request({ method: "eth_accounts" })) as string[];
-          if (accounts.some((a) => a.toLowerCase() === signerPlan.address.toLowerCase())) {
-            activeProvider = p;
-            break;
-          }
-        } catch {
-          // ignore
-        }
-      }
-      if (!activeProvider) {
-        throw new Error(`Your connected wallet does not match your Symbolon account address (${signerPlan.address}).`);
-      }
-
-      // Sign EIP-712 Approval message
-      const signature = (await activeProvider.request({
-        method: "eth_signTypedData_v4",
-        params: [signerPlan.address, JSON.stringify(prepData.typedData)],
-      })) as string;
+      // Select the account's wallet, switch to Arc, and forward the server's exact JSON unchanged.
+      const signature = await signTypedData(signerPlan, prepData.typedDataJson, discover);
 
       // 2. Submit approval to server
       const subRes = await fetch(`/api/business/${businessId}/approvals`, {
@@ -266,6 +249,7 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl }: P
                 </div>
 
                 {/* Evidence summary */}
+                {offerViews?.[item.fingerprint] ? <BusinessOffers businessId={businessId} fingerprint={item.fingerprint} view={offerViews[item.fingerprint]!} symbol={item.token} /> : null}
                 {item.evidence.length > 0 ? (
                   <div className="mt-4 border-t border-rule-soft pt-3">
                     <p className="text-xs uppercase tracking-wider text-graphite">Evidence checks</p>

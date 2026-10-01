@@ -1,5 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import type { Hex } from "viem";
+import type { SymbolonContracts } from "@symbolon/chain";
+import { eq } from "drizzle-orm";
+import type { Hex, PublicClient } from "viem";
 
 vi.mock("server-only", () => ({}));
 import { arcTestnet, getDeployment } from "@symbolon/chain";
@@ -228,5 +230,59 @@ describe("Accounting service (05s Part D)", () => {
     await expect(
       resyncLedger(db, mockClient, mockContracts, deployment, viewer, business.id),
     ).rejects.toMatchObject({ status: 403 });
+  });
+});
+
+
+describe("accounting audit boundary repairs", () => {
+  async function settled(token: string, blockTime: Date | null = new Date("2026-09-29T11:00:00Z")) {
+    const f = await fixture(); const fp = hash(++vaultNo);
+    await db.insert(invoices).values({ fingerprint: fp, chainId: deployment.chainId, ledger: deployment.contracts.invoiceLedger,
+      seal: f.sealAddr, businessId: f.business.id, payerRef: hash(0), invoiceNumber: "EUR-INVOICE", token,
+      total: 1000000n, dueDate: new Date(), envelope: "{}", source: "link" });
+    await db.insert(chainEvents).values({ chainId: deployment.chainId, txHash: hash(++vaultNo), logIndex: 0,
+      blockNumber: 2000n, blockTime, address: deployment.contracts.invoiceLedger.toLowerCase(), eventName: "Settled",
+      args: { fingerprint: fp, credit: "1000000", paid: "1000000" } });
+    return f;
+  }
+  const failedContracts = { ledger: { read: { status: async () => { throw new Error("offline"); }, remaining: async () => 0n } } } as unknown as SymbolonContracts;
+  it("registry EURC remains EURC in view, CSV and Beancount", async () => {
+    const f = await settled(deployment.tokens.eurc);
+    const view = await loadAccounting(db, failedContracts, undefined, deployment, f.owner, f.business.id);
+    expect(view.payments[0]?.token).toBe("EURC"); expect(view.totals.eurcTotal).toBe("1.000000"); expect(view.totals.usdcTotal).toBe("0.000000");
+    expect((await exportAccounting(db, f.owner, f.business.id, "csv")).content).toContain("EURC");
+    expect((await exportAccounting(db, f.owner, f.business.id, "beancount")).content).toContain("1.000000 EURC");
+  });
+  it("RPC failure stays unavailable and exports warning plus provenance", async () => {
+    const f = await settled(deployment.tokens.usdc);
+    const view = await loadAccounting(db, failedContracts, undefined, deployment, f.owner, f.business.id);
+    expect(view.reconciliation.status).toBe("unavailable"); expect(view.reconciliation.totalCompared).toBe(0);
+    const exported = await exportAccounting(db, f.owner, f.business.id, "csv");
+    expect(exported.content).toContain("# UNRECONCILED: comparison unavailable");
+    const rows = await db.select().from(decisions).where(eq(decisions.businessId, f.business.id));
+    const rec = rows.find(r => r.kind === "export_created")?.record as { inputs: { reconciled: { status: string } } };
+    expect(rec.inputs.reconciled.status).toBe("unavailable");
+  });
+  it("completed POST re-sync provenance warns on exact mismatches and becomes unavailable when the copy changes", async () => {
+    const f = await settled(deployment.tokens.usdc);
+    const client = { getBlockNumber: async () => deployment.startBlock + 1n, getLogs: async () => [],
+      readContract: async ({ functionName }: { functionName: string }) => functionName === "status"
+        ? { seen: true, total: 1000000n, credited: 1n, cancelled: false, seal: f.sealAddr } : 999999n,
+    } as unknown as PublicClient;
+    const contracts = { ledger: { read: { status: async () => ({ seen: true, total: 1000000n, credited: 1n, cancelled: false, seal: f.sealAddr }), remaining: async () => 999999n } } } as unknown as SymbolonContracts;
+    const before = await db.select().from(decisions).where(eq(decisions.businessId, f.business.id));
+    await loadAccounting(db, contracts, client, deployment, f.owner, f.business.id);
+    expect(await db.select().from(decisions).where(eq(decisions.businessId, f.business.id))).toHaveLength(before.length);
+    await resyncLedger(db, client, contracts, deployment, f.owner, f.business.id);
+    const file = await exportAccounting(db, f.owner, f.business.id, "csv");
+    expect(file.content).toContain("# UNRECONCILED: 2 mismatches at block");
+    await db.update(invoices).set({ credited: 1n, status: "partially_paid" }).where(eq(invoices.businessId, f.business.id));
+    expect((await exportAccounting(db, f.owner, f.business.id, "csv")).content).toContain("# UNRECONCILED: comparison unavailable");
+  });
+  it("unknown token never adds to USDC; missing block time cannot fabricate a Beancount date", async () => {
+    const f = await settled(address(++sealNo), null);
+    const view = await loadAccounting(db, failedContracts, undefined, deployment, f.owner, f.business.id);
+    expect(view.payments[0]?.token).toBe("UNKNOWN"); expect(view.totals.usdcTotal).toBe("0.000000");
+    await expect(exportAccounting(db, f.owner, f.business.id, "beancount")).rejects.toThrow(/block time|token/i);
   });
 });

@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { decodeFunctionData, type Hex, type PublicClient } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { symbolonVaultAbi, toTransaction, type Deployment, type SymbolonContracts } from "@symbolon/chain";
+import { arcTestnet, getDeployment, symbolonVaultAbi, toTransaction, type Deployment, type SymbolonContracts } from "@symbolon/chain";
 import { businesses, chainEvents, createTestDb, decisions, invoices } from "@symbolon/db";
 import { DEFAULT_EARLY_PAY, type StewardWallet } from "@symbolon/steward";
 
@@ -54,7 +54,7 @@ describe("treasury run", () => {
       businessId,
       payerRef: `0x${"00".repeat(32)}`,
       invoiceNumber: "INV-1",
-      token: `0x${"36".repeat(20)}`,
+      token: getDeployment(arcTestnet.id).tokens.usdc,
       total: 100_000n * USDC,
       dueDate: new Date(Number(NOW + 10n * 86_400n) * 1000),
       envelope: "{}",
@@ -116,7 +116,7 @@ describe("payments export", () => {
       businessId: b!.id,
       payerRef: `0x${"00".repeat(32)}`,
       invoiceNumber: "=HYPERLINK(\"x\")",
-      token: `0x${"36".repeat(20)}`,
+      token: getDeployment(arcTestnet.id).tokens.usdc,
       total: 4_326_000_001n,
       dueDate: new Date(),
       envelope: "{}",
@@ -154,7 +154,7 @@ describe("payments export", () => {
       businessId: b!.id,
       payerRef: `0x${"00".repeat(32)}`,
       invoiceNumber: "INV-2024",
-      token: `0x${"36".repeat(20)}`,
+      token: getDeployment(arcTestnet.id).tokens.usdc,
       total: 2_000_000_000n,
       dueDate: new Date(),
       envelope: "{}",
@@ -181,7 +181,7 @@ describe("payments export", () => {
 
     // Verify balance: +2000 - 1985 - 15 == 0
     const matches = [...bc.matchAll(/(-?\d+\.\d{6}) USDC/g)];
-    const sum = matches.reduce((acc, m) => acc + Math.round(parseFloat(m[1]) * 1e6), 0);
+    const sum = matches.reduce((acc, m) => acc + Math.round(parseFloat(m[1]!) * 1e6), 0);
     expect(sum).toBe(0);
   });
 });

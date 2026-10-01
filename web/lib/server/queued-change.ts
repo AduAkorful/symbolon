@@ -134,10 +134,10 @@ export async function prepareChange(
   const looseningDelay = vaultState.policy.looseningDelay;
   const etaOnchainSec = await contracts.lens.read
     .queuedChangeEta([vault, changeId])
-    .catch(() => 0n);
+    .catch(() => { throw new AuthError(502, "Can't confirm the queued change ETA."); });
 
-  const block = await client.getBlock({ blockTag: "latest" }).catch(() => null);
-  const nowSec = block?.timestamp ? BigInt(block.timestamp) : BigInt(Math.floor(Date.now() / 1000));
+  const block = await client.getBlock({ blockTag: "latest" }).catch(() => { throw new AuthError(502, "Can't read chain time."); });
+  const nowSec = block.timestamp;
 
   let state: QueuedChangeState;
   let etaDate: Date | undefined;
@@ -185,20 +185,14 @@ async function evaluateLoosening(
     }
     case "setBudget": {
       const budgetId = args[0] as Hex;
-      const next = args[1] as { cap: bigint; periodLength: bigint };
-      const current = await contracts.lens.read.getBudget([vault, budgetId]).catch(() => ({
-        exists: false,
-        cap: 0n,
-        periodLength: 0n,
-      }));
+      const next = { cap: BigInt(args[1] as bigint), periodLength: BigInt(args[2] as bigint) };
+      const current = await contracts.lens.read.getBudget([vault, budgetId]) .catch(() => { throw new AuthError(502, "Can't read the current budget."); });
       return isLooseningBudget(current as BudgetShape, next);
     }
     case "updatePayeeTerms": {
       const seal = getAddress(args[0] as Address);
       const next = args[1] as PayeeTermsShape;
-      const payee = await contracts.lens.read.getPayee([vault, seal]).catch(() => ({
-        terms: { budget: "0x", requirePo: false, requireDelivery: false, monthlyCap: 0n },
-      }));
+      const payee = await contracts.lens.read.getPayee([vault, seal]).catch(() => { throw new AuthError(502, "Can't read current payee terms."); });
       return isLooseningTerms(payee.terms as PayeeTermsShape, next);
     }
     case "setApprover": {
@@ -227,9 +221,7 @@ async function evaluateLoosening(
     }
     case "setReservePolicy": {
       const next = args[0] as ReservePolicyShape;
-      const reserve = await contracts.lens.read.reserveStatus([vault]).catch(() => ({
-        policy: { enabled: false, maxReserveBps: 0, minOperating: 0n },
-      }));
+      const reserve = await contracts.lens.read.reserveStatus([vault]).catch(() => { throw new AuthError(502, "Can't read the reserve policy."); });
       return isLooseningReservePolicy(reserve.policy as ReservePolicyShape, next);
     }
   }
@@ -488,12 +480,15 @@ export async function recordChange(
 /**
  * Lists all queued changes recorded for this business.
  */
-export async function listQueuedChanges(db: Database, businessId: string) {
-  return db
+export async function listQueuedChanges(db: Database, businessId: string, user: { id: string }) {
+  await requireMember(db, user.id, businessId);
+  const [business] = await db.select({ vault: businesses.vault }).from(businesses).where(eq(businesses.id, businessId));
+  const rows = await db
     .select()
     .from(queuedChanges)
     .where(eq(queuedChanges.businessId, businessId))
     .orderBy(desc(queuedChanges.createdAt));
+  return rows.map((row) => ({ ...row, to: business?.vault ? getAddress(business.vault) : null }));
 }
 
 /**

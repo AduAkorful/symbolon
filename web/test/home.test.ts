@@ -17,7 +17,7 @@ import type { Hex, PublicClient } from "viem";
 
 vi.mock("server-only", () => ({}));
 
-import { loadNeedsYou, loadToday } from "@/lib/server/home";
+import { loadNeedsYou, loadToday, loadAhead } from "@/lib/server/home";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => {
@@ -216,4 +216,14 @@ describe("Home Queues Service", () => {
     expect(today.asOfBlock).toBe("20000");
     expect(today.asOfTime).toBeInstanceOf(Date);
   });
+  it("Ahead coverage uses the selected buffer and refuses a cash claim on failed balances", async () => {
+    const { user, business } = await setupBusiness();
+    const client = { readContract: vi.fn().mockResolvedValue(0n) } as unknown as PublicClient;
+    expect((await loadAhead(db, client, cfg, user, business.id)).runwayStatement).toContain("30-day buffer");
+    vi.mocked(client.readContract).mockRejectedValue(new Error("offline"));
+    const result = await loadAhead(db, client, cfg, user, business.id);
+    expect(result.runwayStatement).toContain("unavailable");
+    expect(result.shortfalls).toEqual([]);
+  });
+
 });

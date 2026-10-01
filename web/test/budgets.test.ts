@@ -109,6 +109,7 @@ describe("budgets service", () => {
     const mockClient = {
       getBlock: vi.fn().mockResolvedValue({ timestamp: blockTime }),
       readContract: vi.fn().mockImplementation(async ({ functionName, args }) => {
+        if (functionName === "accountingDecimals") return 6;
         if (functionName === "queuedChangeEta") return 0n;
         if (functionName === "getVaultState") {
           return {
@@ -176,6 +177,7 @@ describe("budgets service", () => {
     const mockClient = {
       getBlock: vi.fn().mockResolvedValue({ timestamp: 1_700_000_000n }),
       readContract: vi.fn().mockImplementation(async ({ functionName }) => {
+        if (functionName === "accountingDecimals") return 6;
         if (functionName === "queuedChangeEta") return 0n;
         if (functionName === "getVaultState") {
           return {
@@ -274,4 +276,35 @@ describe("budgets service", () => {
     expect(saved).toBeDefined();
     expect(saved?.name).toBe("Security");
   });
+});
+
+
+describe("audit C3 budget receipt binding", () => {
+  it("refuses a different setter receipt before recording a custom budget", async () => {
+    const f = await fixture();
+    const { encodeAbiParameters, encodeEventTopics, encodeFunctionData } = await import("viem");
+    const { symbolonVaultAbi } = await import("@symbolon/chain");
+    const txHash = keccak256(toHex("unrelated receipt"));
+    const client = { getTransaction: async () => ({ input: encodeFunctionData({ abi: symbolonVaultAbi, functionName: "setAutoUpdate", args: [false] }) }), getTransactionReceipt: async () => ({ status: "success", to: f.vault, logs: [{ address: f.vault, topics: encodeEventTopics({ abi: symbolonVaultAbi, eventName: "AutoUpdateSet", args: {} }), data: encodeAbiParameters([{ type: "bool" }], [false]) }] }) } as unknown as PublicClient;
+    await expect(recordCreateBudget(db, client, deployment, f.owner, f.biz.id, { txHash, name: "Injected budget" })).rejects.toThrow();
+    expect(await db.select().from(budgets).where(eq(budgets.businessId, f.biz.id))).toHaveLength(0);
+  });
+});
+
+it("records only the budget named in the confirmed calldata, idempotently", async () => {
+  const f = await fixture();
+  const { encodeAbiParameters, encodeEventTopics, encodeFunctionData } = await import("viem");
+  const { symbolonVaultAbi } = await import("@symbolon/chain");
+  const id = deriveBudgetId(f.biz.id, "Exact name");
+  const input = encodeFunctionData({ abi: symbolonVaultAbi, functionName: "setBudget", args: [id, 100n, 604800n] });
+  const txHash = keccak256(toHex(crypto.randomUUID()));
+  const client = {
+    getTransaction: async () => ({ input }),
+    getTransactionReceipt: async () => ({ status: "success", to: f.vault, logs: [{ address: f.vault, topics: encodeEventTopics({ abi: symbolonVaultAbi, eventName: "BudgetSet", args: { budget: id } }), data: encodeAbiParameters([{ type: "uint256" }, { type: "uint64" }], [100n, 604800n]) }] }),
+    readContract: async () => ({ exists: true, cap: 100n, periodLength: 604800n }),
+  } as unknown as PublicClient;
+  await expect(recordCreateBudget(db, client, deployment, f.owner, f.biz.id, { txHash, name: "Different name" })).rejects.toThrow();
+  await recordCreateBudget(db, client, deployment, f.owner, f.biz.id, { txHash, name: "Exact name" });
+  await recordCreateBudget(db, client, deployment, f.owner, f.biz.id, { txHash, name: "Exact name" });
+  expect(await db.select().from(budgets).where(eq(budgets.businessId, f.biz.id))).toHaveLength(1);
 });

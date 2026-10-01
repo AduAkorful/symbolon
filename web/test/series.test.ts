@@ -149,6 +149,14 @@ describe("Recurring Series service", () => {
     expect(found).toBeDefined();
     expect(found!.totalPeriods).toBe(2);
     expect(found!.status).toBe("active");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date((start + 15 * 86400) * 1000));
+    try {
+      expect(await releaseDueSafe(db, cfg, { businessId: business.id })).toHaveLength(2);
+      expect(await releaseDueSafe(db, cfg, { businessId: business.id })).toHaveLength(0);
+      expect((await listSeries(db, vendorUser)).find(s => s.id === sub.id)!.releasedPeriods).toBe(2);
+    } finally { vi.useRealTimers(); }
+
   });
 
   it("allows vendor to cancel an active recurring series", async () => {

@@ -411,6 +411,18 @@ describe("Compliance screening service (05s Part A)", () => {
     expect(tiers.find((t) => t.tier === "Blocked")?.action).toMatch(/cannot be paid/i);
   });
 
+  it("failed policy and payee reads are unknown, never reassuring", async () => {
+    const { owner, business } = await fixture();
+    chainState.getVaultState.mockRejectedValue(new Error("offline"));
+    chainState.getPayee.mockRejectedValue(new Error("offline"));
+    const view = await loadComplianceView(db, clientFor({}), deployment, owner, business.id);
+    expect(view.tiers).toEqual([]);
+    expect(view.policyAvailable).toBe(false);
+    expect(view.counterparties[0]!.riskLabel).toBe("Unavailable");
+    expect(view.counterparties[0]!.status).toBe("unavailable");
+    expect(view.counterparties[0]!.payoutAddress).toBeNull();
+  });
+
   it("loadComplianceView: returns view model for all counterparties", async () => {
     const { owner, business, seal } = await fixture();
     chainState.getVaultState.mockResolvedValue({
@@ -431,7 +443,7 @@ describe("Compliance screening service (05s Part A)", () => {
     const view = await loadComplianceView(db, clientFor({}), deployment, owner, business.id);
     expect(view.counterparties).toHaveLength(1);
     expect(view.counterparties[0]!.name).toBe("Acme Vendor");
-    expect(view.counterparties[0]!.payoutAddress.toLowerCase()).toBe(address(21).toLowerCase());
+    expect(view.counterparties[0]!.payoutAddress!.toLowerCase()).toBe(address(21).toLowerCase());
     expect(view.counterparties[0]!.riskLabel).toBe("Low");
     expect(view.canScreen).toBe(true);
     expect(view.canWrite).toBe(true);

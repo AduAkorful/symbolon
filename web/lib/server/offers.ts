@@ -4,8 +4,8 @@ import { and, desc, eq, lt } from "drizzle-orm";
 import { getAddress, type Address, type Hex, type PublicClient } from "viem";
 
 import { symbolonContracts } from "@symbolon/chain";
-import { recordOffer, expireOffers } from "@symbolon/core";
-import { businesses, earlyPayOffers, invoices, type Database } from "@symbolon/db";
+import { recordOffer, expireOffers, counterOffer, counterRecommendation, createInvoiceInputReader, readVaultFacts } from "@symbolon/core";
+import { businesses, decisions, earlyPayOffers, invoices, type Database } from "@symbolon/db";
 import { applyDiscount, MAX_DISCOUNT_BPS, sealDomain, typedDataJson } from "@symbolon/seal";
 
 import { requireMember } from "./access";
@@ -14,6 +14,9 @@ import { AuthError } from "./errors";
 import type { AppConfig } from "./load-config";
 import type { SessionUser } from "./session";
 import { requireMySeal } from "./vendor";
+import { buildStewardEnv } from "./steward-runtime";
+import { verifyPaymentDocument, readPaymentLedger } from "./payment-ledger";
+import { processInvoice, type InvoiceContext } from "@symbolon/steward";
 
 export interface OfferDisplay {
   id: string;
@@ -39,6 +42,7 @@ export async function prepareOffer(
   fingerprintValue: unknown,
   discountBpsValue: unknown,
   durationSecondsValue: unknown,
+  counterId?: unknown,
 ) {
   const seal = await requireMySeal(db, user.id);
 
@@ -88,7 +92,12 @@ export async function prepareOffer(
   }
 
   const nowEpoch = Math.floor(Date.now() / 1000);
-  const validUntil = BigInt(nowEpoch + durationSeconds);
+  let validUntil = BigInt(nowEpoch + durationSeconds);
+  if (typeof counterId === "string") {
+    const [counter] = await db.select().from(earlyPayOffers).where(and(eq(earlyPayOffers.id, counterId), eq(earlyPayOffers.fingerprint, fingerprint), eq(earlyPayOffers.status, "countered")));
+    if (!counter || counter.discountBps !== discountBps || counter.validUntil.getTime() <= Date.now()) throw new AuthError(409, "That counter is no longer available.");
+    validUntil = BigInt(Math.floor(counter.validUntil.getTime() / 1000));
+  }
   const dueEpoch = Math.floor(new Date(inv.dueDate).getTime() / 1000);
 
   if (validUntil > BigInt(dueEpoch)) {
@@ -146,6 +155,7 @@ export async function submitOffer(
     discountBps: unknown;
     validUntil: unknown;
     signature: unknown;
+    counterId?: unknown;
   },
 ) {
   const seal = await requireMySeal(db, user.id);
@@ -188,13 +198,19 @@ export async function submitOffer(
     )
     .limit(1);
 
-  if (active) {
+  let acceptedCounter: typeof earlyPayOffers.$inferSelect | undefined;
+  if (typeof input.counterId === "string") {
+    [acceptedCounter] = await db.select().from(earlyPayOffers).where(and(eq(earlyPayOffers.id, input.counterId), eq(earlyPayOffers.fingerprint, fingerprint), eq(earlyPayOffers.status, "countered")));
+    if (!acceptedCounter || acceptedCounter.discountBps !== discountBps || BigInt(Math.floor(acceptedCounter.validUntil.getTime() / 1000)) !== validUntil || acceptedCounter.validUntil.getTime() <= Date.now()) throw new AuthError(409, "Counter terms changed or expired.");
+  }
+  if (active && !acceptedCounter) {
     throw new AuthError(400, "An active early pay offer already exists for this invoice.");
   }
 
   try {
-    const res = await recordOffer(
-      db,
+    const res = await db.transaction(async (tx) => {
+      const res = await recordOffer(
+      tx as unknown as Database,
       { chainId: cfg.chainId, ledger: cfg.deployment.contracts.invoiceLedger },
       {
         fingerprint,
@@ -204,6 +220,12 @@ export async function submitOffer(
       },
       { client: client as any },
     );
+      if (acceptedCounter) {
+        await tx.update(earlyPayOffers).set({ status: "withdrawn" }).where(and(eq(earlyPayOffers.fingerprint, fingerprint), eq(earlyPayOffers.status, "open"), lt(earlyPayOffers.discountBps, discountBps)));
+        await tx.update(earlyPayOffers).set({ status: "declined" }).where(eq(earlyPayOffers.id, acceptedCounter.id));
+      }
+      return res;
+    });
     return { id: res.id };
   } catch (err) {
     throw new AuthError(400, err instanceof Error ? err.message : "Failed to record offer.");
@@ -261,6 +283,7 @@ export async function declineOffer(
   reason?: string,
 ) {
   await requireMember(db, user.id, businessId, "owner", "approver");
+  await expireOffers(db, new Date());
 
   const [offer] = await db
     .select({
@@ -300,6 +323,45 @@ export async function declineOffer(
   });
 
   return { success: true, declined: true };
+}
+
+export async function businessOffers(db: Database, user: Pick<SessionUser, "id">, businessId: string, fingerprint: string) {
+  const member = await requireMember(db, user.id, businessId);
+  const [invoice] = await db.select().from(invoices).where(and(eq(invoices.businessId, businessId), eq(invoices.fingerprint, fingerprint.toLowerCase())));
+  if (!invoice) throw new AuthError(404, "Invoice not found.");
+  const offers = await listOffersForInvoice(db, invoice.fingerprint);
+  const [recommendation] = await db.select().from(decisions).where(and(eq(decisions.businessId, businessId), eq(decisions.subject, invoice.fingerprint), eq(decisions.kind, "counter_recommended"))).orderBy(desc(decisions.createdAt)).limit(1);
+  const inputs = recommendation?.record.inputs as { discountBps?: number; validUntil?: string } | undefined;
+  const counter = inputs?.discountBps && inputs.validUntil && BigInt(inputs.validUntil) > BigInt(Math.floor(Date.now() / 1000)) && !offers.some((o) => o.isCounter)
+    ? { discountBps: inputs.discountBps, validUntil: inputs.validUntil } : null;
+  return { offers, counter, canAct: member.role === "owner" || member.role === "approver", remaining: (invoice.total - invoice.credited).toString() };
+}
+
+/** A person sends only a counter recomputed from current signed offers and live business controls. */
+export async function sendCounter(db: Database, client: PublicClient, cfg: AppConfig, user: Pick<SessionUser, "id">, businessId: string, fingerprint: string) {
+  await requireMember(db, user.id, businessId, "owner", "approver");
+  const [business] = await db.select().from(businesses).where(and(eq(businesses.id, businessId), eq(businesses.chainId, cfg.chainId)));
+  const [row] = await db.select().from(invoices).where(and(eq(invoices.businessId, businessId), eq(invoices.fingerprint, fingerprint.toLowerCase())));
+  if (!business?.vault || !row) throw new AuthError(404, "Invoice not found.");
+  if (row.holdSource === "human") throw new AuthError(409, "A human hold must be released before countering.");
+  const vault = getAddress(business.vault);
+  const contracts = symbolonContracts(client, cfg.deployment);
+  const verified = await verifyPaymentDocument(client, cfg, row.envelope, row.fingerprint as Hex);
+  const ledger = await readPaymentLedger(contracts, row.fingerprint as Hex, verified.invoice.amount);
+  if (ledger.cancelled || ledger.settled) throw new AuthError(409, "Invoice is settled or cancelled.");
+  const facts = await readVaultFacts(contracts, client, vault, verified.invoice, row.fingerprint as Hex);
+  const env = await buildStewardEnv(db, client, cfg, business);
+  const reader = await createInvoiceInputReader(env, businessId, vault);
+  const context: InvoiceContext = { business: { id: businessId, vault, mode: "assist", program: env.program },
+    deployment: { chainId: cfg.chainId, ledger: cfg.deployment.contracts.invoiceLedger }, envelope: row.envelope,
+    facts, ledgerRemaining: ledger.ledgerRemaining, ...(await reader.forInvoice(row, facts.now)), reserveYieldBps: env.reserveYieldBps, approvalHeld: 0, signatureClient: client };
+  const result = await processInvoice(context, { simulate: async () => { throw new Error("Counter cannot submit a payment"); } });
+  const counter = counterRecommendation(context, result);
+  if (!counter) throw new AuthError(409, "No counter clears the current owner's limits.");
+  const created = await counterOffer(db, { fingerprint: row.fingerprint as Hex, discountBps: counter.discountBps, validUntil: new Date(Number(counter.validUntil) * 1000) });
+  await appendAppDecision(db, businessId, { kind: "counter_sent", subject: row.fingerprint, actor: user.id,
+    inputs: { counterId: created.id, discountBps: counter.discountBps, validUntil: counter.validUntil.toString() }, rule: "human sent one unsigned counter within the owner's limits", outcome: "countered" });
+  return created;
 }
 
 /**

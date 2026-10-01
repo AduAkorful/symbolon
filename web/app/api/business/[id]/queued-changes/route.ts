@@ -16,9 +16,9 @@ type Ctx = { params: Promise<{ id: string }> };
 
 export const GET = routeWith<Ctx>(async (_request, ctx) => {
   const { id: businessId } = await ctx.params;
-  await requireSession();
+  const session = await requireSession();
   const db = await getDb();
-  const changes = await listQueuedChanges(db, businessId);
+  const changes = await listQueuedChanges(db, businessId, session.user);
   return NextResponse.json({ ok: true, changes });
 });
 

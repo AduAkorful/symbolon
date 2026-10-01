@@ -321,7 +321,7 @@ describe("05t Part A: Queued Change Service (prepare & record)", () => {
     expect(res.status).toBe("queued");
     expect(res.changeId).toBe(mockHash.toLowerCase());
 
-    const rows = await listQueuedChanges(db, biz.id);
+    const rows = await listQueuedChanges(db, biz.id, owner);
     expect(rows.length).toBeGreaterThan(0);
     expect(rows[0]!.status).toBe("queued");
   });
@@ -371,3 +371,19 @@ describe("05t Part A: Queued Change Service (prepare & record)", () => {
   });
 });
 
+
+
+describe("audit C2 queued budget boundary", () => {
+  it("classifies flat ABI cap increases as delayed loosening and refuses failed reads", async () => {
+    const f = await fixture();
+    chainState.getVaultState.mockResolvedValue({ owner: f.ownerWallet, policy: { looseningDelay: 86400n } });
+    chainState.queuedChangeEta.mockResolvedValue(0n);
+    chainState.getBlock.mockResolvedValue({ timestamp: 100n });
+    chainState.getBudget.mockResolvedValue({ exists: true, cap: 10n, periodLength: 86400n });
+    const zero = `0x${"00".repeat(32)}` as Hex;
+    const client = { getBlock: chainState.getBlock } as unknown as PublicClient;
+    expect(await prepareChange(db, client, deployment, f.owner, f.biz.id, { kind: "setBudget", args: [zero, 20n, 86400n] })).toMatchObject({ state: "will-queue", loosening: true });
+    chainState.getBudget.mockRejectedValue(new Error("RPC unavailable"));
+    await expect(prepareChange(db, client, deployment, f.owner, f.biz.id, { kind: "setBudget", args: [zero, 20n, 86400n] })).rejects.toThrow();
+  });
+});

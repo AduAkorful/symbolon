@@ -5,9 +5,11 @@ import { TxLink } from "@/components/TxLink";
 import { sendWithWallet, type SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { postJson } from "@/lib/client/api";
+import { applyQueuedChange, recordQueuedChange } from "@/lib/client/queued-actions";
 
 export interface QueuedChangeRow {
   id: string;
+  to: string | null;
   kind: string;
   changeId: string;
   selector: string;
@@ -43,12 +45,13 @@ export function QueuedChangeList({
   async function loadChanges() {
     try {
       const res = await fetch(`/api/business/${businessId}/queued-changes`);
+      if (!res.ok) throw new Error("Can't load queued changes. Try again.");
       if (res.ok) {
         const data = await res.json();
         setChanges(data.changes ?? []);
       }
-    } catch {
-      // ignore
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Can't load queued changes.");
     } finally {
       setLoading(false);
     }
@@ -59,20 +62,12 @@ export function QueuedChangeList({
   }, [businessId]);
 
   async function handleApply(change: QueuedChangeRow) {
-    if (!change.calldata || signer.kind !== "wallet") return;
+    if (!change.calldata || !change.to || signer.kind !== "wallet") return;
     setBusyId(change.id);
     setError(null);
     try {
       const providers = await getProviders();
-      const txHash = await sendWithWallet(providers, signer, {
-        to: signer.address, // target Vault handled via call
-        data: change.calldata,
-      });
-
-      await postJson(`/api/business/${businessId}/queued-changes`, {
-        action: "record",
-        txHash,
-      });
+      await applyQueuedChange(businessId, change, call => sendWithWallet(providers, signer, call));
 
       await loadChanges();
       onRefresh?.();
@@ -102,10 +97,7 @@ export function QueuedChangeList({
         data: prep.data,
       });
 
-      await postJson(`/api/business/${businessId}/queued-changes`, {
-        action: "record",
-        txHash,
-      });
+      await recordQueuedChange(businessId, txHash);
 
       await loadChanges();
       onRefresh?.();
@@ -123,7 +115,7 @@ export function QueuedChangeList({
   }
 
   if (activeChanges.length === 0) {
-    return null;
+    return error ? <p role="alert" className="p-4 text-xs text-red">{error}</p> : null;
   }
 
   return (
@@ -252,13 +244,7 @@ export function QueuedChange({
         data: prep.data,
       });
 
-      const rec = await postJson<{ ok: boolean }>(
-        `/api/business/${businessId}/queued-changes`,
-        {
-          action: "record-cancel",
-          txHash,
-        },
-      );
+      const rec = await recordQueuedChange(businessId, txHash);
       if (rec.ok) onCancelled?.();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to cancel change.");

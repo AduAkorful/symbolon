@@ -114,6 +114,7 @@ describe("policy-edit service", () => {
 
     const mockClient = {
       readContract: vi.fn().mockImplementation(async ({ functionName }) => {
+        if (functionName === "accountingDecimals") return 6;
         if (functionName === "queuedChangeEta") return 0n;
         if (functionName === "getPolicy") return currentPolicyOnchain;
         return null;
@@ -137,6 +138,7 @@ describe("policy-edit service", () => {
     const mockClient = {
       getBlock: vi.fn().mockResolvedValue({ timestamp: 1_700_000_000n }),
       readContract: vi.fn().mockImplementation(async ({ functionName }) => {
+        if (functionName === "accountingDecimals") return 6;
         if (functionName === "queuedChangeEta") return 0n;
         if (functionName === "getVaultState") {
           return {

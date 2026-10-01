@@ -1,13 +1,13 @@
-import { and, desc, eq, gte, inArray, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { getAddress, keccak256, stringToBytes, type Hex, type PublicClient } from "viem";
 
 import { simulateCall, type Deployment, type SymbolonContracts } from "@symbolon/chain";
-import { businesses, decisions, earlyPayOffers, invoices, payees, screenings, type Database } from "@symbolon/db";
+import { businesses, decisions, earlyPayOffers, invoices, type Database } from "@symbolon/db";
 import { canonicalJson, decodeSealedInvoice, deriveInvoice } from "@symbolon/seal";
 import {
-  outflowsWithin,
   processInvoice,
-  type CashFlow,
+  hashRecord,
+  type InvoiceContext,
   type EarlyPayProgram,
   type StewardModel,
   type StewardResult,
@@ -16,6 +16,10 @@ import {
 
 import { collectApprovals } from "./approvals.js";
 import { readVaultFacts } from "./facts.js";
+import { createInvoiceInputReader } from "./invoice-inputs.js";
+import { counterRecommendation } from "./counter-lifecycle.js";
+import { counterOffer } from "./offers.js";
+import { notifyBusiness } from "./domain-notifications.js";
 
 export interface StewardEnv {
   db: Database;
@@ -32,13 +36,7 @@ export interface StewardEnv {
   walletFor?: (business: { id: string; vault: string; stewardWallet: string | null }) => Promise<StewardWallet | undefined>;
 }
 
-const OPEN = ["verified", "scheduled", "awaiting_approval"] as const;
-const DAY_MS = 86_400_000;
-
-export function knownInvoicesForSteward(db: Database, businessId: string, seal: string, fingerprint: string) {
-  return db.select().from(invoices)
-    .where(and(eq(invoices.businessId, businessId), eq(invoices.seal, seal), ne(invoices.fingerprint, fingerprint)));
-}
+export { knownInvoicesForSteward } from "./invoice-inputs.js";
 
 /**
  * One Steward pass over a business's open invoices. Each invoice gets a decision; a decision is stored only when it
@@ -52,20 +50,8 @@ export async function runSteward(env: StewardEnv, businessId: string): Promise<S
   const mode = biz.stewardMode as "shadow" | "assist" | "auto";
   const wallet = (env.walletFor ? await env.walletFor({ id: businessId, vault, stewardWallet: biz.stewardWallet }) : undefined) ?? env.wallet;
 
-  const open = await db
-    .select()
-    .from(invoices)
-    .where(
-      and(
-        eq(invoices.businessId, businessId),
-        or(
-          inArray(invoices.status, [...OPEN]),
-          and(eq(invoices.status, "held"), eq(invoices.holdSource, "steward")),
-        ),
-      ),
-    );
-  const cash = await env.contracts.token(env.deployment.tokens.usdc).read.balanceOf([vault]);
-  const earlyPayCommitted = await committedToEarlyPay(db, businessId);
+  const inputs = await createInvoiceInputReader(env, businessId, vault);
+  const open = inputs.open;
   const results: StewardResult[] = [];
 
   for (const row of open) {
@@ -76,66 +62,24 @@ export async function runSteward(env: StewardEnv, businessId: string): Promise<S
     const remaining = await env.contracts.ledger.read.remaining([fp]);
     const seen = (await env.contracts.ledger.read.status([fp])).seen;
     const now = new Date(Number(facts.now) * 1000);
-    const [vendor] = await db.select({ status: payees.status }).from(payees)
-      .where(and(eq(payees.businessId, businessId), eq(payees.seal, row.seal))).limit(1);
-
-    const others = open.filter((o) => o.fingerprint !== row.fingerprint);
-    const flows: CashFlow[] = others.map((o) => ({
-      at: BigInt(Math.floor(o.dueDate.getTime() / 1000)),
-      amount: o.total - o.credited,
-      direction: "out",
-      ref: o.fingerprint,
-    }));
-    const known = await knownInvoicesForSteward(db, businessId, row.seal, row.fingerprint);
-    const offers = await db
-      .select()
-      .from(earlyPayOffers)
-      .where(and(eq(earlyPayOffers.fingerprint, fp), eq(earlyPayOffers.status, "open")));
+    const businessInputs = await inputs.forInvoice(row, facts.now);
     const budgetId = facts.purchaseOrder?.budget ?? facts.payee?.terms.budget ?? (`0x${"00".repeat(32)}` as Hex);
     const credit = seen ? remaining : invoice.amount;
     const held = await collectApprovals(db, env.contracts, vault, businessId, fp, credit, budgetId, now);
 
-    const [latestScreening] = await db
-      .select({ address: screenings.address })
-      .from(screenings)
-      .innerJoin(
-        decisions,
-        and(
-          eq(decisions.businessId, businessId),
-          eq(decisions.kind, "screening_recorded"),
-          sql`${decisions.record}->'inputs'->>'screeningId' = ${screenings.id}::text`,
-        ),
-      )
-      .where(and(eq(screenings.businessId, businessId), eq(screenings.seal, row.seal)))
-      .orderBy(desc(screenings.screenedAt))
-      .limit(1);
-
-    const result = await processInvoice(
-      {
+    const context: InvoiceContext = {
         business: { id: businessId, vault, mode, program: env.program },
         deployment: { chainId: env.deployment.chainId, ledger: env.deployment.contracts.invoiceLedger },
         envelope: row.envelope,
         facts,
         ledgerRemaining: seen ? remaining : undefined,
-        knownInvoices: known.map((k) => ({
-          fingerprint: k.fingerprint as Hex,
-          seal: k.seal,
-          invoiceNumber: k.invoiceNumber,
-          amount: k.total,
-          issuedAt: BigInt(Math.floor((k.issuedAt ?? k.receivedAt).getTime() / 1000)),
-        })),
-        offers: offers
-          .filter((o) => o.signature)
-          .map((o) => ({ discountBps: o.discountBps, validUntil: BigInt(Math.floor(o.validUntil.getTime() / 1000)), signature: o.signature as Hex })),
+        ...businessInputs,
         reserveYieldBps: env.reserveYieldBps,
-        operatingCash: cash,
-        buffer: outflowsWithin(flows, facts.now, env.bufferDays),
-        earlyPayCommitted,
         approvalHeld: held.level,
         approvals: held.approvals,
-        blockedSeal: vendor?.status === "blocked",
-        latestScreenedAddress: (latestScreening?.address as Hex | undefined),
-      },
+      };
+    const result = await processInvoice(
+      context,
       {
         ...(env.model ? { model: env.model } : {}),
         simulate: async (call) => {
@@ -146,13 +90,32 @@ export async function runSteward(env: StewardEnv, businessId: string): Promise<S
       },
     );
     await storeDecision(db, businessId, result);
+    const counter = counterRecommendation(context, result);
+    if (counter) {
+      const previous = await db.select().from(earlyPayOffers).where(and(eq(earlyPayOffers.fingerprint, fp), isNull(earlyPayOffers.signature)));
+      if (!previous.length) {
+        if (mode === "auto") {
+          try { await counterOffer(db, { fingerprint: fp, discountBps: counter.discountBps, validUntil: new Date(Number(counter.validUntil) * 1000) }); }
+          catch (error) { if (!(error instanceof Error && error.message === "already countered once")) throw error; }
+        }
+        const record = { ...result.record, kind: mode === "auto" ? "counter" : "counter_recommended",
+          inputs: { discountBps: counter.discountBps, validUntil: counter.validUntil.toString() },
+          rule: "one unsigned counter at the smallest discount clearing the owner's limits", outcome: mode === "auto" ? "countered" : "counter recommended" };
+        const existing = await db.select({ record: decisions.record }).from(decisions).where(and(eq(decisions.businessId, businessId), eq(decisions.subject, fp), eq(decisions.kind, record.kind)));
+        if (!existing.some((d) => JSON.stringify(d.record.inputs) === JSON.stringify(record.inputs))) {
+          await db.insert(decisions).values({ businessId, subject: fp, kind: record.kind, record: record as unknown as Record<string, unknown>, hash: hashRecord(record).hash }).onConflictDoNothing();
+        }
+      }
+    }
     const status = statusFor(result, mode, row.status);
     if (status && status !== row.status) {
       const holdSource = status === "held" ? "steward" : null;
-      await db.update(invoices).set({ status, holdSource }).where(eq(invoices.fingerprint, row.fingerprint));
+      await db.update(invoices).set({ status, holdSource, holdKind: null }).where(eq(invoices.fingerprint, row.fingerprint));
     } else if (status === "held" && row.holdSource !== "steward") {
       await db.update(invoices).set({ holdSource: "steward" }).where(eq(invoices.fingerprint, row.fingerprint));
     }
+    if (status === "awaiting_approval") await notifyBusiness(db, businessId, { kind: "approval_needed", subject: fp,
+      body: { invoiceNumber: row.invoiceNumber }, dedupeKey: `approval:${fp}` });
     results.push(result);
   }
   return results;
@@ -208,17 +171,4 @@ async function storeDecision(db: Database, businessId: string, r: StewardResult)
       ...(prev ? { supersedes: prev.id } : {}),
     });
   }
-}
-
-/** Early-pay cash committed by paid decisions over the last 30 days */
-async function committedToEarlyPay(db: Database, businessId: string): Promise<bigint> {
-  const since = new Date(Date.now() - 30 * DAY_MS);
-  const rows = await db
-    .select({ record: decisions.record })
-    .from(decisions)
-    .where(and(eq(decisions.businessId, businessId), eq(decisions.kind, "pay"), gte(decisions.createdAt, since)));
-  return rows.reduce((sum, { record }) => {
-    const inputs = (record as { inputs?: { timing?: string; paid?: string } }).inputs;
-    return inputs?.timing === "pay_now_discounted" && inputs.paid ? sum + BigInt(inputs.paid) : sum;
-  }, 0n);
 }

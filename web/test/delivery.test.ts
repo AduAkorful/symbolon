@@ -242,7 +242,7 @@ describe("recordDelivery", () => {
     // Put invoice in held state with human source first
     await db
       .update(invoices)
-      .set({ status: "held", holdSource: "human" })
+      .set({ status: "held", holdSource: "human", holdKind: "delivery" })
       .where(eq(invoices.fingerprint, fingerprint.toLowerCase()));
 
     chainState.deliveryConfirmed.mockResolvedValue(true);

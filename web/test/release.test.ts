@@ -11,7 +11,7 @@ import {
   users,
 } from "@symbolon/db";
 import { eq } from "drizzle-orm";
-import { encodeAbiParameters, encodeEventTopics, getAddress, type Hex, type PublicClient } from "viem";
+import { encodeAbiParameters, encodeEventTopics, encodeFunctionData, getAddress, type Hex, type PublicClient } from "viem";
 import { symbolonVaultAbi } from "@symbolon/chain";
 import {
   checkReleaseNudge,
@@ -258,6 +258,11 @@ describe("snapshot comparison", () => {
     expect(res.diffs).toHaveLength(0);
   });
 
+  it("compares pending owner and screener", () => {
+    const res = compareVaultSnapshots(baseSnapshot, { ...baseSnapshot, pendingOwner: address(50), screener: address(51) });
+    expect(res.match).toBe(false); expect(res.diffs).toHaveLength(2);
+  });
+
   it("detects field differences", () => {
     const altered: VaultStateSnapshot = {
       ...baseSnapshot,
@@ -466,14 +471,22 @@ describe("upgrade preparation and recording", () => {
     };
 
     const mockClient = {
+      getBlockNumber: vi.fn().mockResolvedValue(100n),
+      getTransaction: vi.fn().mockResolvedValue({ to: f.vault, from: f.owner.wallet, input: encodeFunctionData({ abi: symbolonVaultAbi, functionName: "upgradeToAndCall", args: [getAddress(v2Impl), "0x"] }) }),
       getBlock: vi.fn().mockResolvedValue({ timestamp: 1_700_100_000n }),
       readContract: vi.fn().mockImplementation(async ({ functionName }) => {
+        if (functionName === "getReservePolicy") return { enabled: false, maxReserveBps: 0, minOperating: 0n };
+        if (functionName === "balanceOf" || functionName === "approverBudgetCount") return 0n;
+        if (["isSupportedToken", "isApprover", "isRequester"].includes(functionName)) return false;
+        if (functionName === "getBudget") return { exists: true, cap: 100n, spent: 0n, periodLength: 30n, periodIndex: 1n };
         if (functionName === "latest") return [v2Impl, 2n];
+        if (functionName === "release") return { revoked: false, publishedAt: 1n };
         if (functionName === "getVaultState") return vaultState;
         if (functionName === "scheduledUpgrade") return 1_700_050_000n; // ready
         return null;
       }),
       getTransactionReceipt: vi.fn().mockResolvedValue({
+        blockNumber: 200n,
         status: "success",
         to: f.vault,
         from: f.owner.wallet,
@@ -496,6 +509,9 @@ describe("upgrade preparation and recording", () => {
     expect(prep.latestImpl).toBe(getAddress(v2Impl));
     expect(prep.stateSnapshotBefore).toBeDefined();
 
+    await expect(recordUpgrade(db, mockClient, deployment, f.owner, f.biz.id, "0x1234567890123456789012345678901234567890123456789012345678901234")).rejects.toThrow(/snapshot is missing/);
+    await expect(recordUpgrade(db, mockClient, deployment, f.owner, f.biz.id, "0x1234567890123456789012345678901234567890123456789012345678901234", crypto.randomUUID())).rejects.toThrow(/snapshot is missing/);
+    await expect(recordUpgrade(db, mockClient, deployment, f.viewer, f.biz.id, "0x1234567890123456789012345678901234567890123456789012345678901234", prep.operationId)).rejects.toThrow(AuthError);
     const rec = await recordUpgrade(
       db,
       mockClient,
@@ -503,7 +519,7 @@ describe("upgrade preparation and recording", () => {
       f.owner,
       f.biz.id,
       "0x1234567890123456789012345678901234567890123456789012345678901234",
-      prep.stateSnapshotBefore,
+      prep.operationId,
     );
     expect(rec.ok).toBe(true);
     expect(rec.stateMatch).toBe(true);
@@ -518,6 +534,11 @@ describe("upgrade preparation and recording", () => {
     expect(appliedDecision).toBeDefined();
     const decRec = appliedDecision?.record as Record<string, unknown>;
     expect(decRec.outcome).toBe("applied");
+    vaultState.pendingOwner = address(987);
+    const changed = await recordUpgrade(db, mockClient, deployment, f.owner, f.biz.id, "0x1234567890123456789012345678901234567890123456789012345678901234", prep.operationId);
+    expect(changed.stateMatch).toBe(false); expect(changed.diffs).toContain("vaultState");
+    const calls = (mockClient.readContract as ReturnType<typeof vi.fn>).mock.calls.map(c => c[0]);
+    expect(calls.filter(c => c.functionName === "balanceOf").every(c => c.blockNumber === 100n || c.blockNumber === 200n)).toBe(true);
   });
 });
 

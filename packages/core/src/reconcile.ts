@@ -69,3 +69,26 @@ export async function shadowAgreement(db: Database, businessId: string): Promise
   if (result.compared > 0) result.rateBps = Math.floor((result.agreed * 10_000) / result.compared);
   return result;
 }
+
+
+/** Plan 05p A7: only latest eligible, explicitly linked human responses count. */
+export async function humanResponseAgreement(db: Database, businessId: string): Promise<{agreed:number;total:number}> {
+  const rows = await db.select().from(decisions).where(eq(decisions.businessId,businessId));
+  const recommendations = new Map(rows.filter((r) => {
+    const record = r.record as { outcome?: string };
+    return !["approval_granted","approval_rejected"].includes(r.kind) && ["request_approval","proposed"].includes(record.outcome ?? "");
+  }).map((r) => [r.hash.toLowerCase(),r]));
+  const latest = new Map<string,typeof rows[number]>();
+  for (const row of rows) {
+    if (!["approval_granted","approval_rejected"].includes(row.kind)) continue;
+    const record = row.record as { inputs?: {recommendation?:unknown}; recommendation?:unknown };
+    const link = record.inputs?.recommendation ?? record.recommendation;
+    if (typeof link !== "string") continue;
+    const key = link.toLowerCase();
+    const recommendation = recommendations.get(key);
+    if (!recommendation || recommendation.subject !== row.subject || row.createdAt < recommendation.createdAt) continue;
+    const previous = latest.get(key);
+    if (!previous || previous.createdAt < row.createdAt || (previous.createdAt.getTime() === row.createdAt.getTime() && row.id > previous.id)) latest.set(key,row);
+  }
+  return {total:latest.size,agreed:[...latest.values()].filter((r) => r.kind === "approval_granted").length};
+}

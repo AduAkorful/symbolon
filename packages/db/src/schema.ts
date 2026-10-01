@@ -334,6 +334,8 @@ export const invoices = pgTable(
      * Null when status is not `held`.
      */
     holdSource: text("hold_source"),
+    /** Human holds are independent: only a delivery hold may be reversed by delivery confirmation. Legacy null stays held. */
+    holdKind: text("hold_kind").$type<"delivery" | "payment" | null>(),
     receivedAt: createdAt(),
   },
   (t) => [
@@ -344,6 +346,7 @@ export const invoices = pgTable(
     check("invoices_seal_format", sql`${t.seal} ~ ${sql.raw(`'${ADDRESS}'`)}`),
     check("invoices_source", sql`${t.source} in ('link', 'email', 'upload', 'api', 'recurring')`),
     check("invoices_amounts", sql`${t.total} > 0 and ${t.credited} >= 0 and ${t.credited} <= ${t.total}`),
+    check("invoices_hold_kind", sql`${t.holdKind} is null or (${t.holdSource} = 'human' and ${t.status} = 'held' and ${t.holdKind} in ('delivery', 'payment'))`),
     check("invoices_hold_source", sql`${t.holdSource} is null or ${t.holdSource} in ('steward', 'human')`),
     check("invoices_hold_source_with_status", sql`${t.status} = 'held' or ${t.holdSource} is null`),
   ],

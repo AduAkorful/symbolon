@@ -434,9 +434,9 @@ export function StewardClient({
       {/* Shadow Agreement (Flow 13) */}
       <section aria-labelledby="shadow-heading" className="space-y-4 border-t border-rule pt-8">
         <div>
-          <h2 id="shadow-heading" className="font-display text-2xl">Shadow Agreement</h2>
+          <h2 id="shadow-heading" className="font-display text-2xl">Your responses</h2>
           <p className="mt-1 text-xs text-graphite">
-            Compares shadow-mode recommendations with decisions made by your team.
+            Counts the latest response to each recommendation that asked for approval.
           </p>
         </div>
 
@@ -446,7 +446,7 @@ export function StewardClient({
               {shadow.agreed} <span className="text-xl text-graphite">of {shadow.compared}</span>
             </p>
             <p className="mt-1 text-sm text-graphite">
-              decisions matched team actions ({shadow.rateBps ? (shadow.rateBps / 100).toFixed(1) : 0}%).
+              recommendations you agreed with.
             </p>
 
             {shadow.disagreements.length > 0 ? (

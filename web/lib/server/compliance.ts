@@ -28,12 +28,12 @@ const RISK_LABELS = ["Low", "Medium", "High", "Blocked"] as const;
 export interface CounterpartyScreeningRow {
   seal: Address;
   name: string;
-  payoutAddress: Address;
-  payoutDomain: number;
-  onchainRisk: number;
+  payoutAddress: Address | null;
+  payoutDomain: number | null;
+  onchainRisk: number | null;
   riskLabel: string;
   screenedAt: string | null;
-  status: "current" | "due" | "never" | "not_required";
+  status: "current" | "due" | "never" | "not_required" | "unavailable";
   statusLabel: string;
   hasAddressMismatch: boolean;
   latestScreeningId: string | null;
@@ -49,6 +49,7 @@ export interface ComplianceViewModel {
   businessName: string;
   vault: Address | null;
   counterparties: CounterpartyScreeningRow[];
+  policyAvailable: boolean;
   tiers: TierDescription[];
   canScreen: boolean;
   canWrite: boolean;
@@ -506,7 +507,8 @@ export async function loadComplianceView(
       businessName: business.name,
       vault: null,
       counterparties: [],
-      tiers: describeTiers({ screeningMaxAge: 0 }),
+      policyAvailable: false,
+      tiers: [],
       canScreen: false,
       canWrite: false,
     };
@@ -516,12 +518,7 @@ export async function loadComplianceView(
   const c = symbolonContracts(client, deployment);
 
   const state = await c.lens.read.getVaultState([vault]).catch(() => null);
-  const policy = state?.policy ?? {
-    screeningMaxAge: 0n,
-    ownerThreshold: 0n,
-    autoPayLimit: 0n,
-    newVendorMinPaid: 0,
-  };
+  const policy = state?.policy ?? null;
 
   const payeeRows = await db
     .select({
@@ -534,7 +531,7 @@ export async function loadComplianceView(
     .orderBy(desc(payees.createdAt));
 
   const nowSec = BigInt(Math.floor(Date.now() / 1000));
-  const maxAge = BigInt(policy.screeningMaxAge);
+  const maxAge = policy ? BigInt(policy.screeningMaxAge) : null;
 
   const counterparties: CounterpartyScreeningRow[] = await Promise.all(
     payeeRows.map(async ({ payee, vendor }) => {
@@ -553,19 +550,18 @@ export async function loadComplianceView(
         .orderBy(desc(screenings.screenedAt))
         .limit(1);
 
-      const payoutAddress = onchainPayee?.payout
-        ? getAddress(onchainPayee.payout)
-        : vendor?.payoutAddress
-          ? getAddress(vendor.payoutAddress)
-          : seal;
-      const payoutDomain = onchainPayee?.payoutDomain ?? 0;
-      const onchainRisk = onchainPayee?.risk ?? 0;
+      const payoutAddress = onchainPayee?.payout ? getAddress(onchainPayee.payout) : null;
+      const payoutDomain = onchainPayee?.payoutDomain ?? null;
+      const onchainRisk = onchainPayee?.risk ?? null;
       const screenedAtSec = onchainPayee?.screenedAt ?? 0n;
 
-      let status: "current" | "due" | "never" | "not_required";
+      let status: CounterpartyScreeningRow["status"];
       let statusLabel: string;
 
-      if (maxAge === 0n) {
+      if (maxAge === null || !onchainPayee) {
+        status = "unavailable";
+        statusLabel = "Unavailable";
+      } else if (maxAge === 0n) {
         status = "not_required";
         statusLabel = "Not required";
       } else if (screenedAtSec === 0n) {
@@ -580,7 +576,7 @@ export async function loadComplianceView(
       }
 
       const hasAddressMismatch = Boolean(
-        latest && getAddress(latest.address) !== payoutAddress,
+        latest && payoutAddress && getAddress(latest.address) !== payoutAddress,
       );
 
       return {
@@ -589,7 +585,7 @@ export async function loadComplianceView(
         payoutAddress,
         payoutDomain,
         onchainRisk,
-        riskLabel: RISK_LABELS[onchainRisk] ?? "Unknown",
+        riskLabel: onchainRisk === null ? "Unavailable" : RISK_LABELS[onchainRisk] ?? "Unknown",
         screenedAt: screenedAtSec > 0n ? new Date(Number(screenedAtSec) * 1000).toISOString() : null,
         status,
         statusLabel,
@@ -604,7 +600,8 @@ export async function loadComplianceView(
     businessName: business.name,
     vault,
     counterparties,
-    tiers: describeTiers(policy),
+    policyAvailable: policy !== null,
+    tiers: policy ? describeTiers(policy) : [],
     canScreen,
     canWrite,
   };

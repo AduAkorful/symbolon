@@ -16,6 +16,7 @@ import { summarizeDecision } from "../decision-text";
 import { loadTreasury } from "../treasury";
 import { readVaultState, stewardStanding } from "../vault-read";
 import type { IntentAnswer, IntentContext, IntentHandler } from "./types";
+import { currencyTotals, intentSettlements } from "./settlements";
 
 function formatUsdc(units: bigint): string {
   return `${showAmount(formatAmount(units, 6))} USDC`;
@@ -54,6 +55,7 @@ export const paymentsDueIntent: IntentHandler = {
         credited: invoices.credited,
         dueDate: invoices.dueDate,
         envelope: invoices.envelope,
+        token: invoices.token,
       })
       .from(invoices)
       .where(
@@ -66,14 +68,14 @@ export const paymentsDueIntent: IntentHandler = {
       .orderBy(invoices.dueDate)
       .limit(50);
 
-    const remainingTotal = rows.reduce((acc, r) => acc + (r.total - r.credited), 0n);
+    const remainingTotal = currencyTotals(ctx, rows.map((r) => ({token:r.token,amount:r.total-r.credited})));
     const count = rows.length;
 
     let text: string;
     if (count === 0) {
       text = `No payments are due in the next ${days} days.`;
     } else {
-      text = `${count} invoice${count === 1 ? "" : "s"} totaling ${formatUsdc(remainingTotal)} due within the next ${days} days.`;
+      text = `${count} invoice${count === 1 ? "" : "s"} totaling ${remainingTotal} due within the next ${days} days.`;
     }
 
     const links: [string, string][] = rows.slice(0, 5).map((r) => [
@@ -105,37 +107,19 @@ export const recentPaymentsIntent: IntentHandler = {
     const now = ctx.now ?? new Date();
     const since = new Date(now.getTime() - days * 86_400_000);
 
-    const settled = await ctx.db
-      .select({
-        fingerprint: invoices.fingerprint,
-        invoiceNumber: invoices.invoiceNumber,
-        credited: invoices.credited,
-        receivedAt: invoices.receivedAt,
-      })
-      .from(invoices)
-      .where(
-        and(
-          eq(invoices.businessId, ctx.businessId),
-          gte(invoices.receivedAt, since),
-          sql`${invoices.credited} > 0`,
-        ),
-      )
-      .orderBy(desc(invoices.receivedAt))
-      .limit(50);
-
+    const all = await intentSettlements(ctx);
+    const settled = all.filter((r) => r.event.blockTime && r.event.blockTime >= since && r.event.blockTime <= now)
+      .sort((a,b) => b.event.blockTime!.getTime()-a.event.blockTime!.getTime());
     const count = settled.length;
-    const totalPaid = settled.reduce((acc, r) => acc + r.credited, 0n);
-
-    let text: string;
-    if (count === 0) {
-      text = `No payments were settled in the last ${days} days.`;
-    } else {
-      text = `${count} payment${count === 1 ? "" : "s"} totaling ${formatUsdc(totalPaid)} settled in the last ${days} days.`;
-    }
+    const totalPaid = currencyTotals(ctx, settled.map((r) => ({token:r.token,amount:r.paid})));
+    const unavailable = all.filter((r) => !r.event.blockTime).length;
+    const text = (count === 0 ? `No dated settlement records in the last ${days} days.`
+      : `${count} payment${count === 1 ? "" : "s"} totaling ${totalPaid} settled in the last ${days} days.`)
+      + (unavailable ? ` ${unavailable} settlement dates are unavailable and excluded.` : "");
 
     const links: [string, string][] = settled.slice(0, 5).map((r) => [
-      `Receipt: ${r.invoiceNumber ?? r.fingerprint.slice(0, 10)}`,
-      `/receipt/${r.fingerprint}`,
+      `Receipt: ${r.invoice.invoiceNumber ?? r.invoice.fingerprint.slice(0, 10)}`,
+      `/receipt/${r.invoice.fingerprint}`,
     ]);
 
     return {
@@ -231,6 +215,7 @@ export const awaitingApprovalIntent: IntentHandler = {
       .select({
         fingerprint: invoices.fingerprint,
         invoiceNumber: invoices.invoiceNumber,
+        token: invoices.token,
         total: invoices.total,
         credited: invoices.credited,
       })
@@ -248,8 +233,8 @@ export const awaitingApprovalIntent: IntentHandler = {
       };
     }
 
-    const total = rows.reduce((acc, r) => acc + (r.total - r.credited), 0n);
-    const text = `${count} invoice${count === 1 ? "" : "s"} totaling ${formatUsdc(total)} awaiting signature in the approvals queue.`;
+    const total = currencyTotals(ctx,rows.map((r) => ({token:r.token,amount:r.total-r.credited})));
+    const text = `${count} invoice${count === 1 ? "" : "s"} totaling ${total} awaiting signature in the approvals queue.`;
     const links: [string, string][] = [
       ["Open approvals queue", "/business/approvals"],
       ...rows.slice(0, 3).map((r): [string, string] => [
@@ -280,13 +265,11 @@ export const cashPositionIntent: IntentHandler = {
       const user = await resolveIntentUser(ctx);
       if (!user) throw new Error("No user found");
       const treasury = await loadTreasury(ctx.db, ctx.client, ctx.deployment, ctx.businessId, user);
-      const usdcFormatted = treasury.balances.usdc ? `${treasury.balances.usdc.amount} USDC` : "0.00 USDC";
-      const eurcFormatted = treasury.balances.eurc ? `${treasury.balances.eurc.amount} EURC` : "0.00 EURC";
-      const reserveFormatted = `${treasury.reserve.shares} USYC`;
+      const usdcFormatted = treasury.balances.usdc ? `${treasury.balances.usdc.amount} USDC` : "unavailable USDC balance";
+      const eurcFormatted = treasury.balances.eurc ? `${treasury.balances.eurc.amount} EURC` : "unavailable EURC balance";
+      const reserveFormatted = treasury.reserve.readAvailable ? `${treasury.reserve.shares} USYC` : "unavailable reserve balance";
 
-      const runwayText = treasury.forecast.runwayDays !== null
-        ? `${treasury.forecast.runwayDays} days of obligations covered`
-        : "no upcoming obligations";
+      const runwayText = treasury.forecast.runwayStatement;
 
       const text = `Operating cash is ${usdcFormatted} and ${eurcFormatted}. Reserve holds ${reserveFormatted}. Forward runway: ${runwayText} (with a ${treasury.forecast.bufferDays}-day buffer).`;
       return {
@@ -381,9 +364,10 @@ export const reserveStatusIntent: IntentHandler = {
       const user = await resolveIntentUser(ctx);
       if (!user) throw new Error("No user found");
       const treasury = await loadTreasury(ctx.db, ctx.client, ctx.deployment, ctx.businessId, user);
+      if (!treasury.reserve.readAvailable) throw new Error("Reserve unavailable");
       if (!treasury.reserve.enabled) {
         return {
-          text: "The USYC treasury reserve is currently disabled for this Vault. Operating funds remain 100% in liquid USDC/EURC.",
+          text: "The USYC treasury reserve is currently disabled for this Vault. The reserve policy is disabled; see Treasury for confirmed balances.",
           links: [["Enable Reserve in Treasury", "/business/treasury"]],
           source: `From: Vault reserve policy at block ${treasury.block}`,
           intent: "reserve_status",
@@ -422,30 +406,12 @@ export const earlyPaySavingsIntent: IntentHandler = {
   },
   async execute(ctx: IntentContext): Promise<IntentAnswer> {
     const now = ctx.now ?? new Date();
-    const rows = await ctx.db
-      .select({
-        total: invoices.total,
-        credited: invoices.credited,
-      })
-      .from(invoices)
-      .where(
-        and(
-          eq(invoices.businessId, ctx.businessId),
-          sql`${invoices.credited} > 0`,
-        ),
-      );
-
-    // Sum discounts where total > credited (vendor agreed to discount)
-    const discountedRows = rows.filter((r) => r.total > r.credited);
+    const settlements = await intentSettlements(ctx);
+    const discountedRows = settlements.filter((r) => r.discountBps > 0 && r.credit > r.paid);
     const count = discountedRows.length;
-    const savings = discountedRows.reduce((acc, r) => acc + (r.total - r.credited), 0n);
-
-    let text: string;
-    if (count === 0) {
-      text = "No Early Pay discounts have been settled yet. Once vendors accept early payment discounts, savings will accumulate here.";
-    } else {
-      text = `Early Pay has saved ${formatUsdc(savings)} across ${count} discounted payment${count === 1 ? "" : "s"}.`;
-    }
+    const savings = currencyTotals(ctx, discountedRows.map((r) => ({token:r.token,amount:r.credit-r.paid})));
+    const text = count === 0 ? "No signed Early Pay discounts have been recorded as settled yet."
+      : `Early Pay has saved ${savings} across ${count} discounted payment${count === 1 ? "" : "s"}.`;
 
     return {
       text,

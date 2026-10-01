@@ -2,7 +2,6 @@ import "server-only";
 
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
-  encodeFunctionData,
   getAddress,
   parseEventLogs,
   type Address,
@@ -10,8 +9,8 @@ import {
   type PublicClient,
 } from "viem";
 
-import { symbolonContracts, symbolonVaultAbi } from "@symbolon/chain";
-import { readVaultFacts, recordApproval, syncLedger, syncVault } from "@symbolon/core";
+import { simulateCall, symbolonContracts, symbolonVaultAbi, toTransaction } from "@symbolon/chain";
+import { createInvoiceInputReader, readVaultFacts, recordApproval, syncLedger, syncVault } from "@symbolon/core";
 import {
   businesses,
   decisions,
@@ -32,12 +31,12 @@ import {
 } from "@symbolon/seal";
 import {
   ApprovalLevel,
-  DEFAULT_EARLY_PAY,
-  FakeStewardModel,
+  checkPayment,
   findDuplicates,
   matchInvoice,
   processInvoice,
   type InvoiceContext,
+  type StewardResult,
 } from "@symbolon/steward";
 
 import { UNSAFE_TEXT } from "@/lib/text-safety";
@@ -48,6 +47,8 @@ import { summarizeDecision } from "./decision-text";
 import { AuthError } from "./errors";
 import { evidenceFor, type EvidenceRow } from "./match-view";
 import type { SessionUser } from "./session";
+import { readPaymentBudget, readPaymentLedger, verifyPaymentDocument } from "./payment-ledger";
+import { buildStewardEnv } from "./steward-runtime";
 
 const HASH_RE = /^0x[0-9a-fA-F]{64}$/;
 const MIN_REASON_LENGTH = 3;
@@ -302,27 +303,13 @@ export async function listApprovals(
     };
   });
 
-  // Calculate human metric (Decision A7)
-  let humanMetric: HumanResponseMetric | null = null;
-  const allHumanAnswers = await db
-    .select({ kind: decisions.kind })
-    .from(decisions)
-    .where(
-      and(
-        eq(decisions.businessId, businessId),
-        inArray(decisions.kind, ["approval_granted", "approval_rejected"]),
-      ),
-    );
-
-  const agreed = allHumanAnswers.filter((a) => a.kind === "approval_granted").length;
-  const total = allHumanAnswers.length;
-  if (total > 0) {
-    humanMetric = {
-      agreed,
-      total,
-      text: `You agreed with ${agreed} of ${total} recommendations`,
-    };
-  }
+  // Calculate human metric from latest linked eligible responses (Decision A7).
+  const { humanResponseAgreement } = await import("@symbolon/core");
+  const metric = await humanResponseAgreement(db, businessId);
+  const humanMetric: HumanResponseMetric | null = metric.total > 0 ? {
+    ...metric,
+    text: `You agreed with ${metric.agreed} of ${metric.total} recommendations`,
+  } : null;
 
   return {
     items,
@@ -381,10 +368,14 @@ export async function prepareApproval(
     throw new AuthError(502, "Can't read Vault state from the chain right now. Try again shortly.");
   });
 
+  const { invoice } = await verifyPaymentDocument(client, cfg, invRow.envelope, fingerprint);
   const isOwner = userWallet.toLowerCase() === vaultState.owner.toLowerCase();
+  const budgetId = isOwner ? ZERO32 : await readPaymentBudget(contracts, vault, invoice);
   const isApprover =
     isOwner ||
-    (await contracts.lens.read.isApprover([vault, userWallet, ZERO32]).catch(() => false));
+    (await contracts.lens.read.isApprover([vault, userWallet, budgetId]).catch(() => {
+      throw new AuthError(502, "Can't confirm your onchain approval role right now.");
+    }));
 
   if (!isApprover) {
     throw new AuthError(403, "Your connected wallet is neither the Vault owner nor an authorized approver.");
@@ -402,15 +393,16 @@ export async function prepareApproval(
     throw new AuthError(403, "This payment exceeds the approver limit and requires the Vault owner's signature.");
   }
 
-  // Read remaining credit from ledger live
-  const remaining = await contracts.ledger.read.remaining([fingerprint]).catch(() => {
-    throw new AuthError(502, "Can't read invoice ledger balance right now.");
-  });
-  if (remaining === 0n) {
+  const ledger = await readPaymentLedger(contracts, fingerprint, invoice.amount);
+  if (ledger.cancelled || ledger.settled || ledger.credit === 0n) {
     throw new AuthError(409, "This invoice is already settled or cancelled onchain.");
   }
+  const remaining = ledger.credit;
 
-  const deadline = BigInt(Math.floor(Date.now() / 1000)) + APPROVAL_VALIDITY_SECONDS;
+  const block = await client.getBlock().catch(() => {
+    throw new AuthError(502, "Can't read chain time for this approval right now.");
+  });
+  const deadline = block.timestamp + APPROVAL_VALIDITY_SECONDS;
   const domain = sealDomain(cfg.chainId, cfg.deployment.contracts.invoiceLedger);
   const approvalMessage = {
     vault,
@@ -423,7 +415,10 @@ export async function prepareApproval(
 
   return {
     ok: true,
-    typedData: typedDataObj,
+    // The Seal package supplies the exact eth_signTypedData_v4 payload, including EIP712Domain.
+    typedData: JSON.parse(typedDataJsonString) as Omit<typeof typedDataObj, "message"> & {
+      message: { vault: Address; fingerprint: Hex; credit: string; deadline: string };
+    },
     typedDataJson: typedDataJsonString,
     credit: remaining.toString(),
     deadline: deadline.toString(),
@@ -471,11 +466,6 @@ export async function submitApproval(
     throw new AuthError(400, "Invalid approval deadline.");
   }
 
-  const nowSec = BigInt(Math.floor(Date.now() / 1000));
-  if (deadline <= nowSec) {
-    throw new AuthError(400, "Approval deadline has already expired.");
-  }
-
   const [biz] = await db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1);
   if (!biz?.vault) throw new AuthError(409, "This business doesn't have a Vault.");
   const vault = getAddress(biz.vault);
@@ -484,11 +474,13 @@ export async function submitApproval(
   const userWallet = callerUser?.wallet ? getAddress(callerUser.wallet) : null;
   if (!userWallet) throw new AuthError(400, "Sign-in wallet required to submit approval.");
 
-  const contracts = symbolonContracts(client, cfg.deployment);
-  const remaining = await contracts.ledger.read.remaining([fingerprint]).catch(() => {
-    throw new AuthError(502, "Can't read invoice ledger balance.");
-  });
-  if (remaining === 0n) throw new AuthError(409, "This invoice is already settled or cancelled onchain.");
+  // Re-check the same eligibility and verified ledger credit at submission; no body-supplied amount.
+  const prepared = await prepareApproval(db, client, cfg, user, businessId, fingerprint);
+  const remaining = BigInt(prepared.credit);
+  const nowSec = BigInt(prepared.deadline) - APPROVAL_VALIDITY_SECONDS;
+  if (deadline <= nowSec || deadline > BigInt(prepared.deadline)) {
+    throw new AuthError(400, "Approval deadline is expired or exceeds the approval validity window.");
+  }
 
   // Record approval in DB (checks signature with verifySealSignature and updates if deadline is later — A5)
   await recordApproval(
@@ -510,7 +502,9 @@ export async function submitApproval(
   const [recDec] = await db
     .select({ hash: decisions.hash })
     .from(decisions)
-    .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, fingerprint)))
+    .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, fingerprint),
+      sql`${decisions.record}->>'outcome' IN ('request_approval', 'proposed')`,
+      sql`${decisions.kind} NOT IN ('approval_granted', 'approval_rejected')`))
     .orderBy(desc(decisions.createdAt))
     .limit(1);
 
@@ -578,7 +572,9 @@ export async function rejectApproval(
   const [recDec] = await db
     .select({ hash: decisions.hash })
     .from(decisions)
-    .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, fingerprint)))
+    .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, fingerprint),
+      sql`${decisions.record}->>'outcome' IN ('request_approval', 'proposed')`,
+      sql`${decisions.kind} NOT IN ('approval_granted', 'approval_rejected')`))
     .orderBy(desc(decisions.createdAt))
     .limit(1);
 
@@ -596,7 +592,7 @@ export async function rejectApproval(
 
   await db
     .update(invoices)
-    .set({ status: "held", holdSource: "human" })
+    .set({ status: "held", holdSource: "human", holdKind: "payment" })
     .where(and(eq(invoices.businessId, businessId), eq(invoices.fingerprint, fingerprint)));
 
   return { ok: true, status: "held" as const, holdSource: "human" as const };
@@ -635,62 +631,60 @@ export async function preparePayNow(
     .where(and(eq(invoices.businessId, businessId), eq(invoices.fingerprint, fingerprint)))
     .limit(1);
   if (!invRow) throw new AuthError(404, "Invoice not found.");
+  if (invRow.holdSource === "human") {
+    return { ok: false, reason: "The owner must release this human payment hold before paying." };
+  }
 
   const contracts = symbolonContracts(client, cfg.deployment);
   const vaultState = await contracts.lens.read.getVaultState([vault]).catch(() => {
     throw new AuthError(502, "Can't read Vault state from the chain right now. Try again shortly.");
   });
 
-  const isOwner = userWallet.toLowerCase() === vaultState.owner.toLowerCase();
-  const isApprover =
-    isOwner ||
-    (await contracts.lens.read.isApprover([vault, userWallet, ZERO32]).catch(() => false));
-
-  const callerLevel = isOwner ? ApprovalLevel.Owner : isApprover ? ApprovalLevel.Approver : ApprovalLevel.None;
-  if (callerLevel === ApprovalLevel.None) {
-    throw new AuthError(403, "Your connected wallet is not authorized to send payments from this Vault.");
-  }
-
-  const verification = await verifySealedInvoice(invRow.envelope, {
-    client,
-    expected: { chainId: cfg.chainId, ledger: cfg.deployment.contracts.invoiceLedger },
-  });
-  if (!verification.ok || !verification.invoice || !verification.document) {
-    throw new AuthError(400, "Invoice verification failed.");
-  }
-  const inv = verification.invoice;
-  const doc = verification.document;
+  const { invoice: inv, document: doc } = await verifyPaymentDocument(client, cfg, invRow.envelope, fingerprint);
 
   const facts = await readVaultFacts(contracts, client, vault, inv, fingerprint).catch(() => {
     throw new AuthError(502, "Can't read Vault facts from the chain.");
   });
-  const ledgerRemaining = await contracts.ledger.read.remaining([fingerprint]).catch(() => {
-    throw new AuthError(502, "Can't read invoice ledger balance.");
+  const ledger = await readPaymentLedger(contracts, fingerprint, inv.amount);
+  if (ledger.cancelled || ledger.settled || ledger.credit === 0n) {
+    return { ok: false, reason: "This invoice is already settled or cancelled onchain." };
+  }
+  const budgetId = checkPayment(facts, {
+    invoice: inv, credit: ledger.credit, paid: ledger.credit, maxFee: 0n, approvalHeld: ApprovalLevel.Owner,
+  }).budgetId;
+  const isOwner = userWallet.toLowerCase() === vaultState.owner.toLowerCase();
+  const isApprover = isOwner || await contracts.lens.read.isApprover([vault, userWallet, budgetId]).catch(() => {
+    throw new AuthError(502, "Can't confirm your onchain approval role right now.");
   });
+  const callerLevel = isOwner ? ApprovalLevel.Owner : isApprover ? ApprovalLevel.Approver : ApprovalLevel.None;
+  if (callerLevel === ApprovalLevel.None) {
+    throw new AuthError(403, "Your connected wallet is not authorized to send payments from this Vault.");
+  }
+  const env = await buildStewardEnv(db, client, cfg, biz);
+  const businessInputs = await createInvoiceInputReader(env, businessId, vault)
+    .then((reader) => reader.forInvoice(invRow, facts.now)).catch(() => {
+      throw new AuthError(502, "Can't read this business's payment controls and cash right now.");
+    });
 
   // Re-run pipeline for this invoice (Decision A2)
   const ctx: InvoiceContext = {
-    business: { id: biz.id, vault, mode: "assist", program: biz.earlyPay ?? DEFAULT_EARLY_PAY },
+    business: { id: biz.id, vault, mode: "assist", program: env.program },
     deployment: { chainId: cfg.chainId, ledger: cfg.deployment.contracts.invoiceLedger },
     envelope: invRow.envelope,
     facts,
-    ledgerRemaining,
-    knownInvoices: [],
-    offers: [],
-    reserveYieldBps: 0,
-    operatingCash: 100_000_000_000n,
-    buffer: 0n,
-    earlyPayCommitted: 0n,
+    ledgerRemaining: ledger.ledgerRemaining,
+    ...businessInputs,
+    reserveYieldBps: env.reserveYieldBps,
+    signatureClient: client,
     approvalHeld: callerLevel,
   };
 
   const processed = await processInvoice(ctx, {
-    model: new FakeStewardModel(),
-    simulate: async () => ({}),
-    send: undefined,
+    simulate: async () => { throw new Error("Assist preflight never sends through the Steward."); },
   });
 
   if (processed.outcome !== "proposed" || !processed.call) {
+    await storePayNowDecision(db, businessId, fingerprint, processed);
     return {
       ok: false,
       reason: processed.record.rule || `Payment not payable: outcome is ${processed.outcome}`,
@@ -699,55 +693,47 @@ export async function preparePayNow(
 
   // Simulate call as the user's wallet before opening wallet window (Decision A2)
   try {
-    await client.simulateContract({
-      address: processed.call.address,
-      abi: symbolonVaultAbi as any,
-      functionName: processed.call.functionName as any,
-      args: processed.call.args as any,
-      account: userWallet,
-    });
-  } catch (simError: any) {
+    await simulateCall(client, processed.call, userWallet);
+  } catch (simError) {
+    const error = simError as { shortMessage?: string; message?: string };
     return {
       ok: false,
-      reason: "Vault simulation failed: " + (simError.shortMessage || simError.message || "transaction would revert"),
+      reason: "Vault simulation failed: " + (error.shortMessage || error.message || "transaction would revert"),
     };
   }
 
   // Store the decision record with hash matching the onchain decisionHash (Decision A2)
-  await db
-    .insert(decisions)
-    .values({
-      businessId,
-      kind: "pay",
-      subject: fingerprint,
-      record: processed.record as any,
-      hash: processed.hash.toLowerCase(),
-    })
-    .onConflictDoNothing();
+  await storePayNowDecision(db, businessId, fingerprint, processed);
 
-  const creditRaw = ((processed.call.args[1] as any)?.credit as bigint | undefined) ?? inv.amount;
+  const creditRaw = ledger.credit;
+  const paidRaw = BigInt(String(processed.record.inputs.paid));
   const decimals = doc.currency.decimals ?? 6;
 
   return {
     ok: true,
     to: processed.call.address,
-    data: encodeFunctionData({
-      abi: symbolonVaultAbi as any,
-      functionName: processed.call.functionName as any,
-      args: processed.call.args as any,
-    }),
+    data: toTransaction(processed.call).data,
     chainId: cfg.chainId,
     summary: {
       vendor: doc.vendor.name,
       invoiceNumber: doc.invoiceNumber,
-      amount: formatAmount(inv.amount, decimals),
+      amount: formatAmount(paidRaw, decimals),
       credit: formatAmount(creditRaw, decimals),
+      discountSigned: paidRaw < creditRaw,
+      discountRaw: (creditRaw - paidRaw).toString(),
       payoutAddress: inv.payoutAddress,
       fee: "0 USDC",
       ruleNeededHuman: processed.record.rule,
       signerWallet: userWallet,
     },
   };
+}
+
+async function storePayNowDecision(db: Database, businessId: string, fingerprint: Hex, processed: StewardResult) {
+  await db.insert(decisions).values({
+    businessId, kind: processed.record.kind, subject: fingerprint,
+    record: processed.record as unknown as Record<string, unknown>, hash: processed.hash.toLowerCase(),
+  }).onConflictDoNothing();
 }
 
 /**
@@ -891,7 +877,7 @@ export async function releaseHold(
 
   await db
     .update(invoices)
-    .set({ status: "verified", holdSource: null })
+    .set({ status: "verified", holdSource: null, holdKind: null })
     .where(and(eq(invoices.businessId, businessId), eq(invoices.fingerprint, fingerprint)));
 
   await appendAppDecision(db, businessId, {

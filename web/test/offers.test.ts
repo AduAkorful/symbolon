@@ -10,6 +10,7 @@ import {
   members,
   seals,
   users,
+  notifications,
   type Database,
 } from "@symbolon/db";
 import {
@@ -377,5 +378,20 @@ describe("Early Pay offers service", () => {
 
     const list = await listOffersForInvoice(db, fingerprint);
     expect(list[0]!.status).toBe("declined");
+    const notices = await db.select().from(notifications);
+    expect(notices.filter((n) => n.subject === fingerprint)).toEqual([expect.objectContaining({ userId: vendorUser.id, kind: "offer_declined" })]);
+  });
+  it("accepts a counter only with a new Seal signature over its exact discount and expiry", async () => {
+    const { sealKey, vendorUser, fingerprint } = await setupTestScenario();
+    const validity = Math.floor(Date.now() / 1000) + 3600;
+    const [counter] = await db.insert(earlyPayOffers).values({ fingerprint, discountBps: 200, validUntil: new Date(validity * 1000), status: "countered" }).returning();
+    const prepared = await prepareOffer(db, mockClient, cfg, vendorUser, fingerprint, 200, 86400, counter!.id);
+    expect(prepared.validUntil).toBe(validity);
+    const signature = await signSealMessage(sealKey, typedData(sealDomain(cfg.chainId, cfg.deployment.contracts.invoiceLedger), "EarlyPayOffer", { fingerprint: fingerprint as `0x${string}`, discountBps: 200, validUntil: BigInt(validity) }));
+    await expect(submitOffer(db, mockClient, cfg, vendorUser, { fingerprint, discountBps: 201, validUntil: validity, signature, counterId: counter!.id })).rejects.toThrow("Counter terms");
+    await submitOffer(db, mockClient, cfg, vendorUser, { fingerprint, discountBps: 200, validUntil: validity, signature, counterId: counter!.id });
+    const listed = await listOffersForInvoice(db, fingerprint);
+    expect(listed.filter((o) => o.status === "open")).toHaveLength(1);
+    expect(listed.find((o) => o.id === counter!.id)?.status).toBe("declined");
   });
 });

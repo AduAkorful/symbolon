@@ -115,6 +115,7 @@ describe("Receipts Service", () => {
     ];
 
     const client = {
+      readContract: vi.fn().mockImplementation(async ({ functionName }) => functionName === "remaining" ? 0n : { seen: true, cancelled: false, total: 2500_000_000n, credited: 2500_000_000n }),
       getBlockNumber: vi.fn().mockResolvedValue(64060500n),
       getLogs: vi.fn().mockResolvedValue(mockLogs),
       getBlock: vi.fn().mockResolvedValue({ timestamp: 1_790_100_000n }),

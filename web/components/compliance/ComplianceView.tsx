@@ -147,7 +147,7 @@ export function ComplianceView({
                     {counterparties.map((row) => {
                       const isScreening = busySeal === row.seal;
                       const isRecording = recordBusyId === row.latestScreeningId;
-                      const isHighOrBlocked = row.onchainRisk >= 2;
+                      const isHighOrBlocked = row.onchainRisk !== null && row.onchainRisk >= 2;
 
                       return (
                         <tr key={row.seal} className="hover:bg-paper/40">
@@ -163,11 +163,12 @@ export function ComplianceView({
                           <td className="py-3 px-3">
                             <div className="flex items-center gap-1.5 font-mono text-[11px]">
                               <span>
-                                {row.payoutAddress.slice(0, 6)}…{row.payoutAddress.slice(-4)}
+                                {row.payoutAddress?.slice(0, 6) ?? "Unavailable"}…{row.payoutAddress?.slice(-4) ?? ""}
                               </span>
                               <button
                                 type="button"
-                                onClick={() => copyText(row.payoutAddress, row.seal)}
+                                disabled={!row.payoutAddress}
+                                onClick={() => row.payoutAddress && copyText(row.payoutAddress, row.seal)}
                                 title="Copy full payout address"
                                 className="text-[10px] text-graphite hover:text-ink"
                               >

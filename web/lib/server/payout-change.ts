@@ -1,13 +1,13 @@
 import "server-only";
 
 import { and, desc, eq } from "drizzle-orm";
-import { encodeFunctionData, getAddress, isAddress, parseEventLogs, zeroAddress, type Address, type Hex, type PublicClient } from "viem";
+import { decodeFunctionData, encodeFunctionData, getAddress, isAddress, parseEventLogs, zeroAddress, type Address, type Hex, type PublicClient } from "viem";
 
-import { symbolonContracts, vaultCall } from "@symbolon/chain";
+import { getDeployment, symbolonContracts, vaultCall } from "@symbolon/chain";
 import { symbolonVaultAbi } from "@symbolon/chain";
 import { requestCall, submitVendorRequest } from "@symbolon/core";
-import { businesses, payees, vendorRequests, type Database } from "@symbolon/db";
-import { digest, sealDomain, typedDataJson, verifySealSignature } from "@symbolon/seal";
+import { businesses, decisions, payees, vendorRequests, type Database } from "@symbolon/db";
+import { canonicalJson, digest, sealDomain, typedDataJson, verifySealSignature } from "@symbolon/seal";
 
 import { requireMember } from "./access";
 import { appendAppDecision } from "./app-decisions";
@@ -71,10 +71,7 @@ export async function prepareVendorPayoutChange(
   for (const row of payeeRows) {
     if (!row.vault) continue;
     const vaultAddr = getAddress(row.vault);
-    const contracts = symbolonContracts(client, {
-      chainId: cfg.chainId,
-      contracts: { symbolonVault: vaultAddr },
-    } as any);
+    const contracts = symbolonContracts(client, cfg.deployment);
 
     try {
       const p = await contracts.lens.read.getPayee([vaultAddr, getAddress(seal.address)]);
@@ -87,7 +84,7 @@ export async function prepareVendorPayoutChange(
         });
       }
     } catch {
-      // Ignore reading failure for an individual vault
+      throw new AuthError(502, "Can't confirm payout records for every business Vault.");
     }
   }
 
@@ -188,7 +185,7 @@ export async function submitVendorPayoutChange(
         targetBusinesses.push(row.businessId);
       }
     } catch {
-      // Ignore
+      throw new AuthError(502, "Can't confirm payout records for every business Vault.");
     }
   }
 
@@ -312,6 +309,7 @@ export async function recordConfirmPayoutChange(
   },
 ) {
   await requireMember(db, user.id, businessId, "owner");
+  const txHash = input.txHash.toLowerCase() as Hex;
 
   const [req] = await db
     .select()
@@ -323,31 +321,38 @@ export async function recordConfirmPayoutChange(
     throw new AuthError(404, "Request not found.");
   }
 
-  const receipt = await client.waitForTransactionReceipt({ hash: input.txHash });
-  if (receipt.status !== "success") {
-    throw new AuthError(400, "Transaction failed onchain.");
-  }
+  if (req.kind !== "payout_change") throw new AuthError(409, "Not a payout change request.");
+  const recorded = await recordedPayoutAction(db, businessId, input.requestId, txHash, "payout_change_confirmed");
+  if (recorded) return { success: true, activeAt: Number(recorded.activeAt) };
+  if (req.status !== "pending") throw new AuthError(409, "Request is no longer pending.");
 
-  const logs = parseEventLogs({
-    abi: symbolonVaultAbi,
-    logs: receipt.logs,
-    eventName: "PayoutChangeConfirmed",
-  });
-
-  const match = logs.find(
-    (l) => l.args.seal.toLowerCase() === req.seal.toLowerCase(),
-  );
-  if (!match) {
-    throw new AuthError(400, "No PayoutChangeConfirmed event found for this Seal in the transaction.");
-  }
-
-  await db
+  const { receipt, vault, contracts, transaction } = await payoutReceipt(db, client, businessId, txHash);
+  const message = req.message as { newPayout: string; payoutDomain: number; nonce: string };
+  const decoded = decodeFunctionData({ abi: symbolonVaultAbi, data: transaction.input });
+  if (decoded.functionName !== "confirmPayoutChange") throw new AuthError(409, "Not a payout confirmation.");
+  const [change, signature] = decoded.args;
+  if (change.seal.toLowerCase() !== req.seal || change.newPayout.toLowerCase() !== message.newPayout.toLowerCase() || change.payoutDomain !== Number(message.payoutDomain) || change.nonce !== BigInt(message.nonce) || signature.toLowerCase() !== req.signature.toLowerCase()) throw new AuthError(409, "Transaction does not match this signed payout request.");
+  const logs = parseEventLogs({ abi: symbolonVaultAbi, logs: receipt.logs, eventName: "PayoutChangeConfirmed" }).filter((l) => getAddress(l.address) === vault && l.args.seal.toLowerCase() === req.seal);
+  const match = logs[0];
+  if (logs.length !== 1 || !match || match.args.newPayout.toLowerCase() !== message.newPayout.toLowerCase() || match.args.payoutDomain !== Number(message.payoutDomain)) throw new AuthError(409, "No matching confirmation from this Vault.");
+  const current = await contracts.lens.read.getPayee([vault, getAddress(req.seal)]).catch(() => { throw new AuthError(502, "Can't verify this payout request's current state."); });
+  const pendingMatches = current.pendingActiveAt === match.args.activeAt && current.pendingPayout.toLowerCase() === message.newPayout.toLowerCase() && current.pendingDomain === Number(message.payoutDomain);
+  const appliedMatches = current.pendingActiveAt === 0n && current.payout.toLowerCase() === message.newPayout.toLowerCase() && current.payoutDomain === Number(message.payoutDomain);
+  if (current.lastChangeNonce !== BigInt(message.nonce) || (!pendingMatches && !appliedMatches)) throw new AuthError(409, "Can't confirm this payout request's current state.");
+  await db.transaction(async (tx) => {
+  const [locked] = await tx.select().from(vendorRequests)
+    .where(and(eq(vendorRequests.id, req.id), eq(vendorRequests.businessId, businessId)))
+    .for("update");
+  if (!locked || locked.kind !== "payout_change" || locked.seal !== req.seal || locked.signature !== req.signature || canonicalJson(locked.message) !== canonicalJson(req.message)) throw new AuthError(409, "The payout request changed during recording.");
+  if (await recordedPayoutAction(tx, businessId, req.id, txHash, "payout_change_confirmed")) return;
+  if (locked.status !== "pending") throw new AuthError(409, "Request is no longer pending.");
+  await tx
     .update(vendorRequests)
     .set({ status: "confirmed" })
-    .where(eq(vendorRequests.id, input.requestId));
+    .where(and(eq(vendorRequests.id, req.id), eq(vendorRequests.businessId, businessId), eq(vendorRequests.kind, "payout_change"), eq(vendorRequests.status, "pending")));
 
   await appendAppDecision(
-    db,
+    tx,
     businessId,
     {
       kind: "payout_change_confirmed",
@@ -362,8 +367,10 @@ export async function recordConfirmPayoutChange(
       rule: "owner_confirmed",
       outcome: "confirmed",
     },
-    input.txHash,
+    txHash,
   );
+
+  });
 
   return { success: true, activeAt: Number(match.args.activeAt) };
 }
@@ -424,6 +431,7 @@ export async function recordCancelPayoutChange(
   },
 ) {
   await requireMember(db, user.id, businessId, "owner");
+  const txHash = input.txHash.toLowerCase() as Hex;
 
   const [req] = await db
     .select()
@@ -435,31 +443,35 @@ export async function recordCancelPayoutChange(
     throw new AuthError(404, "Request not found.");
   }
 
-  const receipt = await client.waitForTransactionReceipt({ hash: input.txHash });
-  if (receipt.status !== "success") {
-    throw new AuthError(400, "Transaction failed onchain.");
-  }
+  if (req.kind !== "payout_change") throw new AuthError(409, "Not a payout change request.");
+  if (await recordedPayoutAction(db, businessId, input.requestId, txHash, "payout_change_cancelled")) return { success: true };
+  if (req.status !== "confirmed") throw new AuthError(409, "Only a confirmed pending payout change can be cancelled.");
 
-  const logs = parseEventLogs({
-    abi: symbolonVaultAbi,
-    logs: receipt.logs,
-    eventName: "PayoutChangeCancelled",
-  });
-
-  const match = logs.find(
-    (l) => l.args.seal.toLowerCase() === req.seal.toLowerCase(),
-  );
-  if (!match) {
-    throw new AuthError(400, "No PayoutChangeCancelled event found for this Seal in the transaction.");
-  }
-
-  await db
+  const { receipt, vault, contracts, transaction } = await payoutReceipt(db, client, businessId, txHash);
+  const message = req.message as { newPayout: string; payoutDomain: number; nonce: string };
+  const decoded = decodeFunctionData({ abi: symbolonVaultAbi, data: transaction.input });
+  if (decoded.functionName !== "cancelPayoutChange" || decoded.args[0].toLowerCase() !== req.seal) throw new AuthError(409, "Not this Seal's cancellation.");
+  const logs = parseEventLogs({ abi: symbolonVaultAbi, logs: receipt.logs, eventName: "PayoutChangeCancelled" }).filter((l) => getAddress(l.address) === vault && l.args.seal.toLowerCase() === req.seal);
+  if (logs.length !== 1 || receipt.blockNumber <= 0n) throw new AuthError(409, "No matching cancellation from this Vault.");
+  const [before, current] = await Promise.all([
+    contracts.lens.read.getPayee([vault, getAddress(req.seal)], { blockNumber: receipt.blockNumber - 1n }),
+    contracts.lens.read.getPayee([vault, getAddress(req.seal)]),
+  ]).catch(() => { throw new AuthError(502, "Can't verify this cancellation's payout state."); });
+  if (before.lastChangeNonce !== BigInt(message.nonce) || before.pendingPayout.toLowerCase() !== message.newPayout.toLowerCase() || before.pendingDomain !== Number(message.payoutDomain) || before.pendingActiveAt === 0n || current.lastChangeNonce !== BigInt(message.nonce) || current.pendingActiveAt !== 0n) throw new AuthError(409, "Cancellation does not match this payout request.");
+  await db.transaction(async (tx) => {
+  const [locked] = await tx.select().from(vendorRequests)
+    .where(and(eq(vendorRequests.id, req.id), eq(vendorRequests.businessId, businessId)))
+    .for("update");
+  if (!locked || locked.kind !== "payout_change" || locked.seal !== req.seal || locked.signature !== req.signature || canonicalJson(locked.message) !== canonicalJson(req.message)) throw new AuthError(409, "The payout request changed during recording.");
+  if (await recordedPayoutAction(tx, businessId, req.id, txHash, "payout_change_cancelled")) return;
+  if (locked.status !== "confirmed") throw new AuthError(409, "Only a confirmed pending payout change can be cancelled.");
+  await tx
     .update(vendorRequests)
     .set({ status: "cancelled" })
-    .where(eq(vendorRequests.id, input.requestId));
+    .where(and(eq(vendorRequests.id, req.id), eq(vendorRequests.businessId, businessId), eq(vendorRequests.kind, "payout_change"), eq(vendorRequests.status, "confirmed")));
 
   await appendAppDecision(
-    db,
+    tx,
     businessId,
     {
       kind: "payout_change_cancelled",
@@ -469,8 +481,10 @@ export async function recordCancelPayoutChange(
       rule: "owner_cancelled",
       outcome: "cancelled",
     },
-    input.txHash,
+    txHash,
   );
+
+  });
 
   return { success: true };
 }
@@ -515,4 +529,23 @@ export async function rejectPayoutChangeRequest(
   });
 
   return { success: true };
+}
+
+/** Successful receipt, calldata and state always refer to this business's actual Vault. */
+async function payoutReceipt(db: Database, client: PublicClient, businessId: string, txHash: Hex) {
+  const [business] = await db.select().from(businesses).where(eq(businesses.id, businessId));
+  if (!business?.vault) throw new AuthError(409, "Business has no Vault.");
+  const vault = getAddress(business.vault);
+  const [receipt, transaction] = await Promise.all([client.waitForTransactionReceipt({ hash: txHash }), client.getTransaction({ hash: txHash })]);
+  if (receipt.status !== "success" || !receipt.to || getAddress(receipt.to) !== vault) throw new AuthError(409, "Not a successful transaction to this Vault.");
+  return { receipt, transaction, vault, contracts: symbolonContracts(client, getDeployment(business.chainId)) };
+}
+
+/** A previously verified receipt is idempotent only for its recorded request. */
+async function recordedPayoutAction(db: Pick<Database, "select">, businessId: string, requestId: string, txHash: Hex, kind: string) {
+  const [recorded] = await db.select().from(decisions).where(and(eq(decisions.businessId, businessId), eq(decisions.txHash, txHash.toLowerCase()), eq(decisions.kind, kind)));
+  if (!recorded) return undefined;
+  const inputs = (recorded.record as { inputs?: Record<string, unknown> }).inputs;
+  if (inputs?.requestId !== requestId) throw new AuthError(409, "Receipt already belongs to another payout request.");
+  return inputs;
 }

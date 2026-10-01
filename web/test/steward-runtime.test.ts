@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { getAddress, type Address, type PublicClient } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { arcTestnet, getDeployment } from "@symbolon/chain";
-import { businesses, createTestDb, members, stewardRuns, users, type Database } from "@symbolon/db";
+import { businesses, createTestDb, members, notifications, stewardRuns, users, type Database } from "@symbolon/db";
 import { eq } from "drizzle-orm";
 
 vi.mock("server-only", () => ({}));
@@ -214,5 +214,7 @@ describe("runForBusiness", () => {
     const run = await runForBusiness(db, mockClient, cfg, business.id, "manual", user.id);
     expect(run.status).toBe("skipped_fees");
     expect(run.error).toContain("fee balance is too low");
+    const notices = await db.select().from(notifications).where(eq(notifications.subject, run.id));
+    expect(notices).toEqual([expect.objectContaining({ userId: user.id, kind: "steward_run_failed", dedupeKey: `run:${run.id}` })]);
   });
 });

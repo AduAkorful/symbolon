@@ -13,6 +13,8 @@ import { requirePageSession } from "@/lib/server/http";
 import { loadSpaces } from "@/lib/server/space";
 import { loadInvoiceDetail } from "@/lib/server/inbox";
 import { summarizeDecision } from "@/lib/server/decision-text";
+import { businessOffers } from "@/lib/server/offers";
+import { BusinessOffers } from "@/components/inbox/BusinessOffers";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +26,7 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
   const db = await getDb();
   const view = await loadInvoiceDetail(db, getClient(), getConfig(), session.user, where.business.id, fingerprint);
   if (!view || !view.verification.document) notFound();
+  const offers = await businessOffers(db, session.user, where.business.id, fingerprint);
   const handle = view.vendor?.handle ?? (view.verification.document.vendor.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "vendor");
 
   // Check whether delivery evidence exists in the db (N13: show confirm/reject buttons)
@@ -120,6 +123,7 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
           </ul>
 
           {/* Delivery confirm/reject panel (N13) */}
+          <BusinessOffers businessId={where.business.id} fingerprint={fingerprint} view={offers} symbol={view.verification.document.currency.symbol} />
           {showDeliveryActions ? (
             <div className="mt-6">
               <DeliveryActions

@@ -396,29 +396,9 @@ export async function loadAhead(
   const usdcToken = cfg.deployment.tokens.usdc;
   const eurcToken = cfg.deployment.tokens.eurc;
 
-  let usdcBal = 0n;
-  let eurcBal = 0n;
-
-  try {
-    const [u, e] = await Promise.all([
-      client.readContract({
-        address: usdcToken,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [vault],
-      }),
-      client.readContract({
-        address: eurcToken,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [vault],
-      }),
-    ]);
-    usdcBal = u;
-    eurcBal = e;
-  } catch {
-    // balance read may fail in offline or mock test
-  }
+  const balances = await Promise.allSettled([usdcToken, eurcToken].map(address => client.readContract({ address, abi: erc20Abi, functionName: "balanceOf", args: [vault] })));
+  const usdcBal = balances[0]?.status === "fulfilled" ? balances[0].value : null;
+  const eurcBal = balances[1]?.status === "fulfilled" ? balances[1].value : null;
 
   const unpaid = await db
     .select({
@@ -460,13 +440,13 @@ export async function loadAhead(
   const eurcAddress = eurcToken.toLowerCase();
 
   const balancesMap = new Map<string, bigint>();
-  balancesMap.set(usdcAddress, usdcBal);
-  balancesMap.set(eurcAddress, eurcBal);
+  if (usdcBal !== null) balancesMap.set(usdcAddress, usdcBal);
+  if (eurcBal !== null) balancesMap.set(eurcAddress, eurcBal);
 
-  const rawShortfalls = tokenShortfalls(balancesMap, flows, nowSec, 30);
+  const rawShortfalls = tokenShortfalls(balancesMap, flows.filter(f => balancesMap.has(f.token)), nowSec, biz.bufferDays ?? 30);
   const shortfallsList = rawShortfalls.map((s) => {
     const isEurc = s.token === eurcAddress;
-    const symbol = isEurc ? "EURC" : "USDC";
+    const symbol = isEurc ? "EURC" : s.token === usdcAddress ? "USDC" : "Unknown token";
     const invs = flows.filter((f) => f.token === s.token && s.refs.includes(f.ref));
     return {
       tokenSymbol: symbol,
@@ -476,15 +456,13 @@ export async function loadAhead(
     };
   });
 
-  const usdcFlows = flows.filter((f) => f.token === usdcAddress);
-  const runway = runwayDays(usdcBal, usdcFlows, nowSec, 35);
-  let runwayStatement = "Cash covers everything due in the next 35 days.";
-  if (runway !== undefined) {
-    const shortDate = new Date(Date.now() + runway * 86_400_000).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    });
-    runwayStatement = `Cash runs short on ${shortDate} (USDC).`;
+  let runwayStatement: string;
+  if (usdcBal === null || eurcBal === null || flows.some(f => !balancesMap.has(f.token))) {
+    runwayStatement = "Cash coverage unavailable: one or more token balances could not be read.";
+  } else if (shortfallsList.length) {
+    runwayStatement = `${shortfallsList.map(s => s.tokenSymbol).join(" and ")} cash runs short within the selected ${biz.bufferDays ?? 30}-day buffer.`;
+  } else {
+    runwayStatement = `USDC and EURC cash cover recorded bills in the selected ${biz.bufferDays ?? 30}-day buffer.`;
   }
 
   const upcomingInvoices = unpaid.slice(0, 5).map((inv) => ({
@@ -493,7 +471,7 @@ export async function loadAhead(
     vendorName: inv.vendorName || inv.vendorHandle || "Unknown vendor",
     amountFormatted: formatAmount(inv.total > inv.credited ? inv.total - inv.credited : 0n, 6),
     dueDate: inv.dueDate,
-    token: inv.token.toLowerCase() === eurcAddress ? "EURC" : "USDC",
+    token: inv.token.toLowerCase() === eurcAddress ? "EURC" : inv.token.toLowerCase() === usdcAddress ? "USDC" : "Unknown token",
   }));
 
   return {

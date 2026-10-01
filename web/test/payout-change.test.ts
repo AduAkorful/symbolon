@@ -1,11 +1,13 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { encodeAbiParameters, encodeEventTopics, getAddress, type Hex, type PublicClient } from "viem";
+import { encodeAbiParameters, encodeEventTopics, encodeFunctionData, getAddress, type Hex, type PublicClient } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { arcTestnet, getDeployment, symbolonVaultAbi } from "@symbolon/chain";
 import {
   businesses,
+  decisions,
   createTestDb,
   members,
+  notifications,
   payees,
   seals,
   users,
@@ -19,6 +21,7 @@ vi.mock("server-only", () => ({}));
 const chainState = vi.hoisted(() => ({
   getPayee: vi.fn(),
   waitForTransactionReceipt: vi.fn(),
+  getTransaction: vi.fn(),
 }));
 
 vi.mock("@symbolon/chain", async (importOriginal) => {
@@ -35,12 +38,15 @@ vi.mock("@symbolon/chain", async (importOriginal) => {
   };
 });
 
+import { and, eq } from "drizzle-orm";
+
 import { AuthError } from "@/lib/server/errors";
 import {
   listVendorRequests,
   prepareConfirmPayoutChange,
   prepareVendorPayoutChange,
   recordConfirmPayoutChange,
+  recordCancelPayoutChange,
   rejectPayoutChangeRequest,
   submitVendorPayoutChange,
 } from "@/lib/server/payout-change";
@@ -53,6 +59,7 @@ const cfg = {
 const mockClient = {
   getCode: vi.fn().mockResolvedValue(undefined),
   waitForTransactionReceipt: chainState.waitForTransactionReceipt,
+  getTransaction: chainState.getTransaction,
 } as unknown as PublicClient;
 
 let db: Database;
@@ -164,6 +171,51 @@ async function setupScenario() {
 }
 
 describe("Payout Change service", () => {
+  it.each(["confirm", "cancel"] as const)("records concurrent %s receipt retries once with one vendor notice", async (action) => {
+    const { sealKey, vendorUser, business1, ownerUser1 } = await setupScenario();
+    const newPayout = getAddress(randAddr());
+    const message = { seal: sealKey.address, newPayout, payoutDomain: 0, nonce: "123" };
+    const signature = "0x01" as Hex;
+    const [request] = await db.insert(vendorRequests).values({
+      businessId: business1.id, seal: sealKey.address.toLowerCase(), kind: "payout_change",
+      message, signature, status: action === "confirm" ? "pending" : "confirmed",
+    }).returning();
+    const txHash = `0x${"ab".repeat(32)}` as Hex;
+    chainState.getTransaction.mockResolvedValue({ input: action === "confirm"
+      ? encodeFunctionData({ abi: symbolonVaultAbi, functionName: "confirmPayoutChange", args: [{ ...message, nonce: 123n }, signature] })
+      : encodeFunctionData({ abi: symbolonVaultAbi, functionName: "cancelPayoutChange", args: [sealKey.address] }) });
+    chainState.waitForTransactionReceipt.mockResolvedValue({
+      status: "success", to: business1.vault, blockNumber: 200n, logs: [{ address: business1.vault,
+        topics: encodeEventTopics({ abi: symbolonVaultAbi, eventName: action === "confirm" ? "PayoutChangeConfirmed" : "PayoutChangeCancelled", args: { seal: sealKey.address } }),
+        data: action === "confirm" ? encodeAbiParameters([{ type: "address" }, { type: "uint32" }, { type: "uint64" }], [newPayout, 0, 1000n]) : "0x",
+      }],
+    });
+    // Both callers complete the outside-transaction checks before either may record.
+    let readCount = 0;
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => { release = resolve; });
+    chainState.getPayee.mockImplementation(async (_args, opts) => {
+      if (++readCount === (action === "confirm" ? 2 : 4)) release();
+      await barrier;
+      return { lastChangeNonce: 123n, pendingPayout: newPayout, pendingDomain: 0,
+        pendingActiveAt: action === "confirm" || opts?.blockNumber ? 1000n : 0n };
+    });
+    const record = action === "confirm" ? recordConfirmPayoutChange : recordCancelPayoutChange;
+    const results = await Promise.all([
+      record(db, mockClient, ownerUser1, business1.id, { requestId: request!.id, txHash }),
+      record(db, mockClient, ownerUser1, business1.id, { requestId: request!.id, txHash: `0x${"AB".repeat(32)}` }),
+    ]);
+    expect(results[0]).toEqual(results[1]);
+    const kind = action === "confirm" ? "payout_change_confirmed" : "payout_change_cancelled";
+    const recorded = await db.select().from(decisions).where(and(eq(decisions.businessId, business1.id), eq(decisions.kind, kind)));
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]!.txHash).toBe(txHash);
+    expect(await db.select().from(notifications).where(and(eq(notifications.userId, vendorUser.id), eq(notifications.kind, kind)))).toHaveLength(1);
+    const [other] = await db.insert(vendorRequests).values({ businessId: business1.id, seal: sealKey.address.toLowerCase(),
+      kind: "payout_change", message, signature: "0x02", status: action === "confirm" ? "pending" : "confirmed" }).returning();
+    await expect(record(db, mockClient, ownerUser1, business1.id, { requestId: other!.id, txHash })).rejects.toThrow(/another payout request/);
+    expect(await db.select().from(decisions).where(and(eq(decisions.businessId, business1.id), eq(decisions.kind, kind)))).toHaveLength(1);
+  });
   it("prepares a multi-business payout change typed data for vendor", async () => {
     const { vendorUser } = await setupScenario();
     const newPayout = randAddr();
@@ -292,6 +344,8 @@ describe("Payout Change service", () => {
     const txHash = ("0x" + "b".repeat(64)) as Hex;
     chainState.waitForTransactionReceipt.mockResolvedValue({
       status: "success",
+      to: business1.vault,
+      blockNumber: 100n,
       logs: [
         {
           address: business1.vault,
@@ -314,6 +368,12 @@ describe("Payout Change service", () => {
       ],
     });
 
+    const input = encodeFunctionData({ abi: symbolonVaultAbi, functionName: "confirmPayoutChange", args: [{ seal: getAddress(sealKey.address), newPayout: getAddress(newPayout), payoutDomain: 0, nonce: BigInt(prepared.nonce) }, signature] });
+    chainState.getTransaction.mockResolvedValue({ input });
+    chainState.getPayee.mockResolvedValue({ exists: true, lastChangeNonce: BigInt(prepared.nonce), pendingPayout: getAddress(newPayout), pendingDomain: 0, pendingActiveAt: 1000n });
+    const receipt = await chainState.waitForTransactionReceipt();
+    chainState.waitForTransactionReceipt.mockResolvedValueOnce({ ...receipt, to: randAddr() });
+    await expect(recordConfirmPayoutChange(db, mockClient, ownerUser1, business1.id, { requestId, txHash })).rejects.toThrow();
     const recRes = await recordConfirmPayoutChange(db, mockClient, ownerUser1, business1.id, {
       requestId,
       txHash,
@@ -323,6 +383,27 @@ describe("Payout Change service", () => {
 
     const reqs = await listVendorRequests(db, business1.id);
     expect(reqs[0]!.status).toBe("confirmed");
+
+    // Receipt retry returns its original verified result without appending another decision.
+    const beforeRetry = await db.select().from(decisions).where(eq(decisions.businessId, business1.id));
+    chainState.getPayee.mockRejectedValueOnce(new Error("offline"));
+    expect(await recordConfirmPayoutChange(db, mockClient, ownerUser1, business1.id, { requestId, txHash })).toEqual(recRes);
+    expect(await db.select().from(decisions).where(eq(decisions.businessId, business1.id))).toHaveLength(beforeRetry.length);
+    chainState.getPayee.mockReset();
+
+    const cancelHash = ("0x" + "c".repeat(64)) as Hex;
+    chainState.getTransaction.mockResolvedValue({ input: encodeFunctionData({ abi: symbolonVaultAbi, functionName: "cancelPayoutChange", args: [getAddress(sealKey.address)] }) });
+    const cancelReceipt = { status: "success", to: business1.vault, blockNumber: 200n, logs: [{ address: business1.vault, topics: encodeEventTopics({ abi: symbolonVaultAbi, eventName: "PayoutChangeCancelled", args: { seal: getAddress(sealKey.address) } }), data: "0x" }] };
+    chainState.waitForTransactionReceipt.mockResolvedValue({ ...cancelReceipt, to: randAddr() });
+    await expect(recordCancelPayoutChange(db, mockClient, ownerUser1, business1.id, { requestId, txHash: cancelHash })).rejects.toThrow(/Vault/);
+    chainState.waitForTransactionReceipt.mockResolvedValue(cancelReceipt);
+    const prior = { lastChangeNonce: BigInt(prepared.nonce), pendingPayout: getAddress(newPayout), pendingDomain: 0, pendingActiveAt: 1000n };
+    chainState.getPayee.mockResolvedValueOnce(prior).mockResolvedValueOnce({ lastChangeNonce: BigInt(prepared.nonce) + 1n, pendingActiveAt: 0n });
+    await expect(recordCancelPayoutChange(db, mockClient, ownerUser1, business1.id, { requestId, txHash: cancelHash })).rejects.toThrow(/match/);
+    chainState.getPayee.mockResolvedValueOnce(prior).mockResolvedValueOnce({ lastChangeNonce: BigInt(prepared.nonce), pendingActiveAt: 0n });
+    expect(await recordCancelPayoutChange(db, mockClient, ownerUser1, business1.id, { requestId, txHash: cancelHash })).toEqual({ success: true });
+    expect(await recordCancelPayoutChange(db, mockClient, ownerUser1, business1.id, { requestId, txHash: cancelHash })).toEqual({ success: true });
+    expect((await listVendorRequests(db, business1.id))[0]!.status).toBe("cancelled");
   });
 
   it("allows business owner or approver to reject a pending payout change", async () => {

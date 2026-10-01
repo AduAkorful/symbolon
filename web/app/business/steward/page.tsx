@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getAddress } from "viem";
 import { arcChain, symbolonContracts } from "@symbolon/chain";
-import { shadowAgreement } from "@symbolon/core";
+import { humanResponseAgreement } from "@symbolon/core";
 import { Shell } from "@/components/shell/Shell";
 import { StewardClient, type DecisionView, type RunView } from "@/components/steward/StewardClient";
 import { getClient } from "@/lib/server/chain";
@@ -113,7 +113,8 @@ export default async function BusinessStewardPage() {
     summary: summarizeDecision(d.record as Record<string, unknown>),
   }));
 
-  const shadow = await shadowAgreement(db, business.id);
+  const agreement = await humanResponseAgreement(db, business.id);
+  const shadow = { agreed: agreement.agreed, compared: agreement.total, disagreements: [] };
 
   const pendingAnchorCount = await (async () => {
     const { decisionAnchors, decisions } = await import("@symbolon/db");

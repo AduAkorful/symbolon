@@ -10,6 +10,7 @@ import { postJson } from "@/lib/client/api";
 import type { PolicyViewData } from "@/lib/server/policy-edit";
 import type { BudgetViewItem } from "@/lib/server/budgets";
 import { policyTemplate, type PolicyTemplate } from "@/lib/policy-template";
+import { moneyDraft, moneyInput } from "@/lib/money-draft";
 import { usd, duration } from "@/lib/format";
 import { isLooseningPolicy } from "@/lib/server/loosening";
 
@@ -29,6 +30,7 @@ export function PolicyView({
   isOwner,
   signer,
   rules,
+  accountingDecimals,
   policy,
   lines,
   looseningDelaySeconds,
@@ -42,15 +44,15 @@ export function PolicyView({
   const [error, setError] = useState<string | null>(null);
 
   // Form draft state in user-friendly units
-  const [draftPerTxCap, setDraftPerTxCap] = useState(String(Number(policy.perTxCap) / 1e6));
-  const [draftOwnerThreshold, setDraftOwnerThreshold] = useState(String(Number(policy.ownerThreshold) / 1e6));
-  const [draftAutoPayLimit, setDraftAutoPayLimit] = useState(String(Number(policy.autoPayLimit) / 1e6));
+  const [draftPerTxCap, setDraftPerTxCap] = useState(moneyInput(policy.perTxCap, accountingDecimals));
+  const [draftOwnerThreshold, setDraftOwnerThreshold] = useState(moneyInput(policy.ownerThreshold, accountingDecimals));
+  const [draftAutoPayLimit, setDraftAutoPayLimit] = useState(moneyInput(policy.autoPayLimit, accountingDecimals));
   const [draftNewVendorMinPaid, setDraftNewVendorMinPaid] = useState(policy.newVendorMinPaid);
   const [draftScreeningMaxAge, setDraftScreeningMaxAge] = useState(policy.screeningMaxAge);
   const [draftNewPayeeDelay, setDraftNewPayeeDelay] = useState(policy.newPayeeDelay);
   const [draftChangeCooldown, setDraftChangeCooldown] = useState(policy.changeCooldown);
   const [draftLooseningDelay, setDraftLooseningDelay] = useState(policy.looseningDelay);
-  const [draftMaxBridgeFee, setDraftMaxBridgeFee] = useState(String(Number(policy.maxBridgeFee) / 1e6));
+  const [draftMaxBridgeFee, setDraftMaxBridgeFee] = useState(moneyInput(policy.maxBridgeFee, accountingDecimals));
 
   // Budgets state
   const [budgets, setBudgets] = useState<BudgetViewItem[]>(initialBudgets);
@@ -64,29 +66,32 @@ export function PolicyView({
   // Template prefill
   function handlePrefillTemplate(tmpl: PolicyTemplate) {
     const t = policyTemplate(tmpl);
-    setDraftPerTxCap(String(Number(t.perTxCap) / 1e6));
-    setDraftOwnerThreshold(String(Number(t.ownerThreshold) / 1e6));
-    setDraftAutoPayLimit(String(Number(t.autoPayLimit) / 1e6));
+    setDraftPerTxCap(moneyInput(t.perTxCap, accountingDecimals));
+    setDraftOwnerThreshold(moneyInput(t.ownerThreshold, accountingDecimals));
+    setDraftAutoPayLimit(moneyInput(t.autoPayLimit, accountingDecimals));
     setDraftNewVendorMinPaid(t.newVendorMinPaid);
     setDraftScreeningMaxAge(t.screeningMaxAge.toString());
     setDraftNewPayeeDelay(t.newPayeeDelay.toString());
     setDraftChangeCooldown(t.changeCooldown.toString());
     setDraftLooseningDelay(t.looseningDelay.toString());
-    setDraftMaxBridgeFee(t.maxBridgeFee.toString());
+    setDraftMaxBridgeFee(moneyInput(t.maxBridgeFee, accountingDecimals));
   }
 
   // Compute draft bigints and whether proposed is looser
-  const draftPolicyRaw = {
-    perTxCap: BigInt(Math.floor(Number(draftPerTxCap || 0) * 1e6)),
-    autoPayLimit: BigInt(Math.floor(Number(draftAutoPayLimit || 0) * 1e6)),
-    ownerThreshold: BigInt(Math.floor(Number(draftOwnerThreshold || 0) * 1e6)),
+  let draftError: string | null = null;
+  const draftPolicyRaw = (() => { try { if (!Number.isInteger(draftNewVendorMinPaid)) throw new Error("Invalid count"); return {
+    perTxCap: parseMoney(draftPerTxCap),
+    autoPayLimit: parseMoney(draftAutoPayLimit),
+    ownerThreshold: parseMoney(draftOwnerThreshold),
     newVendorMinPaid: Number(draftNewVendorMinPaid),
     screeningMaxAge: BigInt(draftScreeningMaxAge),
     newPayeeDelay: BigInt(draftNewPayeeDelay),
     changeCooldown: BigInt(draftChangeCooldown),
     looseningDelay: BigInt(draftLooseningDelay),
-    maxBridgeFee: BigInt(Math.floor(Number(draftMaxBridgeFee || 0) * 1e6)),
-  };
+    maxBridgeFee: parseMoney(draftMaxBridgeFee),
+  }; } catch { draftError = "Enter valid exact amounts and whole-number durations."; return null; } })();
+
+  function parseMoney(value: string) { const result = moneyDraft(value, accountingDecimals); if (result.raw === undefined) throw new Error(result.error); return result.raw; }
 
   const currentPolicyRaw = {
     perTxCap: BigInt(policy.perTxCap),
@@ -100,7 +105,7 @@ export function PolicyView({
     maxBridgeFee: BigInt(policy.maxBridgeFee),
   };
 
-  const isLooser = isLooseningPolicy(currentPolicyRaw, draftPolicyRaw);
+  const isLooser = draftPolicyRaw ? isLooseningPolicy(currentPolicyRaw, draftPolicyRaw) : false;
 
   // Field-level comparison helper
   function fieldDelta(current: bigint | number, draft: bigint | number, looserWhen: "higher" | "lower") {
@@ -125,6 +130,7 @@ export function PolicyView({
     setStatusMessage("Preparing policy change...");
 
     try {
+      if (!draftPolicyRaw) throw new Error(draftError ?? "Invalid policy amounts.");
       const prep = await postJson<{
         ok: boolean;
         to: string;
@@ -135,15 +141,15 @@ export function PolicyView({
       }>(`/api/business/${businessId}/policy`, {
         action: "prepare",
         policy: {
-          perTxCap: draftPolicyRaw.perTxCap.toString(),
-          autoPayLimit: draftPolicyRaw.autoPayLimit.toString(),
-          ownerThreshold: draftPolicyRaw.ownerThreshold.toString(),
-          newVendorMinPaid: draftPolicyRaw.newVendorMinPaid,
-          screeningMaxAge: draftPolicyRaw.screeningMaxAge.toString(),
-          newPayeeDelay: draftPolicyRaw.newPayeeDelay.toString(),
-          changeCooldown: draftPolicyRaw.changeCooldown.toString(),
-          looseningDelay: draftPolicyRaw.looseningDelay.toString(),
-          maxBridgeFee: draftPolicyRaw.maxBridgeFee.toString(),
+          perTxCap: (draftPolicyRaw ?? currentPolicyRaw).perTxCap.toString(),
+          autoPayLimit: (draftPolicyRaw ?? currentPolicyRaw).autoPayLimit.toString(),
+          ownerThreshold: (draftPolicyRaw ?? currentPolicyRaw).ownerThreshold.toString(),
+          newVendorMinPaid: (draftPolicyRaw ?? currentPolicyRaw).newVendorMinPaid,
+          screeningMaxAge: (draftPolicyRaw ?? currentPolicyRaw).screeningMaxAge.toString(),
+          newPayeeDelay: (draftPolicyRaw ?? currentPolicyRaw).newPayeeDelay.toString(),
+          changeCooldown: (draftPolicyRaw ?? currentPolicyRaw).changeCooldown.toString(),
+          looseningDelay: (draftPolicyRaw ?? currentPolicyRaw).looseningDelay.toString(),
+          maxBridgeFee: (draftPolicyRaw ?? currentPolicyRaw).maxBridgeFee.toString(),
         },
       });
 
@@ -184,7 +190,7 @@ export function PolicyView({
     setStatusMessage("Preparing budget transaction...");
 
     try {
-      const capRaw = BigInt(Math.floor(Number(budgetCap) * 1e6));
+      const capRaw = parseMoney(budgetCap);
       const periodLen = BigInt(budgetPeriod);
 
       const prep = await postJson<{
@@ -263,9 +269,9 @@ export function PolicyView({
         </div>
       ) : null}
 
-      {error ? (
+      {(error || draftError) ? (
         <div role="alert" className="mt-6 rounded-doc border border-red-300 bg-red-50 p-4 text-sm text-red-800">
-          {error}
+          {error || draftError}
         </div>
       ) : null}
 
@@ -348,8 +354,8 @@ export function PolicyView({
                   <label htmlFor="perTxCap" className="font-medium text-sm">
                     Largest single payment ($)
                   </label>
-                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.perTxCap, draftPolicyRaw.perTxCap, "higher").color}`}>
-                    {fieldDelta(currentPolicyRaw.perTxCap, draftPolicyRaw.perTxCap, "higher").label}
+                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.perTxCap, (draftPolicyRaw ?? currentPolicyRaw).perTxCap, "higher").color}`}>
+                    {fieldDelta(currentPolicyRaw.perTxCap, (draftPolicyRaw ?? currentPolicyRaw).perTxCap, "higher").label}
                   </span>
                 </div>
                 <input
@@ -370,8 +376,8 @@ export function PolicyView({
                   <label htmlFor="ownerThreshold" className="font-medium text-sm">
                     Owner signs above ($)
                   </label>
-                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.ownerThreshold, draftPolicyRaw.ownerThreshold, "higher").color}`}>
-                    {fieldDelta(currentPolicyRaw.ownerThreshold, draftPolicyRaw.ownerThreshold, "higher").label}
+                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.ownerThreshold, (draftPolicyRaw ?? currentPolicyRaw).ownerThreshold, "higher").color}`}>
+                    {fieldDelta(currentPolicyRaw.ownerThreshold, (draftPolicyRaw ?? currentPolicyRaw).ownerThreshold, "higher").label}
                   </span>
                 </div>
                 <input
@@ -392,8 +398,8 @@ export function PolicyView({
                   <label htmlFor="autoPayLimit" className="font-medium text-sm">
                     Auto-pay limit ($)
                   </label>
-                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.autoPayLimit, draftPolicyRaw.autoPayLimit, "higher").color}`}>
-                    {fieldDelta(currentPolicyRaw.autoPayLimit, draftPolicyRaw.autoPayLimit, "higher").label}
+                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.autoPayLimit, (draftPolicyRaw ?? currentPolicyRaw).autoPayLimit, "higher").color}`}>
+                    {fieldDelta(currentPolicyRaw.autoPayLimit, (draftPolicyRaw ?? currentPolicyRaw).autoPayLimit, "higher").label}
                   </span>
                 </div>
                 <input
@@ -414,8 +420,8 @@ export function PolicyView({
                   <label htmlFor="newVendorMinPaid" className="font-medium text-sm">
                     New vendor invoice threshold
                   </label>
-                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.newVendorMinPaid, draftPolicyRaw.newVendorMinPaid, "lower").color}`}>
-                    {fieldDelta(currentPolicyRaw.newVendorMinPaid, draftPolicyRaw.newVendorMinPaid, "lower").label}
+                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.newVendorMinPaid, (draftPolicyRaw ?? currentPolicyRaw).newVendorMinPaid, "lower").color}`}>
+                    {fieldDelta(currentPolicyRaw.newVendorMinPaid, (draftPolicyRaw ?? currentPolicyRaw).newVendorMinPaid, "lower").label}
                   </span>
                 </div>
                 <input
@@ -437,8 +443,8 @@ export function PolicyView({
                   <label htmlFor="screeningMaxAge" className="font-medium text-sm">
                     Screening max age
                   </label>
-                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.screeningMaxAge, draftPolicyRaw.screeningMaxAge, "higher").color}`}>
-                    {fieldDelta(currentPolicyRaw.screeningMaxAge, draftPolicyRaw.screeningMaxAge, "higher").label}
+                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.screeningMaxAge, (draftPolicyRaw ?? currentPolicyRaw).screeningMaxAge, "higher").color}`}>
+                    {fieldDelta(currentPolicyRaw.screeningMaxAge, (draftPolicyRaw ?? currentPolicyRaw).screeningMaxAge, "higher").label}
                   </span>
                 </div>
                 <select
@@ -469,8 +475,8 @@ export function PolicyView({
                   <label htmlFor="newPayeeDelay" className="font-medium text-sm">
                     New payee delay
                   </label>
-                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.newPayeeDelay, draftPolicyRaw.newPayeeDelay, "lower").color}`}>
-                    {fieldDelta(currentPolicyRaw.newPayeeDelay, draftPolicyRaw.newPayeeDelay, "lower").label}
+                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.newPayeeDelay, (draftPolicyRaw ?? currentPolicyRaw).newPayeeDelay, "lower").color}`}>
+                    {fieldDelta(currentPolicyRaw.newPayeeDelay, (draftPolicyRaw ?? currentPolicyRaw).newPayeeDelay, "lower").label}
                   </span>
                 </div>
                 <select
@@ -494,8 +500,8 @@ export function PolicyView({
                   <label htmlFor="changeCooldown" className="font-medium text-sm">
                     Payout & Seal change cooldown
                   </label>
-                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.changeCooldown, draftPolicyRaw.changeCooldown, "lower").color}`}>
-                    {fieldDelta(currentPolicyRaw.changeCooldown, draftPolicyRaw.changeCooldown, "lower").label}
+                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.changeCooldown, (draftPolicyRaw ?? currentPolicyRaw).changeCooldown, "lower").color}`}>
+                    {fieldDelta(currentPolicyRaw.changeCooldown, (draftPolicyRaw ?? currentPolicyRaw).changeCooldown, "lower").label}
                   </span>
                 </div>
                 <select
@@ -518,8 +524,8 @@ export function PolicyView({
                   <label htmlFor="looseningDelay" className="font-medium text-sm">
                     Loosening change delay
                   </label>
-                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.looseningDelay, draftPolicyRaw.looseningDelay, "lower").color}`}>
-                    {fieldDelta(currentPolicyRaw.looseningDelay, draftPolicyRaw.looseningDelay, "lower").label}
+                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.looseningDelay, (draftPolicyRaw ?? currentPolicyRaw).looseningDelay, "lower").color}`}>
+                    {fieldDelta(currentPolicyRaw.looseningDelay, (draftPolicyRaw ?? currentPolicyRaw).looseningDelay, "lower").label}
                   </span>
                 </div>
                 <select
@@ -543,8 +549,8 @@ export function PolicyView({
                   <label htmlFor="maxBridgeFee" className="font-medium text-sm">
                     Max cross-chain bridge fee ($)
                   </label>
-                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.maxBridgeFee, draftPolicyRaw.maxBridgeFee, "higher").color}`}>
-                    {fieldDelta(currentPolicyRaw.maxBridgeFee, draftPolicyRaw.maxBridgeFee, "higher").label}
+                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.maxBridgeFee, (draftPolicyRaw ?? currentPolicyRaw).maxBridgeFee, "higher").color}`}>
+                    {fieldDelta(currentPolicyRaw.maxBridgeFee, (draftPolicyRaw ?? currentPolicyRaw).maxBridgeFee, "higher").label}
                   </span>
                 </div>
                 <input

@@ -65,7 +65,7 @@ export function EarlyPayClient({ invoice, offers: initialOffers, suggested, sign
     }
   }
 
-  async function handleSignOffer(targetDiscountBps = discountBps, targetDuration = durationSecs) {
+  async function handleSignOffer(targetDiscountBps = discountBps, targetDuration = durationSecs, counterId?: string) {
     setError(null);
     setBusy(true);
     try {
@@ -78,6 +78,7 @@ export function EarlyPayClient({ invoice, offers: initialOffers, suggested, sign
           fingerprint: invoice.fingerprint,
           discountBps: targetDiscountBps,
           durationSeconds: targetDuration,
+          counterId,
         }),
       });
       const prepData = await prepRes.json();
@@ -96,6 +97,7 @@ export function EarlyPayClient({ invoice, offers: initialOffers, suggested, sign
           discountBps: targetDiscountBps,
           validUntil: prepData.validUntil,
           signature,
+          counterId,
         }),
       });
       const subData = await subRes.json();
@@ -279,7 +281,7 @@ export function EarlyPayClient({ invoice, offers: initialOffers, suggested, sign
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => handleSignOffer(counterOffer.discountBps)}
+                  onClick={() => handleSignOffer(counterOffer.discountBps, durationSecs, counterOffer.id)}
                   className="rounded-doc bg-ink px-4 py-2.5 text-xs font-medium text-paper hover:opacity-90 disabled:opacity-50"
                 >
                   Accept and sign {counterOffer.discountPercent}%

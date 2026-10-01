@@ -13,11 +13,11 @@ export function AnchorProof({ anchor, explorerUrl }: Props) {
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-graphite" />
           <span className="font-mono text-xs uppercase tracking-wider text-graphite">
-            Anchoring status: Pending
+            Anchoring status: {anchor.status === "unconfirmed" ? "Unconfirmed" : "Pending"}
           </span>
         </div>
         <p className="mt-2 text-graphite text-xs">
-          Not anchored onchain yet. Pending decision hashes are batched into a Merkle root and anchored to the Vault by the Steward.
+          {anchor.reason ?? "Not anchored onchain yet. Pending decision hashes are batched into a Merkle root and anchored to the Vault by the Steward."}
         </p>
       </div>
     );

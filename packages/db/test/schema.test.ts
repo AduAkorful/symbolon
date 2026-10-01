@@ -179,6 +179,8 @@ describe("schema", () => {
     // hold_source without status=held
     await expect(db.insert(invoices).values(invoiceRow(biz.id, { status: "verified", holdSource: "steward" }))).rejects.toThrow();
     // Valid: held + steward
+    await expect(db.insert(invoices).values(invoiceRow(biz.id, { status: "verified", holdKind: "delivery" }))).rejects.toThrow();
+    await expect(db.insert(invoices).values(invoiceRow(biz.id, { status: "held", holdSource: "steward", holdKind: "payment" }))).rejects.toThrow();
     await db.insert(invoices).values(invoiceRow(biz.id, { status: "held", holdSource: "steward" }));
     const [r] = await db.select().from(invoices);
     expect(r!.holdSource).toBe("steward");

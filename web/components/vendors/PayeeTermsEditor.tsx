@@ -5,6 +5,7 @@ import { isLooseningTerms } from "@/lib/server/loosening";
 import { sendWithWallet, type SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { postJson } from "@/lib/client/api";
+import { moneyDraft, moneyInput } from "@/lib/money-draft";
 import { duration } from "@/lib/format";
 
 
@@ -22,6 +23,7 @@ interface PayeeTermsEditorProps {
   budgets: { id: string; name: string }[];
   signer: SignerPlan;
   looseningDelaySeconds: number;
+  accountingDecimals: number;
 }
 
 export function PayeeTermsEditor({
@@ -31,6 +33,7 @@ export function PayeeTermsEditor({
   budgets,
   signer,
   looseningDelaySeconds,
+  accountingDecimals,
 }: PayeeTermsEditorProps) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -41,13 +44,14 @@ export function PayeeTermsEditor({
   const [draftRequirePo, setDraftRequirePo] = useState(currentTerms.requirePo);
   const [draftRequireDelivery, setDraftRequireDelivery] = useState(currentTerms.requireDelivery);
   const [draftMonthlyCapUsd, setDraftMonthlyCapUsd] = useState(
-    String(Number(currentTerms.monthlyCap) / 1e6),
+    moneyInput(currentTerms.monthlyCap, accountingDecimals),
   );
 
   const getProviders = useWalletProviders();
 
   const currentCapRaw = BigInt(currentTerms.monthlyCap);
-  const draftCapRaw = BigInt(Math.floor(Number(draftMonthlyCapUsd || 0) * 1e6));
+  const parsedCap = moneyDraft(draftMonthlyCapUsd, accountingDecimals);
+  const draftCapRaw = parsedCap.raw ?? currentCapRaw;
 
   const isLooser = isLooseningTerms(
     {
@@ -76,6 +80,7 @@ export function PayeeTermsEditor({
     setStatus("Preparing payee terms transaction...");
 
     try {
+      if (parsedCap.raw === undefined) throw new Error(parsedCap.error);
       const prep = await postJson<{
         ok: boolean;
         to: string;

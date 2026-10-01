@@ -3,6 +3,7 @@ import { getAbiItem, type Hex, type PublicClient } from "viem";
 
 import { invoiceLedgerAbi, invoiceStatus, scanLogs, symbolonVaultAbi, type Deployment, type SymbolonContracts } from "@symbolon/chain";
 import { chainEvents, invoices, syncCursors, type Database } from "@symbolon/db";
+import { notifyVendor } from "./domain-notifications.js";
 
 const LEDGER_EVENTS = [
   getAbiItem({ abi: invoiceLedgerAbi, name: "Settled" }),
@@ -95,8 +96,16 @@ export async function syncLedger(
       const status = s.cancelled ? "cancelled" : s.paid ? "paid" : s.credited > 0n ? "partially_paid" : undefined;
       await tx
         .update(invoices)
-        .set({ credited: s.credited, syncedBlock: scannedTo, ...(status ? { status } : {}) })
+        .set({ credited: s.credited, syncedBlock: scannedTo, ...(status ? { status, holdSource: null, holdKind: null } : {}) })
         .where(eq(invoices.fingerprint, fp));
+    }
+    for (const log of logs) {
+      if (log.eventName !== "Settled" && log.eventName !== "Cancelled") continue;
+      const fp = (log.args as { fingerprint: Hex }).fingerprint.toLowerCase();
+      const [invoice] = await tx.select().from(invoices).where(eq(invoices.fingerprint, fp));
+      if (invoice) await notifyVendor(tx, invoice.seal, { kind: log.eventName === "Settled" ? "invoice_paid" : "invoice_cancelled",
+        subject: fp, body: { invoiceNumber: invoice.invoiceNumber, txHash: log.transactionHash, partial: invoice.status !== "paid" },
+        dedupeKey: `${log.eventName === "Settled" ? "paid" : "cancelled"}:${fp}:${log.transactionHash.toLowerCase()}` });
     }
     await tx
       .insert(syncCursors)

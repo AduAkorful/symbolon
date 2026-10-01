@@ -121,7 +121,7 @@ export async function loadDecision(
       .where(
         and(
           eq(decisions.businessId, businessId),
-          sql`(${decisions.supersedes} = ${row.id} or ${decisions.record}->'inputs'->>'decisionHash' = ${row.hash.toLowerCase()} or ${decisions.record}->'inputs'->>'txHash' is not null)`,
+          sql`(${decisions.supersedes} = ${row.id} or ${decisions.record}->'inputs'->>'decisionHash' = ${row.hash.toLowerCase()} or ${decisions.record}->>'decision' = ${row.hash.toLowerCase()})`,
         ),
       )
       .limit(1);

@@ -39,6 +39,7 @@ vi.mock("@symbolon/chain", async (importOriginal) => {
       },
       ledger: {
         read: {
+          status: vi.fn().mockResolvedValue({ seen: true, cancelled: false }),
           remaining: vi.fn().mockResolvedValue(100_000_000n),
           invoiceStatus: vi.fn().mockResolvedValue({ paid: 0n, remaining: 100_000_000n, status: 1 }),
         },

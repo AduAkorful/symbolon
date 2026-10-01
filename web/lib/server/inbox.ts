@@ -14,6 +14,7 @@ import { AuthError } from "./errors";
 import type { ChainSettings } from "./business";
 import type { SessionUser } from "./session";
 import { evidenceFor, type EvidenceRow } from "./match-view";
+import { releaseDueSafe } from "./series";
 
 const VIEW_ROLES: Role[] = ["owner", "approver", "requester", "viewer"];
 const CLAIM_ROLES: Role[] = ["owner", "approver", "requester"];
@@ -66,6 +67,7 @@ async function trustFor(db: Database, client: PublicClient, cfg: ChainSettings, 
 /** Lists the business inbox. Trust is recomputed from the envelope and the business's payee record. */
 export async function listInbox(db: Database, client: PublicClient, cfg: ChainSettings, user: Pick<SessionUser, "id">, businessId: string, filter: InboxFilter = "all"): Promise<InboxItem[]> {
   await businessFor(db, cfg, user, businessId);
+  await releaseDueSafe(db, cfg, { businessId });
   const rows = await db.select().from(invoices).where(eq(invoices.businessId, businessId)).orderBy(desc(invoices.receivedAt));
   const items: InboxItem[] = [];
   for (const row of rows) {

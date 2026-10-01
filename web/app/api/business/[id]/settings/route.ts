@@ -19,7 +19,6 @@ import {
   recordCancelUpgrade,
   prepareUpgrade,
   recordUpgrade,
-  type VaultStateSnapshot,
 } from "@/lib/server/release";
 import { prepareChange, recordChange, listQueuedChanges } from "@/lib/server/queued-change";
 
@@ -49,7 +48,7 @@ export const GET = routeWith<Ctx>(async (_request, ctx) => {
     const [relInfo, nudgeInfo, changes] = await Promise.all([
       loadReleaseInfo(client, config.deployment, vault).catch(() => null),
       checkReleaseNudge(client, config.deployment, vault).catch(() => ({ hasNudge: false })),
-      listQueuedChanges(db, businessId).catch(() => []),
+      listQueuedChanges(db, businessId, session.user).catch(() => []),
     ]);
     release = relInfo;
     nudge = nudgeInfo;
@@ -149,7 +148,7 @@ export const POST = routeWith<Ctx>(async (request, ctx) => {
 
   if (body.action === "record-upgrade") {
     const txHash = body.txHash as Hex;
-    const snapshotBefore = body.stateSnapshotBefore as VaultStateSnapshot | undefined;
+    const operationId = typeof body.operationId === "string" ? body.operationId : undefined;
     const res = await recordUpgrade(
       db,
       client,
@@ -157,7 +156,7 @@ export const POST = routeWith<Ctx>(async (request, ctx) => {
       session.user,
       businessId,
       txHash,
-      snapshotBefore,
+      operationId,
     );
     return NextResponse.json(res);
   }

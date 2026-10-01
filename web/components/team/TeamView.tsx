@@ -127,7 +127,7 @@ export function TeamView({
     }
   }
 
-  async function handleExecuteOnchain(m: TeamMemberView, role: "approver" | "requester", enabled: boolean) {
+  async function handleExecuteOnchain(m: TeamMemberView, role: "approver" | "requester", enabled: boolean, budgetId?: string) {
     if (signer.kind !== "wallet") {
       alert("Please connect the business owner's wallet to execute this onchain change.");
       return;
@@ -145,6 +145,7 @@ export function TeamView({
         targetUserId: m.userId,
         role,
         enabled,
+        budgetId,
       });
 
       setOnchainStatus("Please confirm the transaction in your wallet...");
@@ -382,15 +383,16 @@ export function TeamView({
                         Set Requester Onchain
                       </button>
                     )}
-                    {(m.onchainRole === "approver_all" || m.onchainRole === "approver_scoped") && (
+                    {m.activeApproverBudgets?.map((budgetId) => (
                       <button
-                        onClick={() => handleExecuteOnchain(m, "approver", false)}
+                        key={budgetId}
+                        onClick={() => handleExecuteOnchain(m, "approver", false, budgetId)}
                         disabled={busy}
                         className="rounded-doc border border-rule px-3 py-1.5 text-xs font-medium text-crimson hover:border-crimson"
                       >
-                        Revoke Approver Onchain
+                        Revoke approval grant {budgetId}
                       </button>
-                    )}
+                    ))}
                     {m.onchainRole === "requester" && (
                       <button
                         onClick={() => handleExecuteOnchain(m, "requester", false)}

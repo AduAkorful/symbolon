@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
-import { formatUnits, getAddress, parseUnits } from "viem";
+import { formatUnits, getAddress, parseUnits, erc20Abi, type Hex } from "viem";
 import { Overlay } from "@/components/Overlay";
 import { TxLink } from "@/components/TxLink";
 import { sendWithWallet, type SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { postJson } from "@/lib/client/api";
-import { conversionKitFromProvider, quoteConversion, convert } from "@symbolon/kits";
+import { getConversionWallet } from "@/lib/client/conversion-wallet";
+import { ConversionFlow, TransferNotSubmittedError, quoteOutput, observeSwapReceipt, confirmFundingReceipt, type ConversionRecovery } from "@/lib/client/conversion-flow";
+import { quoteConversion, convert } from "@symbolon/kits";
 import { ForecastChart, type ForecastEvent, type ForecastDate } from "./ForecastChart";
 import { QueuedChangeList } from "@/components/QueuedChange";
 import type { TreasuryState } from "@/lib/server/treasury";
@@ -168,16 +170,16 @@ export function TreasuryView({
         <div>
           <dt className="text-sm text-graphite">Reserve</dt>
           <dd className="mt-1 font-display text-3xl leading-none tabular-nums">
-            {state.reserve.available ? usd(reserveValue) : "None"}
+            {!state.reserve.readAvailable ? "Unavailable" : state.reserve.available ? usd(reserveValue) : "None"}
           </dd>
           <dd className="mt-1 text-xs text-graphite">
-            {state.reserve.available ? `${state.operatingSplit.reserveBps / 100}% in USYC` : "Release 1 Vault"}
+            {!state.reserve.readAvailable ? "Reserve read failed" : state.reserve.available ? state.operatingSplit ? `${state.operatingSplit.reserveBps / 100}% in USYC` : "Allocation unavailable" : "No reserve configured"}
           </dd>
         </div>
         <div>
           <dt className="text-sm text-graphite">Runway</dt>
           <dd className="mt-1 font-display text-2xl leading-tight">
-            {state.forecast.runwayDays !== null ? `${state.forecast.runwayDays} days` : `> 35 days`}
+            {!state.availability.usdc || !state.availability.eurc ? "Unavailable" : state.shortfalls.length ? "Cash shortfall" : `${state.forecast.bufferDays}-day buffer`}
           </dd>
           <dd className="mt-1 text-xs text-graphite">{state.forecast.runwayStatement}</dd>
         </div>
@@ -333,7 +335,9 @@ export function TreasuryView({
             )}
           </div>
 
-          {!state.reserve.available ? (
+          {!state.reserve.readAvailable ? (
+            <p className="text-sm text-graphite">Reserve status unavailable. Retry the chain read.</p>
+          ) : !state.reserve.available ? (
             <div className="mt-4 rounded-doc border border-rule p-5">
               <p className="font-medium">No reserve support</p>
               <p className="mt-2 text-sm text-graphite">
@@ -366,7 +370,7 @@ export function TreasuryView({
                 <div className="grid grid-cols-[10rem_1fr] gap-3 border-b border-rule py-2.5">
                   <dt className="text-graphite">Held</dt>
                   <dd>
-                    {usd(state.reserve.reserveValue)} ({state.reserve.shares} USYC) · {state.operatingSplit.reserveBps / 100}% of dollars
+                    {usd(state.reserve.reserveValue)} ({state.reserve.shares} USYC) · {(state.operatingSplit?.reserveBps ?? 0) / 100}% of dollars
                   </dd>
                 </div>
                 <div className="grid grid-cols-[10rem_1fr] gap-3 border-b border-rule py-2.5">
@@ -537,6 +541,7 @@ export function TreasuryView({
       {activeModal === "convert" && (
         <ConvertModal
           businessId={businessId}
+          vault={state.vault}
           signer={signer}
           onClose={() => setActiveModal(null)}
           onSuccess={(txHash) => {
@@ -870,94 +875,88 @@ function FundModal({
 
 function ConvertModal({
   businessId,
+  vault,
   signer,
   onClose,
   onSuccess,
 }: {
   businessId: string;
+  vault: string;
   signer: SignerPlan;
   onClose: () => void;
   onSuccess: (txHash: string) => void;
 }) {
   const [amountUsdc, setAmountUsdc] = useState("10");
-  const [quote, setQuote] = useState<{ out: string; rate: number } | null>(null);
-  const [step, setStep] = useState<"quote" | "swap" | "transfer">("quote");
+  const [quote, setQuote] = useState<{ out: string; input: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [recovery, setRecovery] = useState<ConversionRecovery>({swapStarted:false,swapHash:null,amountRaw:null,transferHash:null});
+  const flow = useRef<ConversionFlow | null>(null);
   const getProviders = useWalletProviders();
+  const recoveryKey = `symbolon:conversion:${businessId}:${signer.kind === "wallet" ? signer.address.toLowerCase() : "none"}`;
+  useEffect(() => {
+    let saved: ConversionRecovery | undefined;
+    try { const raw = sessionStorage.getItem(recoveryKey); if (raw) saved = JSON.parse(raw); } catch { /* no previous operation */ }
+    flow.current = new ConversionFlow(saved, (state) => { sessionStorage.setItem(recoveryKey, JSON.stringify(state)); setRecovery(state); });
+    setRecovery(flow.current.state);
+  }, [recoveryKey]);
 
-  async function getQuote() {
-    if (signer.kind !== "wallet") return;
-    setBusy(true);
-    setErr(null);
-    try {
-      const providers = await getProviders();
-      const p = providers[0];
-      if (!p) throw new Error("No wallet provider found");
-      const kit = await conversionKitFromProvider(p, 5_042_002);
-      const est = await quoteConversion(kit, {
-        tokenIn: "USDC",
-        tokenOut: "EURC",
-        amountIn: parseUnits(amountUsdc, 6),
-        slippageBps: 50,
-      });
-      setQuote({
-        out: (est as any).amountOut ?? "0",
-        rate: (est as any).rate ?? 0.82,
-      });
-    } catch (e: any) {
-      setErr(e.message || "Failed quoting swap");
-    } finally {
-      setBusy(false);
-    }
+  async function walletContext() { return getConversionWallet(signer, await getProviders()); }
+  async function observeGain(hash:string,onReceipt:(hash:string)=>void) {
+    const {client,deployment,owner}=await walletContext();
+    return observeSwapReceipt(client,deployment.tokens.eurc,owner,hash,onReceipt);
   }
-
-  async function executeSwap() {
-    if (signer.kind !== "wallet") return;
-    setBusy(true);
-    setErr(null);
+  async function getQuote() {
+    setBusy(true); setErr(null);
     try {
-      const providers = await getProviders();
-      const p = providers[0];
-      if (!p) throw new Error("No wallet provider found");
-      const kit = await conversionKitFromProvider(p, 5_042_002);
-
-      setStep("swap");
-      const swapRes = await convert(kit, {
-        tokenIn: "USDC",
-        tokenOut: "EURC",
-        amountIn: parseUnits(amountUsdc, 6),
-        slippageBps: 50,
+      if (!/^\d+(\.\d{1,6})?$/.test(amountUsdc)) throw new Error("Use at most six decimal places.");
+      const {kit,client,deployment,owner}=await walletContext();
+      const amount=parseUnits(amountUsdc,6);
+      const cash=await client.readContract({address:deployment.tokens.usdc,abi:erc20Abi,functionName:"balanceOf",args:[owner]});
+      if (cash<amount) throw new Error("The owner's wallet has insufficient USDC.");
+      const est=await quoteConversion(kit,{tokenIn:"USDC",tokenOut:"EURC",amountIn:amount,slippageBps:50});
+      setQuote({out:quoteOutput(est),input:amountUsdc});
+    } catch(e) {setErr(e instanceof Error?e.message:"Quote unavailable");} finally {setBusy(false);}
+  }
+  async function executeSwap() {
+    setBusy(true);setErr(null);
+    try {
+      if (!flow.current) throw new Error("Conversion recovery is loading.");
+      if (flow.current.state.swapStarted) {
+        await flow.current.confirm(observeGain);
+      } else {
+        if (!quote || quote.input!==amountUsdc) throw new Error("Get a current quote first.");
+        const {kit}=await walletContext();
+        await flow.current.swap(()=>convert(kit,{tokenIn:"USDC",tokenOut:"EURC",amountIn:parseUnits(quote.input,6),slippageBps:50}),observeGain);
+      }
+    } catch(e) {setErr(e instanceof Error?e.message:"Conversion could not be confirmed");} finally {setBusy(false);}
+  }
+  async function fundGainedEurc() {
+    setBusy(true);setErr(null);
+    try {
+      if (!flow.current || signer.kind!=="wallet") throw new Error("Connect the owner's wallet.");
+      if (!flow.current.state.transferHash) await flow.current.confirm(observeGain);
+      const hash = await flow.current.fund(async(amount)=>{
+        let submitted = false;
+        try {
+          const {providers}=await walletContext();
+          const prep=await postJson<{to:string;data:string}>(`/api/business/${businessId}/treasury`,{action:"prepare-fund",tokenSymbol:"EURC",amount});
+          const tracked = providers.map(provider => ({ request: (args: Parameters<typeof provider.request>[0]) => {
+            if (args.method === "eth_sendTransaction") submitted = true;
+            return provider.request(args);
+          } }));
+          return await sendWithWallet(tracked,signer,prep);
+        } catch (error) {
+          if (!submitted) throw new TransferNotSubmittedError(error instanceof Error ? error.message : "Funding was not submitted.");
+          throw error;
+        }
+      },async(swapTxHash,transferTxHash)=>postJson(`/api/business/${businessId}/treasury`,{action:"record-conversion",swapTxHash,transferTxHash}), async(hash,amountRaw,onReceipt) => {
+        const {client,owner,deployment} = await walletContext();
+        return confirmFundingReceipt(client,deployment.tokens.eurc,owner,getAddress(vault),BigInt(amountRaw),hash,onReceipt);
       });
-
-      const swapTx = (swapRes as any).txHash ?? "0x0000000000000000000000000000000000000000000000000000000000000000";
-
-      setStep("transfer");
-      // Transfer gained EURC into the Vault
-      const prep = await postJson<{ to: string; data: string }>(`/api/business/${businessId}/treasury`, {
-        action: "prepare-fund",
-        tokenSymbol: "EURC",
-        amount: quote?.out ?? amountUsdc,
-      });
-
-      const transferTx = await sendWithWallet(providers, signer, {
-        to: prep.to,
-        data: prep.data,
-      });
-
-      await postJson(`/api/business/${businessId}/treasury`, {
-        action: "record-conversion",
-        swapTxHash: swapTx,
-        transferTxHash: transferTx,
-        rate: String(quote?.rate ?? 0.82),
-      });
-
-      onSuccess(transferTx);
-    } catch (e: any) {
-      setErr(e.message || "Conversion execution failed");
-    } finally {
-      setBusy(false);
-    }
+      sessionStorage.removeItem(recoveryKey);
+      onSuccess(hash);
+    } catch(e) {setErr(e instanceof Error?e.message:"Vault funding failed. Retry funding without another swap.");} finally {setBusy(false);}
   }
 
   return (
@@ -969,6 +968,7 @@ function ConvertModal({
         </p>
 
         {err && <p className="mt-3 text-xs text-red">{err}</p>}
+        {recovery.swapStarted && <p className="mt-3 text-xs text-graphite">A conversion has started. Subsequent actions confirm or fund that conversion. Another swap is blocked. {recovery.swapHash}</p>}
 
         <div className="mt-4 space-y-4">
           <div>
@@ -977,13 +977,14 @@ function ConvertModal({
               <input
                 type="text"
                 value={amountUsdc}
-                onChange={(e) => setAmountUsdc(e.target.value)}
+                disabled={recovery.swapStarted}
+                onChange={(e) => {setAmountUsdc(e.target.value);setQuote(null);}}
                 className="flex-1 rounded-doc border border-rule px-3 py-2 text-sm font-mono"
               />
               <button
                 type="button"
                 onClick={getQuote}
-                disabled={busy}
+                disabled={busy || recovery.swapStarted}
                 className="rounded-doc border border-rule px-3 py-2 text-xs font-medium hover:border-ink"
               >
                 Quote
@@ -998,10 +999,6 @@ function ConvertModal({
                 <dd className="font-mono font-medium">{quote.out} EURC</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-graphite">Rate</dt>
-                <dd className="font-mono">{quote.rate.toFixed(4)} EURC per USDC</dd>
-              </div>
-              <div className="flex justify-between">
                 <dt className="text-graphite">Slippage protection</dt>
                 <dd className="font-mono">0.5% (50 bps)</dd>
               </div>
@@ -1012,11 +1009,11 @@ function ConvertModal({
         <div className="mt-6 flex gap-3">
           <button
             type="button"
-            onClick={executeSwap}
-            disabled={busy || !quote}
+            onClick={recovery.amountRaw !== null ? fundGainedEurc : executeSwap}
+            disabled={busy || (!quote && !recovery.swapHash) || (recovery.swapStarted && !recovery.swapHash)}
             className="flex-1 rounded-doc bg-ink py-2 text-sm font-medium text-paper hover:bg-ink/90 disabled:opacity-50"
           >
-            {busy ? (step === "swap" ? "Swapping…" : "Adding to Vault…") : "Sign & convert"}
+            {busy ? "Confirming…" : recovery.transferHash ? "Confirm Vault funding" : recovery.amountRaw !== null ? `Add ${formatUnits(BigInt(recovery.amountRaw),6)} EURC to Vault` : recovery.swapHash ? "Confirm existing swap" : "Sign & convert"}
           </button>
           <button
             type="button"

@@ -4,7 +4,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { formatUnits, getAddress, type Address, type PublicClient } from "viem";
 
 import { reserveYield, symbolonContracts } from "@symbolon/chain";
-import { runSteward, runTreasury, syncVault, type StewardEnv } from "@symbolon/core";
+import { expireOffers, notifyBusiness, releaseDue, runSteward, runTreasury, syncVault, type StewardEnv } from "@symbolon/core";
 import { businesses, decisions, stewardRuns, type Database } from "@symbolon/db";
 import { CircleStewardWallet, createCircleClient, DEFAULT_EARLY_PAY, provisionStewardWallet, type EarlyPayProgram, type StewardWallet } from "@symbolon/steward";
 
@@ -184,6 +184,8 @@ export async function runForBusiness(
   const contracts = symbolonContracts(client, cfg.deployment);
 
   try {
+    await releaseDue(db, { chainId: cfg.chainId, ledger: cfg.deployment.contracts.invoiceLedger }, new Date(), { businessId });
+    await expireOffers(db, new Date());
     // S10: Short-circuit if Vault is paused
     const state = await contracts.lens.read.getVaultState([vault]);
     if (state.paused) {
@@ -203,6 +205,7 @@ export async function runForBusiness(
           .set({ status: "skipped_fees", finishedAt: new Date(), summary: { reason: "no_steward_wallet" }, error: "No Steward wallet provisioned" })
           .where(eq(stewardRuns.id, runId))
           .returning();
+        await notifyRunFailure(db, businessId, skipped!);
         return skipped!;
       }
       const balance = await feeBalance(client, b.stewardWallet);
@@ -217,6 +220,7 @@ export async function runForBusiness(
           })
           .where(eq(stewardRuns.id, runId))
           .returning();
+        await notifyRunFailure(db, businessId, skipped!);
         return skipped!;
       }
     }
@@ -265,8 +269,14 @@ export async function runForBusiness(
       .update(stewardRuns)
       .set({ status: "failed", finishedAt: new Date(), error: errorMsg })
       .where(eq(stewardRuns.id, runId));
+    await notifyRunFailure(db, businessId, { id: runId, error: errorMsg });
     throw error;
   }
+}
+
+async function notifyRunFailure(db: Database, businessId: string, run: { id: string; error: string | null }) {
+  await notifyBusiness(db, businessId, { kind: "steward_run_failed", subject: run.id,
+    body: { reason: run.error ?? "A Steward cycle needs attention." }, dedupeKey: `run:${run.id}` }, { roles: ["owner"] });
 }
 
 export async function lastRun(db: Database, businessId: string): Promise<typeof stewardRuns.$inferSelect | null> {

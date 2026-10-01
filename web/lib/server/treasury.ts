@@ -72,18 +72,20 @@ export interface TreasuryState {
     usdc: TreasuryBalance | null;
     eurc: TreasuryBalance | null;
   };
+  availability: { usdc: boolean; eurc: boolean; budget: boolean; reserve: boolean };
   operatingSplit: {
     cashUsdc: string;
     reserveUsdc: string;
     totalUsdc: string;
     reserveBps: number;
-  };
+  } | null;
   budget: {
     cap: string;
     spent: string;
     periodLengthDays: number;
   } | null;
   reserve: {
+    readAvailable: boolean;
     available: boolean;
     entitled: boolean;
     enabled: boolean;
@@ -241,9 +243,11 @@ export async function loadTreasury(
   }
 
   // 2. Read operating budget from lens
+  let budgetAvailable = false;
   let budgetInfo: TreasuryState["budget"] = null;
   try {
     const bgt = await contracts.lens.read.getBudget([vault, ZERO_BYTES32], { blockNumber });
+    budgetAvailable = true;
     if (bgt.exists) {
       const nowBn = BigInt(Math.floor(Date.now() / 1000));
       const currentPeriodIndex = bgt.periodLength > 0n ? nowBn / bgt.periodLength : 0n;
@@ -334,8 +338,8 @@ export async function loadTreasury(
   const eurcAddress = deployment.tokens.eurc.toLowerCase();
 
   const usdcFlows = flowsWithToken.filter((f) => f.token === usdcAddress);
-  const rawDays = forecast(usdcBal ?? 0n, usdcFlows, nowSec, FORECAST_HORIZON_DAYS);
-  const runway = runwayDays(usdcBal ?? 0n, usdcFlows, nowSec, FORECAST_HORIZON_DAYS);
+  const rawDays = usdcBal === null ? [] : forecast(usdcBal, usdcFlows, nowSec, FORECAST_HORIZON_DAYS);
+  const runway = usdcBal === null ? undefined : runwayDays(usdcBal, usdcFlows, nowSec, FORECAST_HORIZON_DAYS);
 
   let runwayStatement = `Cash covers everything due in the next ${FORECAST_HORIZON_DAYS} days.`;
   if (runway !== undefined) {
@@ -379,7 +383,7 @@ export async function loadTreasury(
   if (usdcBal !== null) balancesMap.set(usdcAddress, usdcBal);
   if (eurcBal !== null) balancesMap.set(eurcAddress, eurcBal);
 
-  const rawShortfalls = tokenShortfalls(balancesMap, flowsWithToken, nowSec, DEFAULT_BUFFER_DAYS);
+  const rawShortfalls = tokenShortfalls(balancesMap, flowsWithToken.filter((f) => balancesMap.has(f.token)), nowSec, b.bufferDays ?? DEFAULT_BUFFER_DAYS);
   const shortfallsList = rawShortfalls.map((s) => {
     const isEurc = s.token === eurcAddress;
     const symbol = isEurc ? "EURC" : "USDC";
@@ -404,6 +408,14 @@ export async function loadTreasury(
       })),
     };
   });
+
+  if (usdcBal === null || eurcBal === null || flowsWithToken.some(f => !balancesMap.has(f.token))) {
+    runwayStatement = "Cash coverage unavailable: one or more token balances could not be read.";
+  } else if (shortfallsList.length > 0) {
+    runwayStatement = `${shortfallsList.map((s) => s.tokenSymbol).join(" and ")} cash runs short within the selected ${b.bufferDays ?? DEFAULT_BUFFER_DAYS}-day buffer.`;
+  } else {
+    runwayStatement = `USDC and EURC cash cover recorded bills in the selected ${b.bufferDays ?? DEFAULT_BUFFER_DAYS}-day buffer. The chart shows USDC only.`;
+  }
 
   // 5. Queued reserve policy changes
   const [queued] = await db
@@ -483,7 +495,8 @@ export async function loadTreasury(
       usdc: usdcBal !== null ? { amount: formatUnits(usdcBal, usdcDecimals), raw: usdcBal.toString(), decimals: usdcDecimals } : null,
       eurc: eurcBal !== null ? { amount: formatUnits(eurcBal, eurcDecimals), raw: eurcBal.toString(), decimals: eurcDecimals } : null,
     },
-    operatingSplit: {
+    availability: { usdc: usdcBal !== null, eurc: eurcBal !== null, budget: budgetAvailable, reserve: reserveStatus !== null },
+    operatingSplit: usdcBal === null || reserveStatus === null ? null : {
       cashUsdc: formatUnits(usdcBal ?? 0n, usdcDecimals),
       reserveUsdc: formatUnits(reserveVal, usdcDecimals),
       totalUsdc: formatUnits(totalUsdc, usdcDecimals),
@@ -491,6 +504,7 @@ export async function loadTreasury(
     },
     budget: budgetInfo,
     reserve: {
+      readAvailable: reserveStatus !== null,
       available: reserveAvailable,
       entitled: Boolean(reserveStatus?.entitled),
       enabled: Boolean(reserveStatus?.policy?.enabled),
@@ -940,7 +954,7 @@ export async function recordConversion(
 
   const swapTxHash = String(p.swapTxHash ?? "");
   const transferTxHash = String(p.transferTxHash ?? "");
-  const rate = String(p.rate ?? "");
+
 
   if (!HASH_REGEX.test(swapTxHash) || !HASH_REGEX.test(transferTxHash)) {
     throw new AuthError(400, "Invalid transaction hashes.");
@@ -980,6 +994,17 @@ export async function recordConversion(
     throw new AuthError(409, "No EURC Transfer from your wallet to the Vault found in transfer transaction.");
   }
 
+  // A successful transaction alone is not proof of conversion. Bind the EURC gain to this receipt.
+  const gained = swapReceipt.logs.filter((l) => getAddress(l.address) === eurc).reduce((sum,l) => {
+    try {
+      const decoded = decodeEventLog({abi:[transferEventAbi],data:l.data,topics:l.topics});
+      return sum + (getAddress(decoded.args.to) === owner ? decoded.args.value : 0n)
+        - (getAddress(decoded.args.from) === owner ? decoded.args.value : 0n);
+    } catch { return sum; }
+  },0n);
+  if (gained <= 0n || matchingLog.args.value <= 0n || matchingLog.args.value > gained || swapTxHash.toLowerCase() === transferTxHash.toLowerCase()) {
+    throw new AuthError(409,"The transfer is not covered by confirmed EURC gained in this swap.");
+  }
   const amountTransferred = matchingLog.args.value.toString();
 
   await appendAppDecision(
@@ -993,7 +1018,7 @@ export async function recordConversion(
         swapTxHash: swapTxHash.toLowerCase(),
         transferTxHash: transferTxHash.toLowerCase(),
         amountTransferred,
-        rate,
+        gainedEurc: gained.toString(),
       },
       rule: "the owner converted USDC to EURC and transferred it to the Vault",
       outcome: "converted",

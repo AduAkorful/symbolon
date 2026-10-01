@@ -8,11 +8,15 @@ import {
   listSeries,
   prepareSeries,
   submitSeries,
+  releaseDueSafe,
 } from "@/lib/server/series";
+import { requireMySeal } from "@/lib/server/vendor";
 
 export const GET = routeWith(async () => {
   const session = await requireSession();
   const db = await getDb();
+  const seal = await requireMySeal(db, session.user.id);
+  await releaseDueSafe(db, getConfig(), { seal: seal.address });
   const series = await listSeries(db, session.user);
   return NextResponse.json({ series });
 });

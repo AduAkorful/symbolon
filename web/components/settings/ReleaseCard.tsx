@@ -5,7 +5,7 @@ import { TxLink } from "@/components/TxLink";
 import { sendWithWallet, type SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { postJson } from "@/lib/client/api";
-import type { ReleaseViewInfo, VaultStateSnapshot } from "@/lib/server/release";
+import type { ReleaseViewInfo } from "@/lib/server/release";
 
 interface ReleaseCardProps {
   businessId: string;
@@ -149,7 +149,7 @@ export function ReleaseCard({
         ok: boolean;
         to: string;
         data: string;
-        stateSnapshotBefore: VaultStateSnapshot;
+        operationId: string;
       }>(`/api/business/${businessId}/settings`, {
         action: "prepare-upgrade",
       });
@@ -170,12 +170,12 @@ export function ReleaseCard({
       }>(`/api/business/${businessId}/settings`, {
         action: "record-upgrade",
         txHash,
-        stateSnapshotBefore: prep.stateSnapshotBefore,
+        operationId: prep.operationId,
       });
 
       if (rec.ok) {
         if (rec.stateMatch) {
-          setSuccess(`Vault successfully upgraded to Release ${latest.version}. All state verified identical.`);
+          setSuccess(`Vault successfully upgraded to Release ${latest.version}. Known payees, budgets, policy, roles and token balances matched.`);
         } else {
           setStateDiffs(rec.diffs);
           setError("Vault upgraded, but state differences were detected.");
@@ -306,8 +306,8 @@ export function ReleaseCard({
             The loosening delay has passed. Release {latest.version} is ready to apply.
           </p>
           <p className="text-xs text-graphite">
-            Symbolon will take a state snapshot before and after applying the upgrade to guarantee
-            that payees, budgets, policy and balances remain intact.
+            Symbolon compares server-recorded snapshots of known payees, budgets, policy, roles and token balances.
+            Missing reads or differences are reported; this check cannot enumerate unknown onchain records.
           </p>
 
           {isOwner && (

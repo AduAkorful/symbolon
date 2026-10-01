@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { SymbolonContracts } from "@symbolon/chain";
 import { businesses, createTestDb, decisions, invoices } from "@symbolon/db";
 
-import { reconcile, shadowAgreement } from "../src/index.js";
+import { reconcile, shadowAgreement, humanResponseAgreement } from "../src/index.js";
 
 const fp = (s: string) => keccak256(stringToBytes(s)) as Hex;
 const row = (businessId: string, f: Hex, o: Partial<typeof invoices.$inferInsert> = {}) => ({
@@ -71,5 +71,21 @@ describe("shadow agreement (Flow 13)", () => {
     const r = await shadowAgreement(db, b!.id);
     expect(r).toMatchObject({ compared: 3, agreed: 2, rateBps: 6_666 });
     expect(r.disagreements).toEqual([{ fingerprint: fp("c"), steward: "hold", actual: "paid" }]);
+  });
+});
+
+
+describe("linked human responses", () => {
+  it("counts latest eligible response once and ignores orphan and unrelated kinds", async () => {
+    const db = await createTestDb();
+    const [b] = await db.insert(businesses).values({name:"Metric",chainId:5042002}).returning();
+    const rec = fp("rec");
+    await db.insert(decisions).values([
+      {businessId:b!.id,kind:"pay",subject:fp("invoice"),hash:rec,record:{outcome:"request_approval"},createdAt:new Date("2026-10-01T00:00:00Z")},
+      {businessId:b!.id,kind:"approval_granted",subject:fp("invoice"),hash:fp("first"),record:{inputs:{recommendation:rec}},createdAt:new Date("2026-10-01T01:00:00Z")},
+      {businessId:b!.id,kind:"approval_rejected",subject:fp("invoice"),hash:fp("last"),record:{inputs:{recommendation:rec}},createdAt:new Date("2026-10-01T02:00:00Z")},
+      {businessId:b!.id,kind:"approval_granted",subject:fp("invoice"),hash:fp("orphan"),record:{inputs:{recommendation:fp("absent")}}},
+    ]);
+    expect(await humanResponseAgreement(db,b!.id)).toMatchObject({total:1,agreed:0});
   });
 });

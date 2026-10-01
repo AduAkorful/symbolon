@@ -105,7 +105,7 @@ export function ReceiptView({ data, explorerUrl }: Props) {
                     ${s.paidFormatted} USDC
                   </span>
                   <span className="text-graphite">
-                    {s.timestamp.toLocaleString()}
+                    {s.timestamp ? s.timestamp.toLocaleString() : "Payment time unavailable"}
                   </span>
                 </div>
 

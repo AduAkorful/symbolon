@@ -76,6 +76,9 @@ export async function loadPolicyView(
   const vault = biz.vault as Address;
 
   const contracts = symbolonContracts(client, deployment);
+  const accountingDecimals = await contracts.lens.read.accountingDecimals([vault]).catch(() => { throw new AuthError(502, "Can't confirm the Vault's accounting decimals."); });
+  if (!Number.isInteger(accountingDecimals) || accountingDecimals < 0 || accountingDecimals > 77) throw new AuthError(502, "Can't confirm the Vault's accounting decimals.");
+
   const p = await contracts.lens.read.getPolicy([vault]);
 
   const currentPolicy: VaultPolicy = {
@@ -90,14 +93,14 @@ export async function loadPolicyView(
     maxBridgeFee: p.maxBridgeFee,
   };
 
-  const queued = await listQueuedChanges(db, businessId);
-  const policyQueued = queued.find((q) => q.kind === "set_policy");
+  const queued = await listQueuedChanges(db, businessId, user);
+  const policyQueued = queued.find((q) => q.kind === "set_policy" && q.status === "queued");
 
   const warnings = validatePolicySanity(currentPolicy);
 
   return {
     vault,
-    accountingDecimals: 6,
+    accountingDecimals,
     policy: {
       perTxCap: currentPolicy.perTxCap.toString(),
       autoPayLimit: currentPolicy.autoPayLimit.toString(),
@@ -109,8 +112,8 @@ export async function loadPolicyView(
       looseningDelay: currentPolicy.looseningDelay.toString(),
       maxBridgeFee: currentPolicy.maxBridgeFee.toString(),
     },
-    rules: describePolicyRuleItems(currentPolicy, 6),
-    lines: describePolicyLines(currentPolicy, 6),
+    rules: describePolicyRuleItems(currentPolicy, accountingDecimals),
+    lines: describePolicyLines(currentPolicy, accountingDecimals),
     looseningDelaySeconds: Number(currentPolicy.looseningDelay),
     pendingChange: policyQueued
       ? {

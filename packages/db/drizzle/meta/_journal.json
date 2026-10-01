@@ -134,6 +134,13 @@
       "when": 1790798007134,
       "tag": "0018_oval_nick_fury",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790842211401,
+      "tag": "0019_parched_norman_osborn",
+      "breakpoints": true
     }
   ]
 }

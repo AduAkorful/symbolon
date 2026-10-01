@@ -1,6 +1,6 @@
 import "server-only";
 
-import { symbolonContracts, type Deployment } from "@symbolon/chain";
+import { scanLogs, symbolonVaultAbi, symbolonContracts, type Deployment } from "@symbolon/chain";
 import { businesses, members, users, type Database } from "@symbolon/db";
 import { and, eq } from "drizzle-orm";
 import { getAddress, type Hex, type PublicClient } from "viem";
@@ -22,6 +22,8 @@ export interface TeamMemberView {
   createdAt: Date;
   onchainRole: "owner" | "approver_all" | "approver_scoped" | "requester" | "none" | "unknown";
   onchainMismatch: boolean;
+  /** Exact active grant IDs from Vault events; unavailable enumeration is never an empty grant list. */
+  activeApproverBudgets?: Hex[];
   mismatchReason?: string;
 }
 
@@ -55,6 +57,7 @@ export async function listTeamMembers(
       name: businesses.name,
       vault: businesses.vault,
       chainId: businesses.chainId,
+      vaultBlock: businesses.vaultBlock,
     })
     .from(businesses)
     .where(eq(businesses.id, businessId))
@@ -100,6 +103,7 @@ export async function listTeamMembers(
       let onchainRole: TeamMemberView["onchainRole"] = "none";
       let onchainMismatch = false;
       let mismatchReason: string | undefined;
+      let activeApproverBudgets: Hex[] | undefined;
 
       const memberWallet = m.wallet ? getAddress(m.wallet) : null;
 
@@ -112,17 +116,33 @@ export async function listTeamMembers(
       } else {
         try {
           const vaultAddr = getAddress(business.vault);
-          const [isAllApprover, isReq] = await Promise.all([
+          const [isAllApprover, isReq, count] = await Promise.all([
             contracts.lens.read.isApprover([vaultAddr, memberWallet, OPERATING_BUDGET]),
             contracts.lens.read.isRequester([vaultAddr, memberWallet]),
+            contracts.lens.read.approverBudgetCount([vaultAddr, memberWallet]),
           ]);
 
+          activeApproverBudgets = [];
+          if (count > 0n) {
+            const event = symbolonVaultAbi.filter((e) => e.type === "event" && e.name === "ApproverSet");
+            const { logs } = await scanLogs(client!, { address: vaultAddr, events: event, fromBlock: business.vaultBlock ?? BigInt(deployment!.startBlock) });
+            const granted = new Set<Hex>();
+            for (const log of logs) {
+              const a = log.args;
+              if (a.approver?.toLowerCase() !== memberWallet.toLowerCase() || !a.budget) continue;
+              if (a.enabled) granted.add(a.budget); else granted.delete(a.budget);
+            }
+            if (BigInt(granted.size) !== count) throw new Error("Incomplete role history");
+            activeApproverBudgets = [...granted];
+          }
           if (isAllApprover) {
             onchainRole = "approver_all";
+          } else if (count > 0n) {
+            onchainRole = "approver_scoped";
           } else if (m.budgets && m.budgets.length > 0) {
             const scopedChecks = await Promise.all(
               m.budgets.map((b) =>
-                contracts!.lens.read.isApprover([vaultAddr, memberWallet, b as Hex]).catch(() => false),
+                contracts!.lens.read.isApprover([vaultAddr, memberWallet, b as Hex]),
               ),
             );
             if (scopedChecks.some(Boolean)) {
@@ -134,6 +154,7 @@ export async function listTeamMembers(
             onchainRole = "requester";
           }
         } catch {
+          activeApproverBudgets = undefined;
           onchainRole = "unknown";
         }
       }
@@ -163,6 +184,7 @@ export async function listTeamMembers(
         onchainRole,
         onchainMismatch,
         mismatchReason,
+        activeApproverBudgets,
       };
     }),
   );
@@ -217,24 +239,11 @@ export async function setMemberRole(
     .where(eq(businesses.id, businessId))
     .limit(1);
 
-  // If changing role and target currently has onchain rights, ensure onchain role is revoked first
-  if (business?.vault && client && deployment && targetMember.wallet) {
+  if (business?.vault && targetMember.wallet) {
+    if (!client || !deployment) throw new AuthError(502, "Can't confirm this member's Vault roles.");
     const contracts = symbolonContracts(client, deployment);
-    const vaultAddr = getAddress(business.vault);
-    const targetWallet = getAddress(targetMember.wallet);
-
-    const [isAppr, isReq] = await Promise.all([
-      contracts.lens.read.isApprover([vaultAddr, targetWallet, OPERATING_BUDGET]).catch(() => false),
-      contracts.lens.read.isRequester([vaultAddr, targetWallet]).catch(() => false),
-    ]);
-
-    if ((targetMember.role === "approver" && isAppr && newRole !== "approver") ||
-        (targetMember.role === "requester" && isReq && newRole !== "requester")) {
-      throw new AuthError(
-        409,
-        "Revoke this member's onchain role first before changing their app role.",
-      );
-    }
+    const { count, requester } = await readRemovalRoles(contracts, getAddress(business.vault), getAddress(targetMember.wallet));
+    if (count > 0n || requester) throw new AuthError(409, "Revoke all of this member's onchain roles before changing their app role or budgets.");
   }
 
   const cleanBudgets: string[] = [];
@@ -311,23 +320,11 @@ export async function removeMember(
     .where(eq(businesses.id, businessId))
     .limit(1);
 
-  // Check onchain role: if onchain role exists, refuse until revoked
-  if (business?.vault && client && deployment && targetMember.wallet) {
+  if (business?.vault && targetMember.wallet) {
+    if (!client || !deployment) throw new AuthError(502, "Can't confirm this member's Vault roles.");
     const contracts = symbolonContracts(client, deployment);
-    const vaultAddr = getAddress(business.vault);
-    const targetWallet = getAddress(targetMember.wallet);
-
-    const [isAppr, isReq] = await Promise.all([
-      contracts.lens.read.isApprover([vaultAddr, targetWallet, OPERATING_BUDGET]).catch(() => false),
-      contracts.lens.read.isRequester([vaultAddr, targetWallet]).catch(() => false),
-    ]);
-
-    if (isAppr || isReq) {
-      throw new AuthError(
-        409,
-        "This member holds an onchain role on the Vault. Revoke their role onchain before removing them from the team.",
-      );
-    }
+    const { count, requester } = await readRemovalRoles(contracts, getAddress(business.vault), getAddress(targetMember.wallet));
+    if (count > 0n || requester) throw new AuthError(409, "Revoke all of this member's onchain roles before removing them.");
   }
 
   await db.transaction(async (tx) => {
@@ -413,4 +410,15 @@ export async function recordOnchainRole(
   txHash: Hex,
 ) {
   return await recordChange(db, client, deployment, user, businessId, txHash);
+}
+
+/** Total grants include budgets unknown to the app. A failed read cannot authorize removal. */
+async function readRemovalRoles(contracts: ReturnType<typeof symbolonContracts>, vault: `0x${string}`, wallet: `0x${string}`) {
+  const [state, count, requester] = await Promise.all([
+    contracts.lens.read.getVaultState([vault]),
+    contracts.lens.read.approverBudgetCount([vault, wallet]),
+    contracts.lens.read.isRequester([vault, wallet]),
+  ]).catch(() => { throw new AuthError(502, "Can't confirm this member's Vault roles."); });
+  if (state.owner.toLowerCase() === wallet.toLowerCase()) throw new AuthError(409, "The Vault owner cannot be removed or demoted.");
+  return { count, requester };
 }

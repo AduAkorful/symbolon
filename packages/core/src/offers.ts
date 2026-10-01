@@ -1,8 +1,9 @@
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, isNull, lte, or } from "drizzle-orm";
 import { getAddress, type Address, type Hex } from "viem";
 
 import { earlyPayOffers, invoices, type Database } from "@symbolon/db";
 import { digest, MAX_DISCOUNT_BPS, sealDomain, verifySealSignature, type SignatureClient } from "@symbolon/seal";
+import { notifyVendor } from "./domain-notifications.js";
 
 /**
  * Stores a vendor's cash-now offer (spec §6.3, §10) after checking it's signed by the invoice's own Seal over the exact
@@ -38,23 +39,29 @@ export async function recordOffer(
  * the vendor accepts by signing an offer with those terms, which `recordOffer` then stores.
  */
 export async function counterOffer(db: Database, o: { fingerprint: Hex; discountBps: number; validUntil: Date }): Promise<{ id: string }> {
-  const existing = await db
+  if (!Number.isInteger(o.discountBps) || o.discountBps < 1 || o.discountBps > MAX_DISCOUNT_BPS || o.validUntil.getTime() <= Date.now()) throw new Error("Invalid or expired counter");
+  return db.transaction(async (tx) => {
+  const [invoice] = await tx.select().from(invoices).where(eq(invoices.fingerprint, o.fingerprint.toLowerCase())).for("update");
+  if (!invoice) throw new Error("unknown invoice");
+  const existing = await tx
     .select()
     .from(earlyPayOffers)
-    .where(and(eq(earlyPayOffers.fingerprint, o.fingerprint.toLowerCase()), eq(earlyPayOffers.status, "countered")));
+    .where(and(eq(earlyPayOffers.fingerprint, o.fingerprint.toLowerCase()), isNull(earlyPayOffers.signature)));
   if (existing.length > 0) throw new Error("already countered once");
-  const [row] = await db
+  const [row] = await tx
     .insert(earlyPayOffers)
     .values({ fingerprint: o.fingerprint.toLowerCase(), discountBps: o.discountBps, validUntil: o.validUntil, status: "countered" })
     .returning({ id: earlyPayOffers.id });
+  await notifyVendor(tx, invoice.seal, { kind: "offer_countered", subject: invoice.fingerprint, body: { discountBps: o.discountBps }, dedupeKey: `counter:${invoice.fingerprint}` });
   return { id: row!.id };
+  });
 }
 
 export async function expireOffers(db: Database, now: Date): Promise<number> {
   const rows = await db
     .update(earlyPayOffers)
     .set({ status: "expired" })
-    .where(and(eq(earlyPayOffers.status, "open"), lt(earlyPayOffers.validUntil, now)))
+    .where(and(or(eq(earlyPayOffers.status, "open"), eq(earlyPayOffers.status, "countered")), lte(earlyPayOffers.validUntil, now)))
     .returning({ id: earlyPayOffers.id });
   return rows.length;
 }

@@ -216,10 +216,11 @@ export async function submitSeries(
     const res = await createSeries(db, coreDeployment, envelopes, {
       businessId,
       description,
+      expectedSeal: seal.address,
     });
 
     // Immediately release any period that is due right now
-    await releaseDue(db, coreDeployment, new Date());
+    await releaseDue(db, coreDeployment, new Date(), { seal: seal.address });
 
     return { id: res.id, periods: res.periods };
   } catch (err) {
@@ -314,10 +315,12 @@ export async function cancelSeries(
 export async function releaseDueSafe(
   db: Database,
   cfg: Pick<AppConfig, "chainId" | "deployment">,
+  scope: { businessId?: string; seal?: string } = {},
 ) {
   return releaseDue(
     db,
     { chainId: cfg.chainId, ledger: cfg.deployment.contracts.invoiceLedger },
     new Date(),
+    scope,
   );
 }
