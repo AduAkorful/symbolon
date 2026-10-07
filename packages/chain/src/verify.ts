@@ -1,12 +1,15 @@
-import { getAbiItem, type Address, type Hex, type PublicClient } from "viem";
+import type { Address, Hex, PublicClient } from "viem";
 
 import { verifySealedInvoice, type Verification } from "@symbolon/seal";
 
 import type { SymbolonContracts } from "./contracts.js";
 import type { Deployment } from "./deployment.js";
-import { invoiceLedgerAbi } from "./generated/abis.js";
+import { blockAtOrBefore } from "./blocks.js";
 import { invoiceStatus, type InvoiceStatus } from "./reads.js";
-import { scanLogs } from "./logs.js";
+import { collectSettlements, type SettledEvent } from "./settlements.js";
+
+/** An invoice is not paid before it is issued; a day of margin covers clock differences and a date-only issue time */
+const ISSUE_MARGIN_SECONDS = 86_400n;
 
 export interface Settlement {
   txHash: Hex;
@@ -23,6 +26,11 @@ export interface InvoiceCheck {
   /** Ledger state, when the envelope was genuine enough to have a fingerprint */
   status?: InvoiceStatus;
   settlements: Settlement[];
+  /**
+   * Whether the settlements listed add up to what the ledger says was credited. False means the invoice is paid but its
+   * payment records could not all be read; the page must say so rather than list a partial history as the whole.
+   */
+  settlementsComplete: boolean;
 }
 
 /**
@@ -39,27 +47,38 @@ export async function checkInvoice(
     client,
     expected: { chainId: deployment.chainId, ledger: deployment.contracts.invoiceLedger },
   });
-  if (!verification.fingerprint) return { verification, settlements: [] };
+  if (!verification.fingerprint) return { verification, settlements: [], settlementsComplete: true };
   const fp = verification.fingerprint;
   const status = await invoiceStatus(contracts, fp);
-  if (!status.seen) return { verification, status, settlements: [] };
+  if (!status.seen) return { verification, status, settlements: [], settlementsComplete: true };
 
   // Nothing credited means nothing settled: no need to read the history at all
-  if (status.credited === 0n) return { verification, status, settlements: [] };
+  if (status.credited === 0n) return { verification, status, settlements: [], settlementsComplete: true };
 
-  const settled = getAbiItem({ abi: invoiceLedgerAbi, name: "Settled" });
-  const { logs } = await scanLogs(client, { address: deployment.contracts.invoiceLedger, events: [settled], fromBlock: deployment.startBlock, concurrency: 2 });
-  const mine = logs.filter((l) => l.args.fingerprint?.toLowerCase() === fp.toLowerCase());
+  // Payments come after the invoice exists, so the search starts at its issue time, not at the ledger's first block, and
+  // stops as soon as the events found add up to what the ledger credited.
+  const head = await client.getBlockNumber();
+  const issuedAt = verification.invoice?.issuedAt;
+  const first = issuedAt === undefined ? deployment.startBlock : await blockAtOrBefore(client, issuedAt - ISSUE_MARGIN_SECONDS, { lo: deployment.startBlock, hi: head });
+  const found = await collectSettlements(client, deployment, fp, { fromBlock: first, toBlock: head, credited: status.credited });
+  let events: SettledEvent[] = found.events;
+  let complete = found.complete;
+  if (!complete && first > deployment.startBlock) {
+    // an invoice dated after its own payment is odd but possible; only then is the earlier history worth reading
+    const earlier = await collectSettlements(client, deployment, fp, { fromBlock: deployment.startBlock, toBlock: first - 1n, credited: status.credited, have: events });
+    events = [...earlier.events, ...events];
+    complete = earlier.complete;
+  }
   const settlements = await Promise.all(
-    mine.map(async (l) => ({
-      txHash: l.transactionHash,
-      blockNumber: l.blockNumber,
-      timestamp: (await client.getBlock({ blockNumber: l.blockNumber })).timestamp,
-      payer: l.args.payer!,
-      credit: l.args.credit!,
-      paid: l.args.paid!,
-      discountBps: l.args.discountBps!,
+    events.map(async (e) => ({
+      txHash: e.txHash,
+      blockNumber: e.blockNumber,
+      timestamp: (await client.getBlock({ blockNumber: e.blockNumber })).timestamp,
+      payer: e.payer,
+      credit: e.credit,
+      paid: e.paid,
+      discountBps: e.discountBps,
     })),
   );
-  return { verification, status, settlements };
+  return { verification, status, settlements, settlementsComplete: complete };
 }

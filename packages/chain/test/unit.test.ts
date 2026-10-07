@@ -170,7 +170,7 @@ describe("scanLogs", () => {
     const sorted = [...ranges].sort((a, b) => (a[0] < b[0] ? -1 : 1));
     expect(sorted).toHaveLength(10);
     sorted.forEach((r, i) => expect(r).toEqual([BigInt(i) * 100n + 1n, BigInt(i + 1) * 100n]));
-    const blocks = result.logs.map((l) => l.blockNumber);
+    const blocks = result.logs.map((l) => (l as unknown as { blockNumber: bigint }).blockNumber);
     expect(blocks).toEqual([...blocks].sort((a, b) => (a < b ? -1 : 1)));
     expect(result.scannedTo).toBe(1_000n);
   });

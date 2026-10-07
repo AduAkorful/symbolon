@@ -1,19 +1,15 @@
 import "server-only";
 
-import { and, asc, eq, sql } from "drizzle-orm";
-import { getAbiItem, getAddress, type Hex, type PublicClient } from "viem";
+import { eq } from "drizzle-orm";
+import { getAddress, type Hex, type PublicClient } from "viem";
 
-import {
-  invoiceLedgerAbi,
-  invoiceStatus,
-  scanLogs,
-  symbolonContracts,
-} from "@symbolon/chain";
-import { chainEvents, invoices, seals, syncCursors, type Database } from "@symbolon/db";
+import { invoiceStatus, symbolonContracts } from "@symbolon/chain";
+import { collectInvoiceHistory, type InvoiceHistory, type MirroredSettlement } from "@symbolon/core";
+import { invoices, seals, type Database } from "@symbolon/db";
 import { verifySealedInvoice, type InvoiceDocument } from "@symbolon/seal";
 
 import type { ChainSettings } from "./business";
-import { syncKey } from "./sync";
+import { withDeadline } from "./deadline";
 
 const HASH_RE = /^0x[0-9a-fA-F]{64}$/;
 
@@ -58,24 +54,11 @@ export type PublicReceiptResult =
       reason: string;
     };
 
-/** How far behind the stored copy a live read may go. Beyond this the receipt says the history is still being collected. */
-export const RECEIPT_TAIL_MAX_BLOCKS = 100_000n;
+/** A visit waits this long for the payment records to be collected; the collection carries on after that, so the next visit has them */
+export const RECEIPT_HISTORY_DEADLINE_MS = 12_000;
 
-interface SettledRow {
-  transactionHash: string;
-  logIndex: number;
-  blockNumber: bigint;
-  blockTime: Date | null;
-  payer: string;
-  token: string | null;
-  credit: bigint;
-  paid: bigint;
-  discountBps: number;
-  payoutDomain: number;
-  payoutAddress: string | null;
-}
-
-const sumCredit = (rows: SettledRow[]) => rows.reduce((sum, r) => sum + r.credit, 0n);
+/** After a collection that could not finish, the same invoice is not searched again for this long (public pages are unauthenticated) */
+const RETRY_AFTER_MS = 60_000;
 
 const unconfirmedHistory = (fingerprint: string): PublicReceiptResult => ({
   state: "unconfirmed",
@@ -83,73 +66,37 @@ const unconfirmedHistory = (fingerprint: string): PublicReceiptResult => ({
   reason: "Arc shows this invoice was paid, but the payment records are still being collected. Try again in a few minutes.",
 });
 
-const big = (v: unknown) => (typeof v === "string" || typeof v === "bigint" || typeof v === "number" ? BigInt(v) : 0n);
-
-/** The `Settled` events the app has already stored for this invoice (one indexed query, no chain calls) */
-async function mirroredSettlements(db: Database, cfg: ChainSettings, fingerprint: Hex): Promise<SettledRow[]> {
-  const rows = await db
-    .select()
-    .from(chainEvents)
-    .where(
-      and(
-        eq(chainEvents.chainId, cfg.chainId),
-        eq(chainEvents.address, cfg.deployment.contracts.invoiceLedger.toLowerCase()),
-        eq(chainEvents.eventName, "Settled"),
-        sql`lower(${chainEvents.args}->>'fingerprint') = ${fingerprint}`,
-      ),
-    )
-    .orderBy(asc(chainEvents.blockNumber), asc(chainEvents.logIndex));
-  return rows.map((r) => {
-    const a = r.args as Record<string, unknown>;
-    return {
-      transactionHash: r.txHash,
-      logIndex: r.logIndex,
-      blockNumber: r.blockNumber,
-      blockTime: r.blockTime,
-      payer: String(a.payer ?? ""),
-      token: a.token ? String(a.token) : null,
-      credit: big(a.credit),
-      paid: big(a.paid),
-      discountBps: Number(a.discountBps ?? 0),
-      payoutDomain: Number(a.payoutDomain ?? 0),
-      payoutAddress: a.payoutAddress ? String(a.payoutAddress) : null,
-    };
-  });
-}
+const running = new Map<string, Promise<InvoiceHistory>>();
+const gaveUp = new Map<string, number>();
 
 /**
- * Reads the blocks after the stored copy's cursor straight from the chain. Returns null when the copy is further behind than
- * `RECEIPT_TAIL_MAX_BLOCKS`: a public page never turns into a scan of the whole history.
+ * The invoice's payment events, from the database copy first and from the chain only for what the copy lacks (see
+ * `collectInvoiceHistory`). One search per invoice at a time, whoever asks; a search that ended incomplete is not repeated
+ * for a minute; a search that runs past the deadline keeps going and saves what it finds.
  */
-async function recentSettlements(db: Database, client: PublicClient, cfg: ChainSettings, fingerprint: Hex): Promise<SettledRow[] | null> {
-  const [cursor] = await db.select().from(syncCursors).where(eq(syncCursors.key, syncKey(cfg))).limit(1);
-  const from = cursor ? cursor.block + 1n : cfg.deployment.startBlock;
-  const head = await client.getBlockNumber();
-  if (from > head) return [];
-  if (head - from + 1n > RECEIPT_TAIL_MAX_BLOCKS) return null;
-  const settledAbi = getAbiItem({ abi: invoiceLedgerAbi, name: "Settled" });
-  const { logs } = await scanLogs(client, {
-    address: cfg.deployment.contracts.invoiceLedger,
-    events: [settledAbi],
-    fromBlock: from,
-    toBlock: head,
-    concurrency: 2,
-  });
-  return logs
-    .filter((l) => l.args.fingerprint?.toLowerCase() === fingerprint)
-    .map((l) => ({
-      transactionHash: l.transactionHash.toLowerCase(),
-      logIndex: l.logIndex,
-      blockNumber: l.blockNumber,
-      blockTime: null,
-      payer: l.args.payer ?? "",
-      token: l.args.token ?? null,
-      credit: l.args.credit ?? 0n,
-      paid: l.args.paid ?? 0n,
-      discountBps: Number(l.args.discountBps ?? 0),
-      payoutDomain: Number(l.args.payoutDomain ?? 0),
-      payoutAddress: l.args.payoutAddress ?? null,
-    }));
+async function historyFor(db: Database, client: PublicClient, cfg: ChainSettings, fingerprint: Hex, credited: bigint): Promise<InvoiceHistory | "late"> {
+  const key = `${cfg.chainId}:${fingerprint}:${credited}`;
+  const tried = gaveUp.get(key);
+  if (tried !== undefined && Date.now() - tried < RETRY_AFTER_MS) return { complete: false, events: [], reason: "out_of_range" };
+  let search = running.get(key);
+  if (!search) {
+    search = collectInvoiceHistory(db, client, cfg.deployment, fingerprint, credited).then(
+      (result) => {
+        if (!result.complete) gaveUp.set(key, Date.now());
+        else gaveUp.delete(key);
+        return result;
+      },
+    );
+    running.set(key, search);
+    const mine = search;
+    const done = () => { if (running.get(key) === mine) running.delete(key); };
+    mine.then(done, done);
+  }
+  try {
+    return await withDeadline(search, RECEIPT_HISTORY_DEADLINE_MS, "Collecting the payment records");
+  } catch {
+    return "late";
+  }
 }
 
 function formatAmount(raw: bigint, decimals: number): string {
@@ -206,23 +153,16 @@ export async function loadReceipt(
   // Decision A11: nothing credited -> 404
   if (onchainCredited === 0n) return null;
 
-  // Settlements come from the database copy of the ledger's events, not from a scan of the chain's history on every visit
-  // (plan 05za, A2). The copy is complete for this invoice when its credits add up to the ledger's `credited`; if not, the
-  // recent blocks the copy hasn't reached yet are read live, within a bound.
-  let settledLogs: SettledRow[] = await mirroredSettlements(db, cfg, fingerprint);
-  if (sumCredit(settledLogs) !== onchainCredited) {
-    try {
-      const tail = await recentSettlements(db, client, cfg, fingerprint);
-      if (tail === null) return unconfirmedHistory(fingerprint);
-      const seen = new Set(settledLogs.map((l) => `${l.transactionHash}:${l.logIndex}`));
-      settledLogs = [...settledLogs, ...tail.filter((l) => !seen.has(`${l.transactionHash}:${l.logIndex}`))];
-    } catch (err) {
-      console.error("Failed reading recent Settled logs for receipt:", err);
-      return { state: "unconfirmed", fingerprint, reason: "Can't confirm settlements from Arc testnet right now. Try again shortly." };
+  // Settlements come from the database copy of the ledger's events; the chain is read only for what the copy lacks (plan
+  // 05za, A2 and follow-up). The ledger's `credited` is the check: the settlements listed must add up to it.
+  const history = await historyFor(db, client, cfg, fingerprint, onchainCredited);
+  if (history === "late" || !history.complete) {
+    if (history !== "late" && history.reason === "unreadable") {
+      return { state: "unconfirmed", fingerprint, reason: "Can't confirm settlements from Arc right now. Try again shortly." };
     }
-    if (sumCredit(settledLogs) !== onchainCredited) return unconfirmedHistory(fingerprint);
+    return unconfirmedHistory(fingerprint);
   }
-  settledLogs.sort((a, b) => (a.blockNumber === b.blockNumber ? a.logIndex - b.logIndex : a.blockNumber < b.blockNumber ? -1 : 1));
+  const settledLogs: MirroredSettlement[] = history.events;
 
   const settlements: SettlementItem[] = await Promise.all(
     settledLogs.map(async (l) => {
@@ -237,7 +177,7 @@ export async function loadReceipt(
       }
 
       return {
-        txHash: l.transactionHash,
+        txHash: l.txHash,
         blockNumber: String(l.blockNumber),
         timestamp: blockDate,
         payer: getAddress(l.payer),

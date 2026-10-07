@@ -5,6 +5,8 @@ export * from "./contracts.js";
 export * from "./reads.js";
 export * from "./calls.js";
 export * from "./logs.js";
+export * from "./blocks.js";
+export * from "./settlements.js";
 export * from "./generated/abis.js";
 export * from "./generated/releases.js";
 export * from "./verify.js";

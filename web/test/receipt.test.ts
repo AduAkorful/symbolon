@@ -7,7 +7,8 @@ import type { Hex, PublicClient } from "viem";
 
 vi.mock("server-only", () => ({}));
 
-import { RECEIPT_TAIL_MAX_BLOCKS, loadReceipt } from "@/lib/server/receipt";
+import { DEFAULT_HISTORY_LIMITS } from "@symbolon/core";
+import { loadReceipt } from "@/lib/server/receipt";
 import { syncKey } from "@/lib/server/sync";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -162,14 +163,17 @@ describe("Receipts Service", () => {
     expect(Math.max(...asked.map((q) => Number(q.toBlock)))).toBe(64060500);
   });
 
-  it("never scans the chain's history: a copy far behind gives 'still being collected', with no log requests (A2)", async () => {
+  it("reads no more than its budget of blocks when the copy is far behind, and then says the records are still being collected (A2)", async () => {
     const inv = await paidInvoice("INV-RCPT-3");
     await db.insert(syncCursors).values({ key: syncKey(cfg), chainId: cfg.chainId, block: 1_000n }).onConflictDoUpdate({ target: syncCursors.key, set: { block: 1_000n } });
-    const { client, getLogs } = chain({ credited: 2500_000_000n, total: 2500_000_000n, head: 1_000n + RECEIPT_TAIL_MAX_BLOCKS + 5n });
+    const head = 1_000n + DEFAULT_HISTORY_LIMITS.maxTailBlocks + 5n;
+    const { client, getLogs } = chain({ credited: 2500_000_000n, total: 2500_000_000n, head });
     const receipt = await loadReceipt(db, client, cfg, inv.fingerprint);
-    expect(getLogs).not.toHaveBeenCalled();
     expect(receipt).toMatchObject({ state: "unconfirmed" });
     if (receipt?.state === "unconfirmed") expect(receipt.reason).toMatch(/still being collected/);
+    const asked = getLogs.mock.calls.map(([q]) => q as { fromBlock: bigint; toBlock: bigint });
+    // never the stretch after the stale cursor in one go, never anywhere near the 1.95 million blocks since deployment
+    expect(Math.max(...asked.map((q) => Number(q.toBlock))) - Math.min(...asked.map((q) => Number(q.fromBlock)))).toBeLessThanOrEqual(Number(DEFAULT_HISTORY_LIMITS.maxHistoryBlocks));
   });
 
   it("says it can't confirm when the records it finds don't add up to what the ledger credited (A2)", async () => {
@@ -178,6 +182,35 @@ describe("Receipts Service", () => {
     await db.insert(syncCursors).values({ key: syncKey(cfg), chainId: cfg.chainId, block: 64060499n }).onConflictDoUpdate({ target: syncCursors.key, set: { block: 64060499n } });
     const { client } = chain({ credited: 2500_000_000n, total: 2500_000_000n, head: 64060500n, logs: [] });
     expect(await loadReceipt(db, client, cfg, inv.fingerprint)).toMatchObject({ state: "unconfirmed" });
+  });
+
+  it("does not search the chain again for the same invoice within a minute of coming up short (public pages are unauthenticated)", async () => {
+    const inv = await paidInvoice("INV-RCPT-6");
+    const { client, getLogs } = chain({ credited: 2500_000_000n, total: 2500_000_000n, head: 64060500n });
+    expect(await loadReceipt(db, client, cfg, inv.fingerprint)).toMatchObject({ state: "unconfirmed" });
+    const searched = getLogs.mock.calls.length;
+    expect(searched).toBeGreaterThan(0);
+    expect(await loadReceipt(db, client, cfg, inv.fingerprint)).toMatchObject({ state: "unconfirmed" });
+    expect(getLogs.mock.calls.length).toBe(searched);
+  });
+
+  it("finds a payment that is older than the stored copy, saves it, and answers the next visit from the database (A2)", async () => {
+    const inv = await paidInvoice("INV-RCPT-7");
+    const old = {
+      address: cfg.deployment.contracts.invoiceLedger,
+      transactionHash: "0x" + "d4".repeat(32),
+      logIndex: 2,
+      blockNumber: 64060480n,
+      args: { fingerprint: inv.fingerprint, seal: inv.sealed.document.seal, payer: inv.vault, token: cfg.deployment.tokens.usdc, credit: 2500_000_000n, paid: 2500_000_000n, discountBps: 0, payoutDomain: 26, payoutAddress: randAddr() },
+    };
+    await db.insert(syncCursors).values({ key: syncKey(cfg), chainId: cfg.chainId, block: 64060500n }).onConflictDoUpdate({ target: syncCursors.key, set: { block: 64060500n } });
+    const { client, getLogs } = chain({ credited: 2500_000_000n, total: 2500_000_000n, head: 64060500n, logs: [old] });
+    const first = await loadReceipt(db, client, cfg, inv.fingerprint);
+    expect(first?.state).toBe("settled");
+    getLogs.mockClear();
+    const second = await loadReceipt(db, client, cfg, inv.fingerprint);
+    expect(second?.state).toBe("settled");
+    expect(getLogs).not.toHaveBeenCalled();
   });
 
   it("is a 404 when the ledger has credited nothing (A11), without any log request", async () => {

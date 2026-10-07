@@ -265,7 +265,7 @@ describe("accounting audit boundary repairs", () => {
   });
   it("completed POST re-sync provenance warns on exact mismatches and becomes unavailable when the copy changes", async () => {
     const f = await settled(deployment.tokens.usdc);
-    const client = { getBlockNumber: async () => deployment.startBlock + 1n, getLogs: async () => [],
+    const client = { getBlockNumber: async () => deployment.startBlock + 1n, getLogs: async () => [], getBlock: async () => ({ timestamp: 1n }),
       readContract: async ({ functionName }: { functionName: string }) => functionName === "status"
         ? { seen: true, total: 1000000n, credited: 1n, cancelled: false, seal: f.sealAddr } : 999999n,
     } as unknown as PublicClient;

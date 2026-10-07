@@ -50,7 +50,7 @@ export async function runCheck(client: PublicClient, deployment: Deployment, tex
   const verification = check?.verification ?? (await verifySealedInvoice(read.envelope, { expected }));
 
   if (verification.ok) {
-    return { kind: "genuine", check: check ?? { verification, settlements: [] }, ledger: ledgerError ? { ok: false, reason: ledgerError } : { ok: true } };
+    return { kind: "genuine", check: check ?? { verification, settlements: [], settlementsComplete: true }, ledger: ledgerError ? { ok: false, reason: ledgerError } : { ok: true } };
   }
   const elsewhere = verification.issues.some((i) => i.code === "chain_mismatch");
   return { kind: elsewhere ? "elsewhere" : "modified", verification, issues: verification.issues };

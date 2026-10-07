@@ -13,6 +13,8 @@ export interface ScanOptions<TEvents extends readonly AbiEvent[]> {
   concurrency?: number;
   /** First wait, in ms, before asking again after a rate-limit answer; it doubles each time (default 1000) */
   backoffMs?: number;
+  /** Indexed-argument filter (needs exactly one event). The node drops other logs before answering, so replies stay small. */
+  args?: Record<string, unknown>;
 }
 export interface ScanResult<TLog> {
   logs: TLog[];
@@ -40,6 +42,7 @@ export async function scanLogs<const TEvents extends readonly AbiEvent[]>(
   client: PublicClient,
   opts: ScanOptions<TEvents>,
 ): Promise<ScanResult<Log<bigint, number, false, undefined, true, TEvents>>> {
+  if (opts.args && opts.events.length !== 1) throw new Error("an argument filter needs exactly one event");
   if (opts.fromBlock <= 0n) throw new Error("scan from the deployment's startBlock, never genesis (Arc prunes history)");
   const toBlock = opts.toBlock ?? (await client.getBlockNumber());
   const minChunk = opts.minChunk ?? DEFAULT_MIN_CHUNK;
@@ -75,7 +78,8 @@ export async function scanLogs<const TEvents extends readonly AbiEvent[]>(
         let waits = 0;
         for (;;) {
           try {
-            const batch = await client.getLogs({ address: opts.address, events: opts.events, fromBlock: from, toBlock: to, strict: true } as never);
+            const filter = opts.args && opts.events.length === 1 ? { event: opts.events[0], args: opts.args } : { events: opts.events };
+            const batch = await client.getLogs({ address: opts.address, ...filter, fromBlock: from, toBlock: to, strict: true } as never);
             logs.push(...(batch as typeof logs));
             break;
           } catch (error) {

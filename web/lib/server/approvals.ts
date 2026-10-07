@@ -45,7 +45,7 @@ import {
 import { UNSAFE_TEXT } from "@/lib/text-safety";
 import { requireMember, type Role } from "./access";
 import { appendAppDecision } from "./app-decisions";
-import type { ChainSettings } from "./business";
+import { ensureVaultBlock, type ChainSettings } from "./business";
 import { summarizeDecision } from "./decision-text";
 import { AuthError } from "./errors";
 import { evidenceFor, type EvidenceRow } from "./match-view";
@@ -832,7 +832,7 @@ export async function recordPayNow(
   }
 
   // Sync ledger immediately so the invoice's status and credited come from the ledger
-  await syncVault(db, client, cfg.deployment, vault);
+  await syncVault(db, client, cfg.deployment, vault, { fromBlock: await ensureVaultBlock(db, client, cfg.deployment, businessId, vault) });
   const ledger = await ensureFresh(db, client, cfg, { force: true });
   if (!ledger.ok) console.error("ledger sync after a confirmed payment failed", ledger.reason);
 

@@ -172,6 +172,9 @@ function Result({ r, explorer }: { r: CheckResult; explorer: string }) {
           "Not paid, according to Arc’s ledger."
         )}
       </p>
+      {st && st.credited > 0n && !r.check.settlementsComplete ? (
+        <p className="mt-3 text-xs text-graphite">Arc’s ledger shows a payment, but its payment records could not all be read from here, so they are not listed. Try again shortly.</p>
+      ) : null}
       {r.check.settlements.length ? (
         <ul className="mt-3 space-y-1 text-xs">
           {r.check.settlements.map((s) => (

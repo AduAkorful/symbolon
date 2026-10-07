@@ -24,6 +24,7 @@ import {
 } from "@symbolon/db";
 import { symbolonContracts, type Deployment, type SymbolonContracts } from "@symbolon/chain";
 import type { PublicClient, ReadContractParameters } from "viem";
+import { ensureVaultBlock } from "./business";
 import { requireMember } from "./access";
 import { syncToHead } from "./sync";
 import { appendAppDecision } from "./app-decisions";
@@ -310,7 +311,7 @@ export async function resyncLedger(
   if (!caughtUp.ok) throw new AuthError(503, caughtUp.reason);
 
   if (biz.vault) {
-    await syncVault(db, client, deployment, biz.vault as `0x${string}`);
+    await syncVault(db, client, deployment, biz.vault as `0x${string}`, { fromBlock: await ensureVaultBlock(db, client, deployment, businessId, biz.vault) });
   }
 
   // Bind the durable comparison and digest to one database snapshot, even if intake/sync runs concurrently.

@@ -1,7 +1,7 @@
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { getAbiItem, type Hex, type PublicClient } from "viem";
 
-import { invoiceLedgerAbi, invoiceStatus, scanLogs, symbolonVaultAbi, type Deployment, type SymbolonContracts } from "@symbolon/chain";
+import { blockAtOrBefore, invoiceLedgerAbi, invoiceStatus, scanLogs, symbolonVaultAbi, type Deployment, type SymbolonContracts } from "@symbolon/chain";
 import { chainEvents, invoices, syncCursors, type Database } from "@symbolon/db";
 import { notifyVendor } from "./domain-notifications.js";
 
@@ -44,6 +44,64 @@ async function resolveBlockTimes(
   return cache;
 }
 
+
+export interface EventToStore {
+  transactionHash: Hex;
+  logIndex: number;
+  blockNumber: bigint;
+  address: string;
+  eventName: string;
+  args: unknown;
+}
+
+/** Writes chain events into the mirror (idempotent: the same log twice is one row; a known block time is never lost) */
+export async function storeEvents(
+  db: Pick<Database, "insert">,
+  client: PublicClient,
+  chainId: number,
+  logs: readonly EventToStore[],
+): Promise<void> {
+  if (!logs.length) return;
+  const blockTimes = await resolveBlockTimes(client, logs.map((l) => l.blockNumber));
+  await db
+    .insert(chainEvents)
+    .values(
+      logs.map((l) => ({
+        chainId,
+        txHash: l.transactionHash.toLowerCase(),
+        logIndex: l.logIndex,
+        blockNumber: l.blockNumber,
+        blockTime: blockTimes.get(l.blockNumber),
+        address: l.address.toLowerCase(),
+        eventName: l.eventName,
+        args: json(l.args),
+      })),
+    )
+    .onConflictDoUpdate({
+      target: [chainEvents.chainId, chainEvents.txHash, chainEvents.logIndex],
+      set: { blockTime: sql`coalesce(chain_events.block_time, excluded.block_time)` },
+    });
+}
+
+/** Margin before the earliest invoice, for a date-only issue time and clock differences between a signer and the chain */
+const FIRST_BLOCK_MARGIN_SECONDS = 86_400n;
+
+/**
+ * Where a ledger mirror with no cursor should begin. The mirror exists to keep known invoices current, and no invoice is
+ * paid before it was issued or received, so reading starts at the earliest such time (minus a day) instead of at the
+ * deployment's first block. `null` means no invoice is known: there is nothing to follow yet, so the caller starts at the
+ * head. A payment older than this start is found when its invoice is opened (see `collectInvoiceHistory`).
+ */
+export async function firstLedgerBlock(db: Database, client: PublicClient, deployment: Deployment, head: bigint): Promise<bigint | null> {
+  const [row] = await db
+    .select({ at: sql<Date | null>`min(least(${invoices.issuedAt}, ${invoices.receivedAt}))` })
+    .from(invoices)
+    .where(and(eq(invoices.chainId, deployment.chainId), sql`lower(${invoices.ledger}) = ${deployment.contracts.invoiceLedger.toLowerCase()}`));
+  if (!row?.at) return null;
+  const seconds = BigInt(Math.floor(new Date(row.at).getTime() / 1000));
+  return blockAtOrBefore(client, seconds - FIRST_BLOCK_MARGIN_SECONDS, { lo: deployment.startBlock, hi: head });
+}
+
 /**
  * Pulls the ledger's events since the last cursor, stores them, and refreshes every affected invoice from the ledger's
  * own state (the chain decides what "paid" means; events only say what to re-read). Idempotent and resumable.
@@ -57,8 +115,21 @@ export async function syncLedger(
 ): Promise<SyncReport> {
   const key = `ledger:${deployment.chainId}:${deployment.contracts.invoiceLedger.toLowerCase()}`;
   const [cursor] = await db.select().from(syncCursors).where(eq(syncCursors.key, key));
-  const from = cursor ? cursor.block + 1n : deployment.startBlock;
   const head = opts.toBlock ?? (await client.getBlockNumber());
+  let from: bigint;
+  if (cursor) from = cursor.block + 1n;
+  else {
+    const first = await firstLedgerBlock(db, client, deployment, head);
+    if (first === null) {
+      // no invoice to follow: start at the head, and remember it so the next run doesn't look again
+      await db
+        .insert(syncCursors)
+        .values({ key, chainId: deployment.chainId, block: head })
+        .onConflictDoNothing();
+      return { from: head + 1n, to: head, head, events: 0, invoicesUpdated: 0 };
+    }
+    from = first;
+  }
   // `maxBlocks` bounds one run; the cursor makes the next run continue where this one stopped
   const to = opts.maxBlocks !== undefined && from + opts.maxBlocks - 1n < head ? from + opts.maxBlocks - 1n : head;
   if (from > to) return { from, to, head, events: 0, invoicesUpdated: 0 };
@@ -77,29 +148,7 @@ export async function syncLedger(
   const states = await Promise.all(known.map(async ({ fp }) => [fp, await invoiceStatus(contracts, fp as Hex)] as const));
 
   await db.transaction(async (tx) => {
-    if (logs.length) {
-      const blockTimes = await resolveBlockTimes(client, logs.map((l) => l.blockNumber));
-      await tx
-        .insert(chainEvents)
-        .values(
-          logs.map((l) => ({
-            chainId: deployment.chainId,
-            txHash: l.transactionHash.toLowerCase(),
-            logIndex: l.logIndex,
-            blockNumber: l.blockNumber,
-            blockTime: blockTimes.get(l.blockNumber),
-            address: l.address.toLowerCase(),
-            eventName: l.eventName,
-            args: json(l.args),
-          })),
-        )
-        .onConflictDoUpdate({
-          target: [chainEvents.chainId, chainEvents.txHash, chainEvents.logIndex],
-          set: {
-            blockTime: sql`coalesce(chain_events.block_time, excluded.block_time)`,
-          },
-        });
-    }
+    await storeEvents(tx, client, deployment.chainId, logs);
     for (const [fp, s] of states) {
       const status = s.cancelled ? "cancelled" : s.paid ? "paid" : s.credited > 0n ? "partially_paid" : undefined;
       await tx
@@ -145,29 +194,7 @@ export async function syncVault(
 
   const { logs, scannedTo } = await scanLogs(client, { address: vault, events: VAULT_EVENTS, fromBlock: from, toBlock: to, concurrency: SYNC_CONCURRENCY });
   await db.transaction(async (tx) => {
-    if (logs.length) {
-      const blockTimes = await resolveBlockTimes(client, logs.map((l) => l.blockNumber));
-      await tx
-        .insert(chainEvents)
-        .values(
-          logs.map((l) => ({
-            chainId: deployment.chainId,
-            txHash: l.transactionHash.toLowerCase(),
-            logIndex: l.logIndex,
-            blockNumber: l.blockNumber,
-            blockTime: blockTimes.get(l.blockNumber),
-            address: l.address.toLowerCase(),
-            eventName: l.eventName,
-            args: json(l.args),
-          })),
-        )
-        .onConflictDoUpdate({
-          target: [chainEvents.chainId, chainEvents.txHash, chainEvents.logIndex],
-          set: {
-            blockTime: sql`coalesce(chain_events.block_time, excluded.block_time)`,
-          },
-        });
-    }
+    await storeEvents(tx, client, deployment.chainId, logs);
     await tx
       .insert(syncCursors)
       .values({ key, chainId: deployment.chainId, block: scannedTo })
