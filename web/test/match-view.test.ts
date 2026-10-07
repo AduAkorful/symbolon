@@ -115,4 +115,10 @@ describe("evidenceFor", () => {
     const blocked = { ...facts, policy: { ...policy, screeningMaxAge: 0n }, payee: { ...payee, risk: 3, screenedAt: 0n } };
     expect(view({ facts: blocked }).matched).toBe(false);
   });
+
+  it("starts every policy sentence with a capital, whatever fragment the match engine reports (B9)", () => {
+    const result = view({ match: { kind: "invoice_only", ok: false, problems: ["the vendor isn't a payee of this business yet"] } } as unknown as Partial<Parameters<typeof evidenceFor>[0]>);
+    const row = result.rows.find((r) => r.label === "Policy match");
+    expect(row?.value).toBe("The vendor isn't a payee of this business yet");
+  });
 });

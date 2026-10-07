@@ -2,6 +2,7 @@ import "server-only";
 import { and, eq } from "drizzle-orm";
 import { businesses, chainEvents, invoices } from "@symbolon/db";
 import { formatAmount } from "@symbolon/seal";
+import { showMoney } from "@/lib/format";
 import type { IntentContext } from "./types";
 
 /** Settled is the source for cash paid, gross credit, signed discounts and settlement time. */
@@ -34,6 +35,6 @@ export function currencyTotals(ctx: IntentContext, rows: {token:string;amount:bi
   for (const row of rows) totals.set(row.token.toLowerCase(),(totals.get(row.token.toLowerCase()) ?? 0n)+row.amount);
   return [...totals].map(([token,total]) => {
     const symbol = Object.entries(ctx.deployment.tokens ?? {}).find(([,address]) => address?.toLowerCase() === token)?.[0].toUpperCase();
-    return symbol ? `${formatAmount(total,6)} ${symbol}` : `${total} raw units of ${token} (currency unavailable)`;
+    return symbol ? showMoney(formatAmount(total, 6), symbol) : `${total} raw units of ${token} (currency unavailable)`;
   }).join(" and ");
 }

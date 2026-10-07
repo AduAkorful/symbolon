@@ -1,4 +1,6 @@
 import { livePurchaseOrderEvidence } from "./po-evidence";
+import { CHAIN_READ_DEADLINE_MS, withDeadline } from "./deadline";
+import { ensureFresh } from "./sync";
 import "server-only";
 
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
@@ -11,7 +13,7 @@ import {
 } from "viem";
 
 import { simulateCall, symbolonContracts, symbolonVaultAbi, toTransaction } from "@symbolon/chain";
-import { createInvoiceInputReader, readVaultFacts, recordApproval, syncLedger, syncVault } from "@symbolon/core";
+import { createInvoiceInputReader, readVaultFacts, recordApproval, syncVault } from "@symbolon/core";
 import {
   businesses,
   decisions,
@@ -157,9 +159,8 @@ export async function listApprovals(
     .where(and(eq(invoices.businessId, businessId), eq(invoices.status, "awaiting_approval")))
     .orderBy(desc(invoices.receivedAt));
 
-  const items: ApprovalItem[] = [];
-
-  for (const row of rows) {
+  // Each invoice reads the chain on its own; one after another, a long list would wait for the sum of every read
+  const items: ApprovalItem[] = await Promise.all(rows.map(async (row): Promise<ApprovalItem> => {
     let doc: any = null;
     let inv: any = null;
     let verification: any = null;
@@ -201,7 +202,7 @@ export async function listApprovals(
     let ledger: any;
     try {
       if (inv) {
-        facts = await readVaultFacts(contracts, client, vault, inv, row.fingerprint as Hex);
+        facts = await withDeadline(readVaultFacts(contracts, client, vault, inv, row.fingerprint as Hex), CHAIN_READ_DEADLINE_MS, "Reading the Vault");
         match = matchInvoice(inv, facts.payee?.terms, facts.purchaseOrder, facts.deliveryConfirmed, facts.now);
       }
     } catch {
@@ -245,7 +246,7 @@ export async function listApprovals(
     const canReject = isAuthorizedMember;
 
     const decimals = doc?.currency?.decimals ?? 6;
-    items.push({
+    return {
       fingerprint: row.fingerprint,
       invoiceNumber: row.invoiceNumber ?? doc?.invoiceNumber ?? `${row.fingerprint.slice(0, 10)}…`,
       vendor: {
@@ -266,8 +267,8 @@ export async function listApprovals(
       canSign,
       canPayNow,
       canReject,
-    });
-  }
+    };
+  }));
 
   // Load recent answers (granted or rejected)
   const recentDecRows = await db
@@ -831,9 +832,9 @@ export async function recordPayNow(
   }
 
   // Sync ledger immediately so the invoice's status and credited come from the ledger
-  const contracts = symbolonContracts(client, cfg.deployment);
   await syncVault(db, client, cfg.deployment, vault);
-  await syncLedger(db, client, contracts, cfg.deployment);
+  const ledger = await ensureFresh(db, client, cfg, { force: true });
+  if (!ledger.ok) console.error("ledger sync after a confirmed payment failed", ledger.reason);
 
   return { ok: true, txHash };
 }

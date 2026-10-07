@@ -8,6 +8,8 @@ import { sendWithWallet, type SignerPlan } from "@/components/setup/owner-signer
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { postJson } from "@/lib/client/api";
 import type { TeamMemberView, TeamViewData } from "@/lib/server/team";
+import { formatDay, shortAddress } from "@/lib/format";
+import { Address } from "@/components/Address";
 
 interface TeamInvitationRow {
   id: string;
@@ -177,7 +179,7 @@ export function TeamView({
   }
 
   return (
-    <main className="px-6 pb-24 pt-10 md:px-10">
+    <div className="pb-24">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="font-display text-4xl sm:text-5xl font-medium tracking-tight text-ink">Team</h1>
@@ -289,7 +291,7 @@ export function TeamView({
                   <span className="font-medium text-ink capitalize">{inv.role}</span>
                   {inv.label && <span className="ml-2 text-xs text-graphite font-mono">({inv.label})</span>}
                   <span className="block text-xs text-graphite">
-                    Expires {new Date(inv.expiresAt).toLocaleDateString()}
+                    Expires {formatDay(new Date(inv.expiresAt))}
                   </span>
                 </div>
                 {isOwner && (
@@ -316,7 +318,7 @@ export function TeamView({
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-ink">
-                      {m.email || (m.wallet ? `${m.wallet.slice(0, 6)}...${m.wallet.slice(-4)}` : "Member")}
+                      {m.email || (m.wallet ? shortAddress(m.wallet) : "Member")}
                     </span>
                     <span className="rounded bg-surface px-2 py-0.5 text-xs font-mono capitalize text-graphite border border-rule">
                       {m.appRole}
@@ -329,8 +331,8 @@ export function TeamView({
                   </div>
 
                   {m.wallet && (
-                    <span className="block mt-1 font-mono text-xs text-graphite select-all">
-                      {m.wallet}
+                    <span className="mt-1 block text-xs text-graphite">
+                      <Address value={m.wallet} full />
                     </span>
                   )}
 
@@ -448,6 +450,6 @@ export function TeamView({
           </div>
         </div>
       )}
-    </main>
+    </div>
   );
 }

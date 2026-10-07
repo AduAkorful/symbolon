@@ -15,12 +15,14 @@ export interface PauseControlProps {
   businessId: string;
   paused: boolean;
   block: string;
+  /** False when the Vault's paused state couldn't be read: the owner can still pause, and the screen says so */
+  known?: boolean;
   signer: SignerPlan | null;
   explorer?: string;
   compact?: boolean;
 }
 
-export function PauseControl({ businessId, paused, block, signer, explorer, compact = false }: PauseControlProps) {
+export function PauseControl({ businessId, paused, block, known = true, signer, explorer, compact = false }: PauseControlProps) {
   const router = useRouter();
   const discover = useWalletProviders();
   const [curPaused, setCurPaused] = useState(paused);
@@ -52,8 +54,9 @@ export function PauseControl({ businessId, paused, block, signer, explorer, comp
 
       for (let n = 0; n < 20; n++) {
         const r = await fetch(`/api/business/${businessId}/vault`, { cache: "no-store" });
-        const j = (await r.json().catch(() => ({}))) as { kind?: string; block?: string | null };
-        if (r.ok && j.kind && (j.kind === "paused") === want && j.block) {
+        const j = (await r.json().catch(() => ({}))) as { paused?: boolean | null; block?: string | null };
+        // The Vault's own flag decides, whether or not its Steward matches what we recorded
+        if (r.ok && typeof j.paused === "boolean" && j.paused === want && j.block) {
           setCurPaused(want);
           setCurBlock(BigInt(j.block));
           setConfirming(false);
@@ -84,16 +87,16 @@ export function PauseControl({ businessId, paused, block, signer, explorer, comp
             className={`${btnBase} bg-paper/20 px-2.5 py-1 text-paper hover:bg-paper/30`}
             title="Resume the Steward and payments"
           >
-            {busy ?? "Resume"}
+            {busy ?? "Resume payments"}
           </button>
         ) : (
           <button
             disabled={busy !== null}
             onClick={() => void toggle("pause")}
             className={`${btnBase} border border-red/60 px-2.5 py-1 text-red hover:bg-red-wash`}
-            title="Pause payments and the Steward"
+            title={known ? "Pause payments and the Steward" : "Pause payments and the Steward. We can't confirm the Vault's current state."}
           >
-            {busy ?? "Pause"}
+            {busy ?? "Pause payments"}
           </button>
         )}
         {problem ? <span className="text-[11px] text-red" role="alert">{problem}</span> : null}
@@ -142,6 +145,7 @@ export function PauseControl({ businessId, paused, block, signer, explorer, comp
           {busy ?? "Pause the Steward (one signature)"}
         </button>
       )}
+      {!known && !curPaused ? <p className="mt-2 text-xs text-graphite">We can't confirm whether the Vault is paused right now. You can still pause it.</p> : null}
 
       {tx && explorer ? (
         <p className="mt-2 text-xs">

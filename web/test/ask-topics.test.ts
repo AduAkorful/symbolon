@@ -85,7 +85,7 @@ describe("Ask topics (plan 05y Part C)", () => {
       await invoice(1, ANA, { status: "paid", credited: 2_200_000_000n });
       await invoice(2, ANA, { status: "scheduled", total: 1_000_000_000n });
       const r = await executeIntent(ctx, "vendor_summary", { vendor: "Studio Ana" });
-      expect(r.text).toBe("Studio Ana is verified on 2026-09-20. 1 invoice paid, 1 open for 1000.000000 USDC, next due 2026-10-12.");
+      expect(r.text).toBe("Studio Ana is verified on 20 Sep 2026. 1 invoice paid, 1 open for $1,000.00, next due 12 Oct 2026.");
       expect(r.links[0]).toEqual(["Studio Ana", `/business/vendors/${ANA}`]);
       expect(r.params).toEqual({ vendor: "Studio Ana" });
     });
@@ -127,7 +127,7 @@ describe("Ask topics (plan 05y Part C)", () => {
         { fingerprint: fp(2), discountBps: 100, validUntil: new Date("2026-10-01T00:00:00Z"), status: "open" },
       ]);
       const r = await executeIntent(ctx, "open_offers", {});
-      expect(r.text).toBe("1 Early Pay offer is open: Studio Ana, invoice INV-1, 2.5% off, valid until 2026-10-20.");
+      expect(r.text).toBe("1 Early Pay offer is open: Studio Ana, invoice INV-1, 2.5% off, valid until 20 Oct 2026.");
       expect(r.text).not.toMatch(/earn|yield|return/i);
       const none = await executeIntent({ ...ctx, businessId: other }, "open_offers", {});
       expect(none.text).toBe("No Early Pay offers are open right now.");
@@ -164,7 +164,7 @@ describe("Ask topics (plan 05y Part C)", () => {
       ]);
       const r = await executeIntent(ctx, "treasury_moves", { days: 30 });
       expect(r.text).toMatch(/^1 treasury move in the last 30 days\./);
-      expect(r.text).toContain("2026-10-05");
+      expect(r.text).toContain("5 Oct 2026");
       expect((await executeIntent(ctx, "treasury_moves", { days: 1 })).text).toContain("No withdrawals, conversions or reserve moves");
       expect((await executeIntent(ctx, "treasury_moves", { days: 9999 })).text).toContain("last 90 days");
       expect((await executeIntent(ctx, "treasury_moves", {})).text).toMatch(/last 30 days/);
@@ -196,7 +196,7 @@ describe("Ask topics (plan 05y Part C)", () => {
         { businessId: other, kind: "set_policy", changeId: fp(32), selector: "0x12345678", summary: { title: "Not ours" }, eta: new Date("2026-10-09T14:00:00Z"), status: "queued" },
       ]);
       const r = await executeIntent(ctx, "pending_changes", {});
-      expect(r.text).toBe("1 change is waiting: Raise the per-invoice cap, can be applied from 2026-10-09T14:00:00Z.");
+      expect(r.text).toBe("1 change is waiting: Raise the per-invoice cap, can be applied from 9 Oct, 14:00 UTC.");
       expect((await executeIntent({ ...ctx, businessId: other }, "pending_changes", {})).text).toContain("Not ours");
       await db.delete(queuedChanges);
       expect((await executeIntent(ctx, "pending_changes", {})).text).toBe("No changes are waiting.");
@@ -227,7 +227,7 @@ describe("Ask topics (plan 05y Part C)", () => {
         { businessId: biz, seal: ANA, address: ANA, risk: 0, result: "APPROVED", provider: "circle", screenedAt: new Date("2026-10-01T00:00:00Z") },
       ]);
       const r = await executeIntent(ctx, "screening_status", {});
-      expect(r.text).toBe("1 of 2 payees screened, 1 not screened yet. Studio Ana: low risk on 2026-10-01.");
+      expect(r.text).toBe("1 of 2 payees screened, 1 not screened yet. Studio Ana: low risk on 1 Oct 2026.");
       expect(r.text).not.toMatch(/clean|safe/i);
       expect((await executeIntent(ctx, "screening_status", { vendor: "Anastasia" })).text).toBe("For Anastasia Ltd: 0 of 1 payee screened, 1 not screened yet.");
     });

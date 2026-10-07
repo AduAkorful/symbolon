@@ -2,6 +2,8 @@ import "server-only";
 
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { formatAmount } from "@symbolon/seal";
+import { resolveTokenSymbol } from "@symbolon/core";
+import { formatDateTime, showMoney } from "../format";
 import {
   businesses,
   chainEvents,
@@ -54,21 +56,33 @@ export interface ActivityFeed {
   budgetOptions: string[];
 }
 
-/** Pure function describing Vault and Ledger chain events per K12 */
-export function describeEvent(eventName: string, args: Record<string, unknown>, txHash?: string): { what: string; tone?: "seal" | "red" } {
+/**
+ * An amount for an event line, "$1,985.00 ". The event doesn't always say which token it moved, so the caller passes the symbol
+ * it resolved (from the event's own token or the invoice's); with none, no amount is written rather than a guessed currency.
+ */
+function eventAmount(raw: unknown, symbol: string | undefined): string {
+  if (!raw || !symbol || symbol === "UNKNOWN") return "";
+  return `${showMoney(formatAmount(BigInt(String(raw)), 6), symbol)} `;
+}
+
+function invoiceAmountText(inv: { total: bigint; token: string; chainId: number }): string {
+  const symbol = resolveTokenSymbol(inv.token, inv.chainId);
+  return symbol === "UNKNOWN" ? "currency unavailable" : showMoney(formatAmount(inv.total, 6), symbol);
+}
+
+/** Pure function describing Vault and Ledger chain events per K12; `symbol` is the token the event's amount is in, when known */
+export function describeEvent(eventName: string, args: Record<string, unknown>, txHash?: string, symbol?: string): { what: string; tone?: "seal" | "red" } {
   switch (eventName) {
     case "Paid": {
-      const paid = args.paid ? formatAmount(BigInt(String(args.paid)), 6) : "";
-      return { what: `Paid ${paid ? `${paid} USDC ` : ""}for invoice ${String(args.fingerprint || "").slice(0, 10)}…`, tone: "seal" };
+      return { what: `Paid ${eventAmount(args.paid, symbol)}for invoice ${String(args.fingerprint || "").slice(0, 10)}…`, tone: "seal" };
     }
     case "Withdrawn": {
-      const amt = args.amount ? formatAmount(BigInt(String(args.amount)), 6) : "";
-      return { what: `Withdrawn ${amt ? `${amt} USDC ` : ""}to ${String(args.to || "").slice(0, 10)}…` };
+      return { what: `Withdrew ${eventAmount(args.amount, symbol)}to ${String(args.to || "").slice(0, 10)}…` };
     }
     case "PolicySet":
       return { what: "Updated Vault policy onchain" };
     case "ChangeQueued":
-      return { what: `Queued loosening change onchain (effective at ${args.eta ? new Date(Number(args.eta) * 1000).toLocaleTimeString() : "future"})` };
+      return { what: `Queued loosening change onchain (effective ${args.eta ? formatDateTime(new Date(Number(args.eta) * 1000)) : "later"})` };
     case "ChangeCancelled":
       return { what: "Cancelled queued change onchain" };
     case "PayeeAdded":
@@ -100,8 +114,7 @@ export function describeEvent(eventName: string, args: Record<string, unknown>, 
     case "ReserveRedeemed":
       return { what: `Redeemed cash from USYC reserve` };
     case "Settled": {
-      const paid = args.paid ? formatAmount(BigInt(String(args.paid)), 6) : "";
-      return { what: `Ledger settled payment of ${paid ? `${paid} USDC ` : ""}for invoice ${String(args.fingerprint || "").slice(0, 10)}…`, tone: "seal" };
+      return { what: `Ledger settled payment of ${eventAmount(args.paid, symbol)}for invoice ${String(args.fingerprint || "").slice(0, 10)}…`, tone: "seal" };
     }
     case "Cancelled":
       return { what: `Ledger cancelled invoice ${String(args.fingerprint || "").slice(0, 10)}…`, tone: "red" };
@@ -314,7 +327,9 @@ export async function loadActivity(
 
     for (const e of vEvents) {
       const args = e.args as Record<string, unknown>;
-      const desc = describeEvent(e.eventName, args, e.txHash);
+      const inv0 = args.fingerprint ? invoiceByFp.get(String(args.fingerprint).toLowerCase()) : undefined;
+      const tokenOf = args.token ? String(args.token) : inv0?.token;
+      const desc = describeEvent(e.eventName, args, e.txHash, tokenOf ? resolveTokenSymbol(tokenOf, business.chainId) : undefined);
       const caller = String(args.caller || args.sender || args.by || args.from || "");
       const actor = resolveActorForEvent(caller);
       const fp = args.fingerprint ? String(args.fingerprint).toLowerCase() : undefined;
@@ -349,8 +364,9 @@ export async function loadActivity(
       const args = le.args as Record<string, unknown>;
       const fp = args.fingerprint ? String(args.fingerprint).toLowerCase() : "";
       if (fps.includes(fp)) {
-        const desc = describeEvent(le.eventName, args, le.txHash);
         const inv = invoiceByFp.get(fp);
+        const ledgerToken = args.token ? String(args.token) : inv?.token;
+        const desc = describeEvent(le.eventName, args, le.txHash, ledgerToken ? resolveTokenSymbol(ledgerToken, business.chainId) : undefined);
         const vendor = inv ? (sealMap.get(inv.seal.toLowerCase()) || inv.seal) : undefined;
         items.push({
           id: `lev-${le.txHash}-${le.logIndex}`,
@@ -373,7 +389,7 @@ export async function loadActivity(
       id: `inv-${inv.fingerprint}`,
       at: inv.receivedAt.toISOString(),
       actor: { kind: "vendor", label: vendorName, wallet: inv.seal },
-      what: `Received invoice ${inv.invoiceNumber} (${formatAmount(inv.total, 6)} USDC)`,
+      what: `Received invoice ${inv.invoiceNumber} (${invoiceAmountText(inv)})`,
       vendor: vendorName,
       href: `/business/inbox/${inv.fingerprint}`,
       source: "invoice",

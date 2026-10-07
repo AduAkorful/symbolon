@@ -6,6 +6,7 @@ import { sendWithWallet, type SignerPlan } from "@/components/setup/owner-signer
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { postJson } from "@/lib/client/api";
 import { applyQueuedChange, recordQueuedChange } from "@/lib/client/queued-actions";
+import { formatDateTime } from "@/lib/format";
 
 export interface QueuedChangeRow {
   id: string;
@@ -152,7 +153,7 @@ export function QueuedChangeList({
                   {isReady ? (
                     <span className="font-medium text-forest">Ready to apply</span>
                   ) : (
-                    <span>Ready at {new Date(change.eta).toLocaleString()}</span>
+                    <span>Ready at {formatDateTime(new Date(change.eta))}</span>
                   )}
                 </div>
               </div>
@@ -262,7 +263,7 @@ export function QueuedChange({
             {isReady ? (
               <span className="font-medium text-forest">Ready to apply</span>
             ) : eta ? (
-              <span>Ready at {new Date(eta).toLocaleString()}</span>
+              <span>Ready at {formatDateTime(new Date(eta))}</span>
             ) : looseningDelaySeconds !== undefined ? (
               <span>Waits {Math.round(looseningDelaySeconds / 3600)}h delay</span>
             ) : null}

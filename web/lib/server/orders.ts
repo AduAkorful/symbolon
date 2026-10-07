@@ -14,6 +14,7 @@ import { symbolonContracts, symbolonVaultAbi, vaultCall, type Deployment } from 
 import { businesses, decisions, invoices, payees, purchaseOrders, type Database } from "@symbolon/db";
 import { requireMember } from "./access";
 import { appendAppDecision } from "./app-decisions";
+import { CHAIN_READ_DEADLINE_MS, withDeadline } from "./deadline";
 import { AuthError } from "./errors";
 import type { SessionUser } from "./session";
 import { UNSAFE_TEXT } from "@/lib/text-safety";
@@ -119,12 +120,12 @@ export async function listOrders(
   const c = symbolonContracts(client, deployment);
 
   // Read live lens data for each PO (fail gracefully per PO)
-  const views: PurchaseOrderView[] = [];
-  for (const po of pos) {
+  // in parallel: one read after another would make the page wait for the sum of every read
+  const views: PurchaseOrderView[] = await Promise.all(pos.map(async (po): Promise<PurchaseOrderView> => {
     let live: PoLiveData = { ok: false };
     try {
       const ref = po.poRef as Hex;
-      const onchain = await c.lens.read.getPurchaseOrder([vault, ref]);
+      const onchain = await withDeadline(c.lens.read.getPurchaseOrder([vault, ref]), CHAIN_READ_DEADLINE_MS, "Reading the order");
       live = {
         ok: true,
         open: onchain.open,
@@ -136,7 +137,7 @@ export async function listOrders(
     }
 
     const agg = byRef.get(po.poRef) ?? { total: 0n, credited: 0n, count: 0 };
-    views.push({
+    return {
       businessId: po.businessId,
       poRef: po.poRef,
       poNumber: po.poNumber,
@@ -153,8 +154,8 @@ export async function listOrders(
       invoiceCount: agg.count,
       paidTotal: agg.credited,
       live,
-    });
-  }
+    };
+  }));
   return views;
 }
 

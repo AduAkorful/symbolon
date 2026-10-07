@@ -10,6 +10,7 @@ import { myInvoice } from "@/lib/server/invoice-send";
 import { signerPlanFor } from "@/lib/server/signer-plan";
 import { requireVendorPage } from "@/lib/server/vendor-page";
 import { toneClass, vendorStatus } from "@/lib/invoice-status";
+import { formatDay } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -86,7 +87,7 @@ export default async function VendorInvoice({ params }: { params: Promise<{ fing
                 <span className="mt-1 h-2 w-2 rounded-full bg-seal flex-shrink-0" />
                 <div>
                   <p className="font-medium text-ink">Sealed with vendor key</p>
-                  <p className="text-graphite">{found.row.receivedAt.toISOString().slice(0, 10)}</p>
+                  <p className="text-graphite">{formatDay(found.row.receivedAt, { year: "always" })}</p>
                 </div>
               </li>
               {found.row.businessId ? (

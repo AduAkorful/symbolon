@@ -1,5 +1,6 @@
 import { TxLink } from "@/components/TxLink";
 import type { DecisionAnchorInfo } from "@/lib/server/anchoring";
+import { formatDateTime } from "@/lib/format";
 
 interface Props {
   anchor: DecisionAnchorInfo;
@@ -53,7 +54,7 @@ export function AnchorProof({ anchor, explorerUrl }: Props) {
         {anchor.blockTime ? (
           <>
             <dt className="text-graphite">Anchored at</dt>
-            <dd className="text-ink">{new Date(anchor.blockTime).toLocaleString()}</dd>
+            <dd className="text-ink">{formatDateTime(new Date(anchor.blockTime))}</dd>
           </>
         ) : null}
 

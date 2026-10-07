@@ -7,6 +7,7 @@ import gsap from "gsap";
 import { Wordmark } from "@/components/Marks";
 import { postJson } from "@/lib/client/api";
 import { D, E, registerMotion } from "@/lib/motion";
+import { Address } from "@/components/Address";
 
 const steps = ["Your Seal", "Getting paid"] as const;
 const input = "mt-1 w-full rounded-doc border border-rule bg-paper px-3 py-2.5 focus:border-ink focus:outline-none";
@@ -111,7 +112,7 @@ export function Onboarding({ wallet, next = "/vendor" }: { wallet: string | null
               </p>
               {wallet ? (
                 <p className="mt-4 text-sm text-graphite">
-                  Your Seal is the wallet <span className="break-all font-mono">{wallet}</span>.
+                  Your Seal is the wallet <Address value={wallet} full />.
                 </p>
               ) : (
                 <p role="status" className="mt-4 rounded-doc border border-rule p-4 text-sm text-graphite">

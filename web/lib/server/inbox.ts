@@ -11,6 +11,7 @@ import { findDuplicates, matchInvoice } from "@symbolon/steward";
 
 import { requireMember, type Role } from "./access";
 import { appendAppDecision } from "./app-decisions";
+import { CHAIN_READ_DEADLINE_MS, withDeadline } from "./deadline";
 import { AuthError } from "./errors";
 import type { ChainSettings } from "./business";
 import type { SessionUser } from "./session";
@@ -40,6 +41,8 @@ export interface InboxItem {
   dueDate?: Date;
   trust?: TrustState;
   status: string;
+  holdSource?: string | null;
+  holdKind?: string | null;
   createdAt: Date;
   assessment?: { verdict: string; reasons: string[] };
 }
@@ -70,42 +73,56 @@ export async function listInbox(db: Database, client: PublicClient, cfg: ChainSe
   await businessFor(db, cfg, user, businessId);
   await releaseDueSafe(db, cfg, { businessId });
   const rows = await db.select().from(invoices).where(eq(invoices.businessId, businessId)).orderBy(desc(invoices.receivedAt));
-  const items: InboxItem[] = [];
-  for (const row of rows) {
+  // Each invoice is checked on its own; one after another, a long inbox would wait for the sum of every check
+  const checked = await Promise.all(rows.map(async (row) => {
     let trust: TrustState = "failed";
     let document: InvoiceDocument | undefined;
     try {
-      ({ trust, document } = await trustFor(db, client, cfg, row));
+      ({ trust, document } = await withDeadline(trustFor(db, client, cfg, row), CHAIN_READ_DEADLINE_MS, "Checking the invoice"));
     } catch {
       trust = "failed";
     }
-    const matches = filter === "verified" ? trust === "verified" : filter === "new" ? trust === "new_vendor" : filter === "blocked" ? trust === "blocked" : filter === "unsigned" ? false : true;
-    if (matches) {
-      items.push({
-        kind: "invoice",
-        id: row.fingerprint,
-        fingerprint: row.fingerprint,
-        vendor: document?.vendor.name ?? "Invoice can't be read",
-        invoiceNumber: row.invoiceNumber,
-        amount: document ? formatAmount(row.total, document.currency.decimals) : "—",
-        token: document?.currency.symbol ?? "",
-        dueDate: row.dueDate,
-        trust,
-        status: row.status,
-        createdAt: row.receivedAt,
-      });
-    }
+    return { row, trust, document };
+  }));
+  const items: InboxItem[] = checked.map(({ row, trust, document }) => ({
+    kind: "invoice",
+    id: row.fingerprint,
+    fingerprint: row.fingerprint,
+    vendor: document?.vendor.name ?? "Invoice can't be read",
+    invoiceNumber: row.invoiceNumber,
+    amount: document ? formatAmount(row.total, document.currency.decimals) : undefined,
+    token: document?.currency.symbol ?? "",
+    dueDate: row.dueDate,
+    trust,
+    status: row.status,
+    holdSource: row.holdSource,
+    holdKind: row.holdKind,
+    createdAt: row.receivedAt,
+  }));
+  const bills = await db.select().from(unsignedBills).where(eq(unsignedBills.businessId, businessId)).orderBy(desc(unsignedBills.createdAt));
+  items.push(...bills.map((bill) => {
+    const assessment = bill.assessment as { verdict?: string; reasons?: string[] };
+    const extraction = bill.extraction as { vendorName?: string };
+    return { kind: "unsigned" as const, id: bill.id, vendor: extraction.vendorName ?? "Unsigned bill", status: bill.status, createdAt: bill.createdAt, assessment: { verdict: assessment.verdict ?? "unsigned", reasons: assessment.reasons ?? [] } };
+  }));
+  items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  return filterInbox(items, filter);
+}
+
+/** The filter pills: which items belong under each. Signed invoices by the vendor's trust; "unsigned" is only the unsigned bills. */
+export function filterInbox(items: InboxItem[], filter: InboxFilter): InboxItem[] {
+  switch (filter) {
+    case "verified":
+      return items.filter((i) => i.kind === "invoice" && i.trust === "verified");
+    case "new":
+      return items.filter((i) => i.kind === "invoice" && i.trust === "new_vendor");
+    case "blocked":
+      return items.filter((i) => i.kind === "invoice" && i.trust === "blocked");
+    case "unsigned":
+      return items.filter((i) => i.kind === "unsigned");
+    default:
+      return items;
   }
-  if (filter === "all" || filter === "unsigned") {
-    const bills = await db.select().from(unsignedBills).where(eq(unsignedBills.businessId, businessId)).orderBy(desc(unsignedBills.createdAt));
-    items.push(...bills.map((bill) => {
-      const assessment = bill.assessment as { verdict?: string; reasons?: string[] };
-      const extraction = bill.extraction as { vendorName?: string };
-      return { kind: "unsigned" as const, id: bill.id, vendor: extraction.vendorName ?? "Unsigned bill", status: bill.status, createdAt: bill.createdAt, assessment: { verdict: assessment.verdict ?? "unsigned", reasons: assessment.reasons ?? [] } };
-    }));
-    items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-  }
-  return items;
 }
 
 export async function loadInvoiceDetail(db: Database, client: PublicClient, cfg: ChainSettings, user: Pick<SessionUser, "id">, businessId: string, fingerprint: string) {

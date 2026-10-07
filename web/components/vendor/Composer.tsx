@@ -11,6 +11,7 @@ import { postJson } from "@/lib/client/api";
 import { D, E, registerMotion, strike } from "@/lib/motion";
 import type { FromFile, Prefill } from "@/lib/server/upload";
 import { signInvoice } from "./seal-signer";
+import { Address } from "@/components/Address";
 
 export interface ClientOption {
   id: string;
@@ -154,7 +155,7 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
             </p>
           ) : (
             <p className="mt-4 text-sm text-graphite">
-              Signing as <span className="break-all font-mono">{signer.address}</span>
+              Signing as <Address value={signer.address} full />
             </p>
           )}
           <div className="mt-6 flex flex-wrap gap-3">
@@ -262,7 +263,7 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
             <p className="text-xs text-graphite">A business on Symbolon can share its Vault address with you. Symbolon doesn’t list businesses.</p>
           </div>
         ) : chosen ? (
-          <p className="break-all font-mono text-xs text-graphite">{chosen.vault ?? chosen.email}</p>
+          <p className="break-all text-xs text-graphite">{chosen.vault ? <Address value={chosen.vault} full /> : chosen.email}</p>
         ) : null}
       </fieldset>
 

@@ -12,6 +12,7 @@ import { signTypedData } from "@/components/vendor/seal-signer";
 import type { ApprovalItem, ApprovalsListResult } from "@/lib/server/approvals";
 import type { businessOffers } from "@/lib/server/offers";
 import { BusinessOffers } from "@/components/inbox/BusinessOffers";
+import { formatDay, showMoney } from "@/lib/format";
 
 interface Props {
   businessId: string;
@@ -233,7 +234,7 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
                 <div className="mt-4 flex flex-wrap items-baseline justify-between gap-2">
                   <h3 className="text-xl font-medium text-ink">{item.vendor.name}</h3>
                   <div className="font-mono text-2xl font-medium text-ink">
-                    ${item.amountFormatted} <span className="text-sm font-normal text-graphite">{item.token}</span>
+                    {showMoney(item.amountFormatted, item.token)}
                   </div>
                 </div>
 
@@ -243,8 +244,8 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
                   {item.explanation ? (
                     <p className="mt-1 text-xs text-graphite">{item.explanation}</p>
                   ) : null}
-                  <p className="mt-2 text-xs font-mono uppercase tracking-wider text-graphite">
-                    Rule triggered: {item.ruleNeededHuman} ({item.requiredLevel} sign-off required)
+                  <p className="mt-2 text-xs text-graphite">
+                    Why it needs a person: {item.ruleNeededHuman}. {item.requiredLevel === "owner" ? "The owner has to sign it off." : "An approver or the owner can sign it off."}
                   </p>
                 </div>
 
@@ -348,7 +349,7 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
                       {ans.kind === "approval_granted" ? "Approval granted" : "Approval rejected"}
                     </span>
                     <span className="text-xs text-graphite">
-                      {new Date(ans.createdAt).toLocaleDateString()}
+                      {formatDay(new Date(ans.createdAt))}
                     </span>
                   </div>
                   {ans.reason ? <p className="mt-1 text-xs text-graphite">Reason: {ans.reason}</p> : null}
@@ -386,7 +387,7 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
               <div className="flex justify-between py-2">
                 <dt className="text-graphite">Payment amount</dt>
                 <dd className="font-mono font-medium text-ink">
-                  ${payNowItem.amountFormatted} {payNowItem.token}
+                  {showMoney(payNowItem.amountFormatted, payNowItem.token)}
                 </dd>
               </div>
               <div className="flex justify-between py-2">
@@ -438,7 +439,7 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
               <div className="flex justify-between py-2">
                 <dt className="text-graphite">Credit to settle</dt>
                 <dd className="font-mono font-medium text-ink">
-                  ${signItem.amountFormatted} {signItem.token}
+                  {showMoney(signItem.amountFormatted, signItem.token)}
                 </dd>
               </div>
               <div className="flex justify-between py-2">

@@ -9,6 +9,8 @@ import { TxLink } from "@/components/TxLink";
 import { postJson } from "@/lib/client/api";
 import { D, E, registerMotion } from "@/lib/motion";
 import { sendCall, wasRejected, type SignerPlan } from "./owner-signer";
+import { showAmount } from "@/lib/format";
+import { Address } from "@/components/Address";
 
 /** What the chain says about the Steward of a Vault we know (plan 05h, H13): only "paused" (or "none", an older Vault with no Steward) lets the wizard on to Fund */
 export type Standing = "paused" | "active" | "unknown" | "mismatch" | "none";
@@ -27,7 +29,7 @@ const steps = ["Business", "Policy", "Vault", "Fund"] as const;
 const input = "mt-1 w-full rounded-doc border border-rule bg-paper px-3 py-2.5 focus:border-ink focus:outline-none";
 const primary = "rounded-doc bg-ink px-5 py-3 font-medium text-paper disabled:opacity-40";
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const fmt = (raw: string, decimals: number) => Number(formatUnits(BigInt(raw), decimals)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+const fmt = (raw: string, decimals: number) => showAmount(formatUnits(BigInt(raw), decimals));
 const message = (e: unknown) => (wasRejected(e) ? "You closed the wallet's request, so nothing was sent." : e instanceof Error ? e.message : "Something went wrong.");
 
 type Balance = { ok: true; usdc: string; decimals: number; block: string } | { ok: false; error?: string; reason?: string };
@@ -203,13 +205,13 @@ export function Setup(props: SetupProps) {
               </p>
             ) : (
               <p className="mt-6 text-sm text-graphite">
-                Owner: <span className="break-all font-mono">{props.signer.address}</span>
+                Owner: <Address value={props.signer.address} full />
               </p>
             )}
             {business?.vault ? (
               <div className="mt-8 border-t border-ink pt-4">
                 <p className="text-sm text-graphite">Your Vault on Arc</p>
-                <p className="break-all font-mono text-xl">{business.vault}</p>
+                <p className="text-xl"><Address value={business.vault} full /></p>
                 <p className="mt-2 flex flex-wrap gap-x-4 text-sm">
                   {vaultTx ? <TxLink href={`${props.explorer}/tx/${vaultTx}`} label={`View the creation transaction ${vaultTx} on the Arc explorer`}>Created in transaction {vaultTx.slice(0, 10)}…{vaultTx.slice(-6)}</TxLink> : null}
                   <TxLink href={`${props.explorer}/address/${business.vault}`} label="View the Vault on the Arc explorer">View the Vault on the explorer</TxLink>
@@ -331,7 +333,7 @@ function Fund({ business, props, standing, run, busy, discover }: { business: { 
         )}
         <div className="mt-8 border-t border-rule pt-4 text-sm">
           <p className="text-graphite">Or send USDC to the Vault’s address on Arc from anywhere that can:</p>
-          <p className="mt-2 break-all font-mono">{business.vault}</p>
+          <p className="mt-2"><Address value={business.vault} full /></p>
           <div className="mt-2 flex flex-wrap gap-x-4">
             <button
               type="button"

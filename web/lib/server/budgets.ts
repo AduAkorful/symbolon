@@ -7,6 +7,7 @@ import { budgets, businesses, type Database } from "@symbolon/db";
 import { AuthError } from "./errors";
 import { requireMember } from "./access";
 import { prepareChange, recordChange, listQueuedChanges } from "./queued-change";
+import { isUnlimitedCap } from "../format";
 import { usd } from "./policy-text";
 
 export const OPERATING_BUDGET: Hex =
@@ -124,9 +125,9 @@ export async function listBudgets(
       id: OPERATING_BUDGET,
       name: "Operating",
       isOperating: true,
-      cap: opCap === 2n ** 256n - 1n ? "Unlimited" : usd(opCap),
+      cap: isUnlimitedCap(opCap) ? "Unlimited" : usd(opCap),
       spent: usd(opSpent),
-      remaining: opCap === 2n ** 256n - 1n ? "Unlimited" : usd(opRemaining),
+      remaining: isUnlimitedCap(opCap) ? "Unlimited" : usd(opRemaining),
       periodLengthSeconds: Number(opPeriodLength),
       periodLengthLabel: periodLabel(opPeriodLength),
       periodIndex: Number(operatingOnchain.periodIndex),

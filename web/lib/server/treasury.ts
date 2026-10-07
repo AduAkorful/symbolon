@@ -1,6 +1,7 @@
 import "server-only";
 
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { isUnlimitedCap } from "../format";
 import {
   decodeEventLog,
   encodeFunctionData,
@@ -80,7 +81,8 @@ export interface TreasuryState {
     reserveBps: number;
   } | null;
   budget: {
-    cap: string;
+    /** null = the Vault has no cap on this budget (the uint256 maximum), which is a setting and not an amount */
+    cap: string | null;
     spent: string;
     periodLengthDays: number;
   } | null;
@@ -253,7 +255,7 @@ export async function loadTreasury(
       const currentPeriodIndex = bgt.periodLength > 0n ? nowBn / bgt.periodLength : 0n;
       const spentThisPeriod = bgt.periodIndex === currentPeriodIndex ? bgt.spent : 0n;
       budgetInfo = {
-        cap: formatUnits(bgt.cap, usdcDecimals),
+        cap: isUnlimitedCap(bgt.cap) ? null : formatUnits(bgt.cap, usdcDecimals),
         spent: formatUnits(spentThisPeriod, usdcDecimals),
         periodLengthDays: Number(bgt.periodLength / 86400n),
       };

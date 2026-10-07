@@ -8,6 +8,7 @@ import { listMyInvoices } from "@/lib/server/invoice-send";
 import { loadSpaces } from "@/lib/server/space";
 import { showAmount, showDate } from "@/lib/format";
 import { toneClass, vendorStatus } from "@/lib/invoice-status";
+import { Address } from "@/components/Address";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ export default async function VendorHome() {
       <div className="max-w-[760px]">
         <h1 className="font-display text-4xl leading-tight">{seal.displayName}</h1>
         <p className="mt-2 text-graphite">
-          <span className="font-mono">@{seal.handle}</span> · your Seal is <span className="break-all font-mono text-xs">{seal.address}</span>
+          <span className="font-mono">@{seal.handle}</span> · your Seal is <Address value={seal.address} full className="text-xs" />
         </p>
 
         <div className="mt-8 flex flex-wrap items-center gap-4">
@@ -46,13 +47,13 @@ export default async function VendorHome() {
               const st = vendorStatus(i.status);
               return (
                 <li key={i.fingerprint} className="border-b border-rule-soft">
-                  <Link href={`/vendor/invoices/${i.fingerprint}`} className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 py-3 hover:bg-rule-soft/40 sm:grid-cols-[6rem_1fr_auto_6rem]">
+                  <Link href={`/vendor/invoices/${i.fingerprint}`} className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 py-3 hover:bg-rule-soft/40 sm:grid-cols-[6rem_1fr_auto_auto]">
                     <span className="font-mono">No. {i.invoiceNumber}</span>
                     <span className="min-w-0 truncate">{i.clientName}</span>
                     <span className="tabular-nums sm:text-right">
                       {showAmount(i.total)} {i.symbol}
                     </span>
-                    <span className={`text-xs sm:text-right ${toneClass[st.tone]}`}>
+                    <span className={`whitespace-nowrap text-xs sm:text-right ${toneClass[st.tone]}`}>
                       {st.label} · due {showDate(Math.floor(i.dueDate.getTime() / 1000))}
                     </span>
                   </Link>

@@ -44,8 +44,11 @@ export async function checkInvoice(
   const status = await invoiceStatus(contracts, fp);
   if (!status.seen) return { verification, status, settlements: [] };
 
+  // Nothing credited means nothing settled: no need to read the history at all
+  if (status.credited === 0n) return { verification, status, settlements: [] };
+
   const settled = getAbiItem({ abi: invoiceLedgerAbi, name: "Settled" });
-  const { logs } = await scanLogs(client, { address: deployment.contracts.invoiceLedger, events: [settled], fromBlock: deployment.startBlock });
+  const { logs } = await scanLogs(client, { address: deployment.contracts.invoiceLedger, events: [settled], fromBlock: deployment.startBlock, concurrency: 2 });
   const mine = logs.filter((l) => l.args.fingerprint?.toLowerCase() === fp.toLowerCase());
   const settlements = await Promise.all(
     mine.map(async (l) => ({

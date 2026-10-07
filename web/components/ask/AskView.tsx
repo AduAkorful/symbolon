@@ -75,7 +75,7 @@ export function AskView({
   }
 
   return (
-    <div className="mx-auto flex min-h-[calc(100vh-10rem)] max-w-3xl flex-col">
+    <div className="flex min-h-[calc(100vh-10rem)] max-w-3xl flex-col">
       <div className="border-b border-rule pb-4">
         <h1 className="font-display text-4xl">Ask the Steward</h1>
         <p className="mt-1 text-sm text-graphite">

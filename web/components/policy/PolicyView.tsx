@@ -239,7 +239,7 @@ export function PolicyView({
   ];
 
   return (
-    <article className="mx-auto max-w-[960px] pb-24 pt-10">
+    <article className="max-w-[960px] pb-24">
       <div className="flex flex-wrap items-baseline justify-between gap-4">
         <div>
           <p className="font-mono text-xs uppercase tracking-[0.14em] text-graphite">
@@ -620,7 +620,6 @@ export function PolicyView({
                     </div>
                     <div className="text-right">
                       <p className="font-mono text-sm font-medium">{rule.formatted}</p>
-                      <p className="font-mono text-[11px] text-graphite">raw: {rule.raw}</p>
                     </div>
                   </li>
                 ))}

@@ -5,6 +5,7 @@ import { usePrivy } from "@privy-io/react-auth";
 import { useWallets } from "@privy-io/react-auth";
 import { encodeFunctionData, type Hex } from "viem";
 import { Overlay } from "@/components/Overlay";
+import { formatDay, usd } from "@/lib/format";
 
 // ─── Types mirrored from the server (BigInt fields as string) ────────────────
 
@@ -29,20 +30,27 @@ interface OrderView {
 
 type Step = "idle" | "signing" | "recording" | "done" | "error";
 
+/** A vendor this business already knows, by the name people use for them */
+export interface KnownVendor {
+  seal: string;
+  name: string;
+}
+
 interface OrdersProps {
   businessId: string;
   initial: OrderView[];
+  vendors: KnownVendor[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function formatRaw(raw: string, label = "token units"): string {
-  // raw is a bigint string of 6-decimal USDC/EURC units
-  const n = BigInt(raw);
-  const units = Number(n / 1_000_000n);
-  const frac = String(n % 1_000_000n).padStart(6, "0").replace(/0+$/, "") || "00";
-  return `${units.toLocaleString()}.${frac.slice(0, 2)} ${label}`;
+/** Order amounts are in the Vault's accounting unit (6 decimals): dollars */
+function formatRaw(raw: string): string {
+  return usd(BigInt(raw));
 }
+
+const shortSeal = (seal: string) => `${seal.slice(0, 8)}…${seal.slice(-4)}`;
+const vendorName = (vendors: KnownVendor[], seal: string) => vendors.find((v) => v.seal.toLowerCase() === seal.toLowerCase())?.name ?? shortSeal(seal);
 
 async function post(url: string, body: unknown) {
   const res = await fetch(url, {
@@ -57,7 +65,7 @@ async function post(url: string, body: unknown) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function OrdersClient({ businessId, initial }: OrdersProps) {
+export function OrdersClient({ businessId, initial, vendors }: OrdersProps) {
   const [orders, setOrders] = useState<OrderView[]>(initial);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -102,7 +110,7 @@ export function OrdersClient({ businessId, initial }: OrdersProps) {
           <thead>
             <tr className="text-left text-xs text-graphite">
               <th className="py-3 pr-4 font-normal">Order</th>
-              <th className="py-3 pr-4 font-normal">Vendor seal</th>
+              <th className="py-3 pr-4 font-normal">Vendor</th>
               <th className="py-3 pr-4 font-normal">Kind</th>
               <th className="py-3 pr-4 text-right font-normal">Amount</th>
               <th className="py-3 pr-4 text-right font-normal">Remaining</th>
@@ -125,6 +133,7 @@ export function OrdersClient({ businessId, initial }: OrdersProps) {
                   onToggle={() => setExpanded(expanded === o.poRef ? null : o.poRef)}
                   businessId={businessId}
                   wallets={wallets}
+                  vendors={vendors}
                   onMutate={reload}
                 />
               ))
@@ -134,7 +143,7 @@ export function OrdersClient({ businessId, initial }: OrdersProps) {
       </div>
 
       {creating ? (
-        <NewOrderSheet businessId={businessId} wallets={wallets} onClose={() => setCreating(false)} onMutate={reload} />
+        <NewOrderSheet businessId={businessId} wallets={wallets} vendors={vendors} onClose={() => setCreating(false)} onMutate={reload} />
       ) : null}
     </div>
   );
@@ -148,6 +157,7 @@ function OrderRow({
   onToggle,
   businessId,
   wallets,
+  vendors,
   onMutate,
 }: {
   order: OrderView;
@@ -155,6 +165,7 @@ function OrderRow({
   onToggle: () => void;
   businessId: string;
   wallets: ReturnType<typeof useWallets>["wallets"];
+  vendors: KnownVendor[];
   onMutate: () => void;
 }) {
   const closed = Boolean(o.closedAt);
@@ -177,9 +188,7 @@ function OrderRow({
             {open ? "▾" : "▸"} {o.poNumber}
           </button>
         </td>
-        <td className="pr-4 font-mono text-xs text-graphite">
-          {o.seal.slice(0, 8)}…{o.seal.slice(-4)}
-        </td>
+        <td className="pr-4 text-sm">{vendorName(vendors, o.seal)}</td>
         <td className="pr-4 text-sm capitalize">{o.kind.replace("_", "-")}</td>
         <td className="pr-4 text-right tabular-nums">{formatRaw(o.amount)}</td>
         <td className="pr-4 text-right tabular-nums">{remaining ?? "—"}</td>
@@ -245,7 +254,7 @@ function OrderDetail({
           ["Amount", formatRaw(o.amount)],
           ["Invoiced", o.invoiceCount > 0 ? `${formatRaw(o.invoicedTotal)} across ${o.invoiceCount} invoice${o.invoiceCount === 1 ? "" : "s"}` : "No invoices yet"],
           ["Paid", formatRaw(o.paidTotal)],
-          ["Release after", o.releaseAfter ? new Date(o.releaseAfter).toISOString().slice(0, 10) : "No release date"],
+          ["Release after", o.releaseAfter ? formatDay(o.releaseAfter, { year: "always" }) : "No release date"],
           ["Opened", o.openTx ? <a key="tx" href={`https://explorer.arc.net/tx/${o.openTx}`} target="_blank" rel="noreferrer" className="underline decoration-rule underline-offset-4">{`tx ${o.openTx.slice(0, 10)}…`}</a> : "Not recorded"],
         ].map(([k, v]) => (
           <div key={String(k)} className="flex gap-3">
@@ -267,7 +276,7 @@ function OrderDetail({
           </div>
         ) : (
           <p className="text-sm text-graphite">
-            Closed {o.closedAt ? new Date(o.closedAt).toISOString().slice(0, 10) : ""}
+            Closed {o.closedAt ? formatDay(o.closedAt, { year: "always" }) : ""}
             {o.closedTx ? (
               <>
                 {" · "}
@@ -383,11 +392,13 @@ function CloseButton({
 function NewOrderSheet({
   businessId,
   wallets,
+  vendors,
   onClose,
   onMutate,
 }: {
   businessId: string;
   wallets: ReturnType<typeof useWallets>["wallets"];
+  vendors: KnownVendor[];
   onClose: () => void;
   onMutate: () => void;
 }) {
@@ -397,7 +408,10 @@ function NewOrderSheet({
   const [vendorWarning, setVendorWarning] = useState<string | null>(null);
 
   const [poNumber, setPoNumber] = useState("");
-  const [sealInput, setSealInput] = useState("");
+  // a vendor the business already knows is picked by name; a new one is entered by the address on their invoice
+  const [pickedSeal, setPickedSeal] = useState(vendors[0]?.seal ?? "other");
+  const [otherSeal, setOtherSeal] = useState("");
+  const sealInput = pickedSeal === "other" ? otherSeal : pickedSeal;
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [releaseDate, setReleaseDate] = useState("");
@@ -465,22 +479,39 @@ function NewOrderSheet({
         </label>
 
         <label className="block text-sm">
-          Vendor Seal address
-          <input
-            id="input-vendor-seal"
-            required
-            value={sealInput}
-            onChange={(e) => setSealInput(e.target.value)}
-            placeholder="0x…"
-            className="mt-1 w-full rounded-doc border border-rule bg-paper px-3 py-2 font-mono text-xs"
-          />
-          <span className="mt-1 block text-xs text-graphite">
-            The vendor's signing key — find it on their invoice or their Symbolon profile.
-          </span>
+          Vendor
+          <select
+            id="input-vendor"
+            value={pickedSeal}
+            onChange={(e) => setPickedSeal(e.target.value)}
+            className="mt-1 w-full rounded-doc border border-rule bg-paper px-3 py-2"
+          >
+            {vendors.map((v) => (
+              <option key={v.seal} value={v.seal}>{v.name}</option>
+            ))}
+            <option value="other">Another vendor…</option>
+          </select>
         </label>
 
+        {pickedSeal === "other" ? (
+          <label className="block text-sm">
+            Their Seal address
+            <input
+              id="input-vendor-seal"
+              required
+              value={otherSeal}
+              onChange={(e) => setOtherSeal(e.target.value)}
+              placeholder="0x…"
+              className="mt-1 w-full rounded-doc border border-rule bg-paper px-3 py-2 font-mono text-xs"
+            />
+            <span className="mt-1 block text-xs text-graphite">
+              It's on their invoice and on their Symbolon profile.
+            </span>
+          </label>
+        ) : null}
+
         <label className="block text-sm">
-          Amount (in token units, e.g. 14000.00 for $14,000.00 USDC)
+          Amount in dollars (for example 14000.00)
           <input
             id="input-amount"
             required

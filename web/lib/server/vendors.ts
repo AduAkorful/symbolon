@@ -87,3 +87,19 @@ export async function vendorDetail(db: Database, client: PublicClient, deploymen
     })),
   };
 }
+
+/**
+ * The vendors this business already deals with, by the name people use: its payees and the vendors that have sent it an
+ * invoice. Names only, no chain reads, so a form can offer them without waiting. A vendor with no name on file shows its address.
+ */
+export async function listKnownVendors(db: Database, businessId: string): Promise<{ seal: string; name: string }[]> {
+  const fromPayees = await db.select({ seal: payees.seal }).from(payees).where(eq(payees.businessId, businessId));
+  const fromInvoices = await db.selectDistinct({ seal: invoices.seal }).from(invoices).where(eq(invoices.businessId, businessId));
+  const sealAddresses = [...new Set([...fromPayees, ...fromInvoices].map((r) => r.seal.toLowerCase()))];
+  if (sealAddresses.length === 0) return [];
+  const names = await db.select({ address: seals.address, displayName: seals.displayName, handle: seals.handle }).from(seals).where(inArray(seals.address, sealAddresses));
+  const byAddress = new Map(names.map((n) => [n.address.toLowerCase(), n.displayName ?? n.handle]));
+  return sealAddresses
+    .map((seal) => ({ seal, name: byAddress.get(seal) ?? `${seal.slice(0, 8)}…${seal.slice(-4)}` }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}

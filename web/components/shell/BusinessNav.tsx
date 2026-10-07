@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 
 /**
  * Business sidebar navigation. Only screens that exist are listed; later plans append their entries here when they
  * build the screen. Counts are shown only when a server value backs them — never from client state.
  *
- * On desktop: vertical list in the aside. On mobile: horizontally scrolling row pinned below the header.
+ * On desktop: vertical list in the aside. On a phone: one "Menu" button showing where you are; it opens the whole list, so
+ * no entry is hidden off the edge of a strip.
  */
 export function BusinessNav({
   inboxCount,
@@ -19,6 +21,12 @@ export function BusinessNav({
   hasReleaseNudge?: boolean;
 }) {
   const path = usePathname();
+  const [open, setOpen] = useState(false);
+
+  // moving to another screen closes the phone menu
+  useEffect(() => {
+    setOpen(false);
+  }, [path]);
 
   const nav: { name: string; href: string; count?: number; hasDot?: boolean }[] = [
 
@@ -35,19 +43,35 @@ export function BusinessNav({
     { name: "Team", href: "/business/team" },
     { name: "Policy", href: "/business/policy" },
     { name: "Settings", href: "/business/settings", hasDot: hasReleaseNudge },
+    { name: "Ask the Steward", href: "/business/ask" },
   ];
 
 
   const isActive = (href: string) =>
     href === "/business" ? path === "/business" : path.startsWith(href);
 
+  const here = nav.find((item) => isActive(item.href))?.name ?? "Menu";
+
   return (
-    <nav aria-label="Business" className="overflow-x-auto md:overflow-x-visible">
-      <ul className="flex gap-1 px-3 py-1 md:flex-col md:gap-0.5 md:py-2">
+    <nav aria-label="Business">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls="business-nav-list"
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center justify-between border-t border-rule px-6 py-3 text-left text-[15px] md:hidden"
+      >
+        <span>
+          <span className="text-graphite">Menu · </span>
+          <span className="font-medium">{here}</span>
+        </span>
+        <span aria-hidden className="text-graphite">{open ? "▴" : "▾"}</span>
+      </button>
+      <ul id="business-nav-list" className={`${open ? "flex" : "hidden"} flex-col gap-0.5 px-3 py-2 md:flex`}>
         {nav.map((item) => {
           const active = isActive(item.href);
           return (
-            <li key={item.href} className="shrink-0 md:shrink">
+            <li key={item.href}>
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}

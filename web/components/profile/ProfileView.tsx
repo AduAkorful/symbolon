@@ -7,6 +7,8 @@ import { usePrivy } from "@privy-io/react-auth";
 import { Avatar } from "@/components/Avatar";
 import { postJson } from "@/lib/client/api";
 import type { ProfileData } from "@/lib/server/profile";
+import { formatDateTime } from "@/lib/format";
+import { Address } from "@/components/Address";
 
 export function ProfileView({ initialData }: { initialData: ProfileData }) {
   const router = useRouter();
@@ -62,7 +64,7 @@ export function ProfileView({ initialData }: { initialData: ProfileData }) {
   const userIdentifier = displayName.trim() || initialData.user.email || initialData.user.wallet || "You";
 
   return (
-    <div className="mx-auto max-w-3xl space-y-12">
+    <div className="max-w-3xl space-y-12">
       <div>
         <h1 className="font-display text-4xl">Your profile</h1>
         <p className="mt-1 text-sm text-graphite">
@@ -135,7 +137,7 @@ export function ProfileView({ initialData }: { initialData: ProfileData }) {
                 <dd className="mt-0.5 font-mono text-xs text-ink">
                   {initialData.user.wallet ? (
                     <div className="flex items-center gap-2">
-                      <span className="truncate">{initialData.user.wallet}</span>
+                      <Address value={initialData.user.wallet} full />
                       <button
                         type="button"
                         onClick={handleCopyWallet}
@@ -239,7 +241,7 @@ export function ProfileView({ initialData }: { initialData: ProfileData }) {
                     {sess.isCurrent ? "This device (current session)" : "Active session"}
                   </span>
                   <p className="font-mono text-xs text-graphite">
-                    Last seen: {new Date(sess.lastSeenAt).toLocaleString()}
+                    Last seen: {formatDateTime(new Date(sess.lastSeenAt))}
                   </p>
                 </div>
                 {sess.isCurrent ? (

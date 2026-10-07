@@ -50,3 +50,14 @@ export function stewardStanding(recorded: string | null, state: VaultState): Ste
   if (state.steward === ZERO || getAddress(state.steward) !== getAddress(recorded)) return { kind: "mismatch", onchain: state.steward };
   return { kind: state.paused ? "paused" : "active", steward: getAddress(state.steward), block: state.block };
 }
+
+/**
+ * What the owner's pause control needs: whether the Vault is paused and at which block. Pausing belongs to the Vault, not to
+ * the Steward: a Steward mismatch or a failed read must not take the control away (spec: the owner can always pause). When the
+ * state can't be read the control is still offered, as "pause", and says it couldn't confirm.
+ */
+export type PauseState = { known: true; paused: boolean; block: bigint } | { known: false };
+
+export function pauseStateOf(state: VaultState): PauseState {
+  return state.ok ? { known: true, paused: state.paused, block: state.block } : { known: false };
+}

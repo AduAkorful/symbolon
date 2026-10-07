@@ -8,11 +8,12 @@ import { loadPolicyView } from "../policy-edit";
 import { resolveVendors, type VendorMatch } from "./resolve";
 import { currencyTotals } from "./settlements";
 import type { IntentAnswer, IntentContext, IntentHandler } from "./types";
+import { formatDateTime, formatDay } from "../../format";
 
 // Plan 05y Part C. Every handler here only reads; each answer is a sentence built from what was read, and says where from.
 
-const day = (d: Date) => d.toISOString().slice(0, 10);
-const stamp = (d: Date) => `${d.toISOString().slice(0, 19)}Z`;
+const day = (d: Date) => formatDay(d, { year: "always" });
+const stamp = (d: Date) => formatDateTime(d);
 const OPEN_STATUSES = ["verified", "held", "awaiting_approval", "scheduled", "partially_paid"] as const;
 const RISK_WORDS = ["low", "medium", "high", "blocked"] as const;
 

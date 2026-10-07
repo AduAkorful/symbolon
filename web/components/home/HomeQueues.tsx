@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { AheadSummary, NeedsYouSummary, TodaySummary } from "@/lib/server/home";
+import { formatDateTime, formatDay, showMoney } from "@/lib/format";
 
 interface Props {
   needsYou: NeedsYouSummary;
@@ -72,7 +73,7 @@ export function HomeQueues({ needsYou, today, ahead }: Props) {
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-medium text-ink">{item.vendorName}</span>
                       <span className="font-mono text-ink">
-                        ${item.amountFormatted} {item.token}
+                        {showMoney(item.amountFormatted, item.token)}
                       </span>
                     </div>
                     <p className="mt-1 text-xs text-graphite">
@@ -184,7 +185,7 @@ export function HomeQueues({ needsYou, today, ahead }: Props) {
             Today
           </h2>
           <span className="font-mono text-xs text-graphite">
-            As of {today.asOfTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            As of {formatDateTime(today.asOfTime)}
           </span>
         </div>
 
@@ -194,7 +195,7 @@ export function HomeQueues({ needsYou, today, ahead }: Props) {
               Payments settled today
             </dt>
             <dd className="mt-2 font-mono text-2xl font-medium text-ink">
-              ${today.paymentsAmountFormatted}
+              {showMoney(today.paymentsAmountFormatted, "USDC")}
             </dd>
             <p className="mt-1 text-xs text-graphite">
               {today.paymentsCount} onchain settlement{today.paymentsCount === 1 ? "" : "s"}
@@ -256,7 +257,7 @@ export function HomeQueues({ needsYou, today, ahead }: Props) {
               {ahead.shortfalls.map((sf, idx) => (
                 <div key={idx} className="rounded-doc border border-red/40 bg-red-wash/20 p-4 text-xs text-red">
                   <span className="font-bold">{sf.tokenSymbol} shortfall: </span>
-                  Upcoming bills total {sf.tokenSymbol} {sf.dueFormatted}, which is {sf.tokenSymbol} {sf.shortFormatted} short.
+                  Upcoming bills total {showMoney(sf.dueFormatted, sf.tokenSymbol)}, which is {showMoney(sf.shortFormatted, sf.tokenSymbol)} short.
                 </div>
               ))}
             </div>
@@ -277,10 +278,10 @@ export function HomeQueues({ needsYou, today, ahead }: Props) {
                   </div>
                   <div className="flex items-center gap-4">
                     <span className="text-graphite">
-                      Due {new Date(inv.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      Due {formatDay(inv.dueDate)}
                     </span>
                     <span className="font-mono font-medium text-ink">
-                      {inv.token === "EURC" ? "€" : "$"}{inv.amountFormatted}
+                      {showMoney(inv.amountFormatted, inv.token)}
                     </span>
                   </div>
                 </div>

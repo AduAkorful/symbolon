@@ -9,6 +9,8 @@ import { sendCall, wasRejected, type SignerPlan } from "@/components/setup/owner
 import { TxLink } from "@/components/TxLink";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { postJson } from "@/lib/client/api";
+import { formatDateTime } from "@/lib/format";
+import { Address } from "@/components/Address";
 
 const modes = [
   {
@@ -263,9 +265,7 @@ export function StewardClient({
             <span className="block text-xs uppercase tracking-wider text-graphite">Steward Wallet</span>
             {business.stewardWallet ? (
               <span className="mt-1 block font-mono text-xs">
-                <TxLink href={`${explorer}/address/${business.stewardWallet}`} label="View Steward wallet on explorer">
-                  {business.stewardWallet}
-                </TxLink>
+                <Address value={business.stewardWallet} full explorer={explorer} copy />
               </span>
             ) : (
               <span className="mt-1 block text-amber-500">Not provisioned</span>
@@ -400,7 +400,7 @@ export function StewardClient({
               <span>
                 Last run: <strong className="capitalize text-ink">{lastRun.status}</strong> · Trigger: {lastRun.trigger} · Mode: {lastRun.mode}
               </span>
-              <span>{new Date(lastRun.startedAt).toLocaleString()}</span>
+              <span>{formatDateTime(new Date(lastRun.startedAt))}</span>
             </div>
 
             {lastRun.error ? (
@@ -522,7 +522,7 @@ export function StewardClient({
                   >
                     {d.summary.sentence}
                   </Link>
-                  <span className="text-xs text-graphite">{new Date(d.createdAt).toLocaleString()}</span>
+                  <span className="text-xs text-graphite">{formatDateTime(new Date(d.createdAt))}</span>
                 </div>
                 {d.summary.explanation ? (
                   <p className="mt-1 text-xs italic text-graphite">{d.summary.explanation}</p>

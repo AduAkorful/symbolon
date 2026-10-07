@@ -2,7 +2,7 @@ import "server-only";
 import { and, desc, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
 import { getAddress } from "viem";
 import { formatAmount } from "@symbolon/seal";
-import { showAmount } from "@/lib/format";
+import { formatDateTime, showMoney } from "@/lib/format";
 import {
   businesses,
   chainEvents,
@@ -20,7 +20,7 @@ import { latestInvoicesFor, resolveVendors } from "./resolve";
 import { currencyTotals, intentSettlements } from "./settlements";
 
 function formatUsdc(units: bigint): string {
-  return `${showAmount(formatAmount(units, 6))} USDC`;
+  return showMoney(formatAmount(units, 6), "USDC");
 }
 
 async function resolveIntentUser(ctx: IntentContext): Promise<{ id: string } | null> {
@@ -87,7 +87,7 @@ export const paymentsDueIntent: IntentHandler = {
     return {
       text,
       links,
-      source: `From: stored invoice records at ${now.toISOString().slice(0, 19)}Z`,
+      source: `From: stored invoice records at ${formatDateTime(now)}`,
       intent: "payments_due",
     };
   },
@@ -126,7 +126,7 @@ export const recentPaymentsIntent: IntentHandler = {
     return {
       text,
       links,
-      source: `From: settled ledger records at ${now.toISOString().slice(0, 19)}Z`,
+      source: `From: settled ledger records at ${formatDateTime(now)}`,
       intent: "recent_payments",
     };
   },
@@ -160,7 +160,7 @@ export const heldInvoicesIntent: IntentHandler = {
       return {
         text: "There are currently no held invoices. All invoices in your inbox are flowing or resolved.",
         links: [],
-        source: `From: inbox status at ${now.toISOString().slice(0, 19)}Z`,
+        source: `From: inbox status at ${formatDateTime(now)}`,
         intent: "held_invoices",
       };
     }
@@ -196,7 +196,7 @@ export const heldInvoicesIntent: IntentHandler = {
     return {
       text,
       links,
-      source: `From: inbox holds at ${now.toISOString().slice(0, 19)}Z`,
+      source: `From: inbox holds at ${formatDateTime(now)}`,
       intent: "held_invoices",
     };
   },
@@ -229,7 +229,7 @@ export const awaitingApprovalIntent: IntentHandler = {
       return {
         text: "There are no invoices waiting for your approval right now.",
         links: [["Approvals queue", "/business/approvals"]],
-        source: `From: approvals queue at ${now.toISOString().slice(0, 19)}Z`,
+        source: `From: approvals queue at ${formatDateTime(now)}`,
         intent: "awaiting_approval",
       };
     }
@@ -247,7 +247,7 @@ export const awaitingApprovalIntent: IntentHandler = {
     return {
       text,
       links,
-      source: `From: approvals queue at ${now.toISOString().slice(0, 19)}Z`,
+      source: `From: approvals queue at ${formatDateTime(now)}`,
       intent: "awaiting_approval",
     };
   },
@@ -266,8 +266,8 @@ export const cashPositionIntent: IntentHandler = {
       const user = await resolveIntentUser(ctx);
       if (!user) throw new Error("No user found");
       const treasury = await loadTreasury(ctx.db, ctx.client, ctx.deployment, ctx.businessId, user);
-      const usdcFormatted = treasury.balances.usdc ? `${treasury.balances.usdc.amount} USDC` : "unavailable USDC balance";
-      const eurcFormatted = treasury.balances.eurc ? `${treasury.balances.eurc.amount} EURC` : "unavailable EURC balance";
+      const usdcFormatted = treasury.balances.usdc ? showMoney(treasury.balances.usdc.amount, "USDC") : "unavailable USDC balance";
+      const eurcFormatted = treasury.balances.eurc ? showMoney(treasury.balances.eurc.amount, "EURC") : "unavailable EURC balance";
       const reserveFormatted = treasury.reserve.readAvailable ? `${treasury.reserve.shares} USYC` : "unavailable reserve balance";
 
       const runwayText = treasury.forecast.runwayStatement;
@@ -341,14 +341,14 @@ export const stewardStatusIntent: IntentHandler = {
 
     const mode = biz.stewardMode ?? "shadow";
     const runInfo = lastRun
-      ? `Last cycle completed with status '${lastRun.status}' at ${lastRun.finishedAt ? lastRun.finishedAt.toISOString().slice(11, 19) + "Z" : "in-progress"}.`
+      ? `Last cycle completed with status '${lastRun.status}' at ${lastRun.finishedAt ? formatDateTime(lastRun.finishedAt) : "in-progress"}.`
       : "No cycles have run yet.";
 
     const text = `The Steward is configured in ${mode} mode (onchain standing: ${onchainStatus}). ${runInfo}`;
     return {
       text,
       links: [["Steward control page", "/business/steward"]],
-      source: `From: Steward standing & cycle log at ${now.toISOString().slice(0, 19)}Z`,
+      source: `From: Steward standing & cycle log at ${formatDateTime(now)}`,
       intent: "steward_status",
     };
   },
@@ -420,7 +420,7 @@ export const earlyPaySavingsIntent: IntentHandler = {
     return {
       text,
       links: [["Early Pay Program", "/business/treasury"]],
-      source: `From: settlement records at ${now.toISOString().slice(0, 19)}Z`,
+      source: `From: settlement records at ${formatDateTime(now)}`,
       intent: "early_pay_savings",
     };
   },
@@ -453,7 +453,7 @@ export const whyDecisionIntent: IntentHandler = {
         return {
           text: "No decision records have been created yet for this business.",
           links: [],
-          source: `From: audit log at ${now.toISOString().slice(0, 19)}Z`,
+          source: `From: audit log at ${formatDateTime(now)}`,
           intent: "why_decision",
         };
       }
@@ -466,7 +466,7 @@ export const whyDecisionIntent: IntentHandler = {
           ["View decision detail", `/business/decisions/${latest.id}`],
           ...(fp ? [["View invoice in inbox", `/business/inbox/${fp}`] as [string, string]] : []),
         ],
-        source: `From: decision ${latest.id.slice(0, 8)} at ${latest.createdAt.toISOString().slice(0, 19)}Z`,
+        source: `From: decision ${latest.id.slice(0, 8)} at ${formatDateTime(latest.createdAt)}`,
         intent: "why_decision",
       };
     }
@@ -496,7 +496,7 @@ export const whyDecisionIntent: IntentHandler = {
         return {
           text: `Several vendors match '${target}': ${named.slice(0, 5).map((v) => v.name).join(", ")}. Name one of them.`,
           links: named.slice(0, 5).map((v) => [v.name, `/business/vendors/${v.seal}`] as [string, string]),
-          source: `From: vendor records at ${now.toISOString().slice(0, 19)}Z`,
+          source: `From: vendor records at ${formatDateTime(now)}`,
           intent: "why_decision",
         };
       }
@@ -507,7 +507,7 @@ export const whyDecisionIntent: IntentHandler = {
       return {
         text: `No invoice found matching '${target}'. Check the invoice number or fingerprint in your inbox.`,
         links: [["Open inbox", "/business/inbox"]],
-        source: `From: search at ${now.toISOString().slice(0, 19)}Z`,
+        source: `From: search at ${formatDateTime(now)}`,
         intent: "why_decision",
       };
     }
@@ -520,7 +520,7 @@ export const whyDecisionIntent: IntentHandler = {
           `Invoice ${c.invoiceNumber ?? c.fingerprint.slice(0, 8)}`,
           `/business/inbox/${c.fingerprint}`,
         ]),
-        source: `From: search at ${now.toISOString().slice(0, 19)}Z`,
+        source: `From: search at ${formatDateTime(now)}`,
         intent: "why_decision",
       };
     }
@@ -542,7 +542,7 @@ export const whyDecisionIntent: IntentHandler = {
       return {
         text: `Invoice ${matched.invoiceNumber ?? matched.fingerprint.slice(0, 8)} is in your records, but no Steward decision has evaluated it yet.`,
         links: [["View in inbox", `/business/inbox/${matched.fingerprint}`]],
-        source: `From: inbox at ${now.toISOString().slice(0, 19)}Z`,
+        source: `From: inbox at ${formatDateTime(now)}`,
         intent: "why_decision",
       };
     }
@@ -554,7 +554,7 @@ export const whyDecisionIntent: IntentHandler = {
         ["View decision detail", `/business/decisions/${dec.id}`],
         ["View in inbox", `/business/inbox/${matched.fingerprint}`],
       ],
-      source: `From: decision ${dec.id.slice(0, 8)} at ${dec.createdAt.toISOString().slice(0, 19)}Z`,
+      source: `From: decision ${dec.id.slice(0, 8)} at ${formatDateTime(dec.createdAt)}`,
       intent: "why_decision",
     };
   },

@@ -8,7 +8,6 @@ import {
   paymentsCsv,
   reconcile,
   resolveTokenSymbol,
-  syncLedger,
   syncVault,
   type Mismatch,
 } from "@symbolon/core";
@@ -26,6 +25,7 @@ import {
 import { symbolonContracts, type Deployment, type SymbolonContracts } from "@symbolon/chain";
 import type { PublicClient, ReadContractParameters } from "viem";
 import { requireMember } from "./access";
+import { syncToHead } from "./sync";
 import { appendAppDecision } from "./app-decisions";
 import { AuthError } from "./errors";
 import type { SessionUser } from "./session";
@@ -305,7 +305,9 @@ export async function resyncLedger(
   const [biz] = await db.select().from(businesses).where(eq(businesses.id, businessId));
   if (!biz) throw new AuthError(404, "Business not found");
 
-  await syncLedger(db, client, contracts, deployment);
+  // Comparing with a partly copied ledger would report mismatches that aren't there: wait for the copy or say it isn't ready
+  const caughtUp = await syncToHead(db, client, { chainId: deployment.chainId, deployment }, { contracts });
+  if (!caughtUp.ok) throw new AuthError(503, caughtUp.reason);
 
   if (biz.vault) {
     await syncVault(db, client, deployment, biz.vault as `0x${string}`);

@@ -140,6 +140,75 @@ describe("scanLogs", () => {
     // contiguous, no gaps or overlaps
     for (let i = 1; i < ranges.length; i++) expect(ranges[i]![0]).toBe(ranges[i - 1]![1] + 1n);
   });
+
+  it("reads ranges in parallel without gaps or overlaps, and returns logs in block order", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const ranges: [bigint, bigint][] = [];
+    const client = {
+      getLogs: vi.fn(async ({ fromBlock, toBlock }: { fromBlock: bigint; toBlock: bigint }) => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await new Promise((r) => setTimeout(r, 5));
+        inFlight--;
+        ranges.push([fromBlock, toBlock]);
+        // later ranges answer first, so ordering must come from the sort, not from arrival
+        return [{ blockNumber: toBlock, logIndex: 0 }];
+      }),
+    } as unknown as PublicClient;
+    const result = await scanLogs(client, {
+      address: "0x0000000000000000000000000000000000000001",
+      events,
+      fromBlock: 1n,
+      toBlock: 1_000n,
+      chunk: 100n,
+      minChunk: 100n,
+      concurrency: 4,
+    });
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(4);
+    const sorted = [...ranges].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+    expect(sorted).toHaveLength(10);
+    sorted.forEach((r, i) => expect(r).toEqual([BigInt(i) * 100n + 1n, BigInt(i + 1) * 100n]));
+    const blocks = result.logs.map((l) => l.blockNumber);
+    expect(blocks).toEqual([...blocks].sort((a, b) => (a < b ? -1 : 1)));
+    expect(result.scannedTo).toBe(1_000n);
+  });
+
+  it("waits and asks again when the provider says it is rate limiting, instead of asking for less", async () => {
+    const asked: bigint[] = [];
+    let limited = 2;
+    const client = {
+      getLogs: vi.fn(async ({ fromBlock, toBlock }: { fromBlock: bigint; toBlock: bigint }) => {
+        asked.push(toBlock - fromBlock + 1n);
+        if (limited-- > 0) throw new Error("rate limit exceeded");
+        return [];
+      }),
+    } as unknown as PublicClient;
+    const result = await scanLogs(client, { address: "0x0000000000000000000000000000000000000001", events, fromBlock: 1n, toBlock: 1_000n, chunk: 1_000n, minChunk: 100n, backoffMs: 1 });
+    expect(result.scannedTo).toBe(1_000n);
+    expect(asked).toEqual([1_000n, 1_000n, 1_000n]); // the same range, never a smaller one
+  });
+
+  it("gives up with the provider's own error when the rate limit doesn't lift", async () => {
+    const client = { getLogs: vi.fn(async () => { throw new Error("Request exceeds defined limit."); }) } as unknown as PublicClient;
+    await expect(
+      scanLogs(client, { address: "0x0000000000000000000000000000000000000001", events, fromBlock: 1n, toBlock: 1_000n, chunk: 1_000n, backoffMs: 1 }),
+    ).rejects.toThrow(/exceeds defined limit/);
+    expect(client.getLogs).toHaveBeenCalledTimes(5); // one try and four more after waiting
+  });
+
+  it("stops and throws when a range can't be read even at the smallest size", async () => {
+    const client = {
+      getLogs: vi.fn(async ({ fromBlock }: { fromBlock: bigint }) => {
+        if (fromBlock > 300n) throw new Error("rpc down");
+        return [];
+      }),
+    } as unknown as PublicClient;
+    await expect(
+      scanLogs(client, { address: "0x0000000000000000000000000000000000000001", events, fromBlock: 1n, toBlock: 1_000n, chunk: 200n, minChunk: 100n, concurrency: 3 }),
+    ).rejects.toThrow("rpc down");
+  });
 });
 
 import { cctpMaxFee, ledgerCall } from "../src/index.js";

@@ -14,6 +14,7 @@ import { quoteConversion, convert } from "@symbolon/kits";
 import { ForecastChart, type ForecastEvent, type ForecastDate } from "./ForecastChart";
 import { QueuedChangeList } from "@/components/QueuedChange";
 import type { TreasuryState } from "@/lib/server/treasury";
+import { formatDay } from "@/lib/format";
 
 interface TreasuryViewProps {
   businessId: string;
@@ -90,12 +91,12 @@ export function TreasuryView({
     const dt = new Date(Date.now() + d * 86_400_000);
     return {
       day: d,
-      label: dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      label: formatDay(dt),
     };
   });
 
   return (
-    <main className="px-6 pb-24 pt-10 md:px-10 max-w-7xl mx-auto">
+    <div className="max-w-[1180px] pb-24">
       <div className="flex flex-wrap items-baseline justify-between gap-4">
         <div>
           <h1 className="font-display text-4xl md:text-5xl">Treasury</h1>
@@ -269,10 +270,12 @@ export function TreasuryView({
                 <div className="flex items-baseline justify-between text-sm">
                   <span className="font-medium">Operating budget</span>
                   <span className="tabular-nums text-graphite">
-                    {usd(state.budget.spent)} of {usd(state.budget.cap)} ({state.budget.periodLengthDays} days)
+                    {state.budget.cap === null
+                      ? `${usd(state.budget.spent)} spent, no cap (${state.budget.periodLengthDays} days)`
+                      : `${usd(state.budget.spent)} of ${usd(state.budget.cap)} (${state.budget.periodLengthDays} days)`}
                   </span>
                 </div>
-                {parseFloat(state.budget.cap) > 0 && (
+                {state.budget.cap !== null && parseFloat(state.budget.cap) > 0 && (
                   <div
                     className="mt-2 h-2 w-full bg-rule-soft rounded-full overflow-hidden"
                     role="img"
@@ -607,7 +610,7 @@ export function TreasuryView({
           }}
         />
       )}
-    </main>
+    </div>
   );
 }
 

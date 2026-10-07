@@ -17,6 +17,8 @@ import { signerPlanFor } from "@/lib/server/signer-plan";
 import { vendorDetail } from "@/lib/server/vendors";
 import { listBudgets } from "@/lib/server/budgets";
 import { PayeeTermsEditor } from "@/components/vendors/PayeeTermsEditor";
+import { formatDay, formatDateTime, usd } from "@/lib/format";
+import { Address } from "@/components/Address";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +29,7 @@ const when = (date: Date) => new Intl.DateTimeFormat("en", { dateStyle: "medium"
 const activeLabel = (activeAt: string) => {
   if (activeAt === "0" || BigInt(activeAt) <= BigInt(Math.floor(Date.now() / 1000))) return "Active now";
   const seconds = Number(activeAt);
-  return Number.isSafeInteger(seconds) ? "Active from " + new Date(seconds * 1000).toLocaleString() : "Active at timestamp " + activeAt;
+  return Number.isSafeInteger(seconds) ? "Active from " + formatDateTime(new Date(seconds * 1000)) : "Active at timestamp " + activeAt;
 };
 
 export default async function BusinessVendorDetailPage({ params }: { params: Promise<{ seal: string }> }) {
@@ -57,12 +59,12 @@ export default async function BusinessVendorDetailPage({ params }: { params: Pro
   const budgetsData = await listBudgets(db, getClient(), config.deployment, session.user, business.id).catch(() => null);
 
   return <Shell where={where} current={{ kind: "business", id: business.id }}>
-    <article className="mx-auto max-w-[900px]">
+    <article className="max-w-[900px]">
       <Link href="/business/vendors" className="text-sm underline decoration-rule underline-offset-4">← Vendors</Link>
       <p className="mt-8 font-mono text-xs uppercase tracking-[0.14em] text-graphite">{business.name} · Vendor record</p>
       <h1 className="mt-2 break-words font-display text-4xl">{vendor.name}</h1>
       {vendor.handle ? <p className="mt-1 text-sm text-graphite">@{vendor.handle}</p> : null}
-      <p className="mt-3 break-all font-mono text-xs text-graphite">{vendor.seal}</p>
+      <p className="mt-3 text-xs text-graphite"><Address value={vendor.seal} full /></p>
 
       <section className="mt-8 grid gap-6 border-y border-rule py-6 md:grid-cols-2">
         <div>
@@ -98,7 +100,7 @@ export default async function BusinessVendorDetailPage({ params }: { params: Pro
             <p className="mt-2 text-sm">{activeLabel(vendor.canBePaid.activeAt)}</p>
             <dl className="mt-4 space-y-3 text-sm">
               <div><dt className="text-graphite">Payout address · domain {vendor.canBePaid.payoutDomain}</dt><dd className="mt-1 break-all font-mono text-xs">{vendor.canBePaid.payout}</dd></div>
-              <div><dt className="text-graphite">Monthly cap</dt><dd className="break-all">{vendor.canBePaid.terms.monthlyCap} raw token units</dd></div>
+              <div><dt className="text-graphite">Monthly cap</dt><dd className="break-all">{usd(BigInt(vendor.canBePaid.terms.monthlyCap))} a month</dd></div>
               <div><dt className="text-graphite">Paid invoices</dt><dd>{vendor.canBePaid.paidCount}</dd></div>
               <div><dt className="text-graphite">Matching requirements</dt><dd>PO {vendor.canBePaid.terms.requirePo ? "required" : "not required"} · delivery {vendor.canBePaid.terms.requireDelivery ? "required" : "not required"}</dd></div>
               <div><dt className="text-graphite">Screening</dt><dd>{vendor.canBePaid.screening.risk}{vendor.canBePaid.screening.at !== "0" ? " · read at block " + vendor.blockNumber : ""}</dd></div>
@@ -130,7 +132,7 @@ export default async function BusinessVendorDetailPage({ params }: { params: Pro
         {vendor.invoices.length ? <ul className="mt-3 divide-y divide-rule border-y border-rule">
           {vendor.invoices.map((invoice) => <li key={invoice.fingerprint} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
             <Link className="underline decoration-rule underline-offset-4" href={"/business/inbox/" + invoice.fingerprint}>{invoice.invoiceNumber}</Link>
-            <span>{invoice.total} raw units · due {invoice.dueDate.toLocaleDateString()}</span>
+            <span>{usd(BigInt(invoice.total))} · due {formatDay(invoice.dueDate)}</span>
           </li>)}
         </ul> : <p className="mt-3 text-sm text-graphite">No invoices on file for this business.</p>}
       </section>

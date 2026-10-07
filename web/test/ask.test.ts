@@ -84,7 +84,7 @@ describe("Ask the Steward", () => {
       });
 
       const resWithInv = await executeIntent(ctx, "payments_due", { days: 7 });
-      expect(resWithInv.text).toContain("1 invoice totaling 10.000000 USDC due within the next 7 days");
+      expect(resWithInv.text).toContain("1 invoice totaling $10.00 due within the next 7 days");
       expect(resWithInv.links).toHaveLength(1);
       expect(resWithInv.links[0]![1]).toBe(`/business/inbox/${FP1}`);
     });
@@ -103,10 +103,10 @@ describe("Ask the Steward", () => {
         address:deployment.contracts.invoiceLedger.toLowerCase(),eventName:"Settled",blockTime:new Date("2026-09-30T00:00:00Z"),
         args:{fingerprint:FP1,payer:vault,token:deployment.tokens.eurc,credit:"40000000",paid:"39200000",discountBps:200}});
       const savings = await executeIntent(ctx,"early_pay_savings",{});
-      expect(savings.text).toContain("0.800000 EURC");
+      expect(savings.text).toContain("€0.80");
       expect(savings.text).not.toContain("60.");
       const recent = await executeIntent(ctx,"recent_payments",{days:7});
-      expect(recent.text).toContain("39.200000 EURC");
+      expect(recent.text).toContain("€39.20");
       expect(recent.text).not.toContain("40.000000");
     });
 

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { postJson } from "@/lib/client/api";
 import type { FormattedNotification } from "@/lib/server/notifications";
+import { formatDateTime } from "@/lib/format";
 
 export function NotificationList({ initialItems, initialUnreadCount }: { initialItems: FormattedNotification[]; initialUnreadCount: number }) {
   const router = useRouter();
@@ -113,12 +114,7 @@ export function NotificationList({ initialItems, initialUnreadCount }: { initial
                       dateTime={item.createdAt}
                       className="mt-1 block font-mono text-xs text-graphite/80"
                     >
-                      {new Date(item.createdAt).toLocaleString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      {formatDateTime(item.createdAt)}
                     </time>
                   </div>
                 </div>

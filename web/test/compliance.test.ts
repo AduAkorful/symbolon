@@ -457,4 +457,48 @@ describe("Compliance screening service (05s Part A)", () => {
     expect(view.canScreen).toBe(true);
     expect(view.canWrite).toBe(true);
   });
+
+  it("loadComplianceView: a payee that isn't on the Vault has no payout address and no risk level (A5)", async () => {
+    const { owner, business } = await fixture();
+    chainState.getVaultState.mockResolvedValue({ exists: true, policy: { screeningMaxAge: 30n * 86400n, ownerThreshold: 10_000n, autoPayLimit: 1_000n, newVendorMinPaid: 3 } });
+    // the lens answers for a seal the Vault doesn't know with zeroes
+    chainState.getPayee.mockResolvedValue({
+      exists: false,
+      payout: "0x0000000000000000000000000000000000000000",
+      payoutDomain: 0,
+      risk: 0,
+      screenedAt: 0n,
+      activeAt: 0n,
+      paidCount: 0,
+      terms: { budget: hash(0), requirePo: false, requireDelivery: false, monthlyCap: 0n },
+    });
+    const [row] = (await loadComplianceView(db, clientFor({}), deployment, owner, business.id)).counterparties;
+    expect(row!.payoutAddress).toBeNull();
+    expect(row!.payoutDomain).toBeNull();
+    expect(row!.onchainRisk).toBeNull();
+    expect(row!.riskLabel).toBe("Not screened");
+    expect(row!.status).toBe("not_payee");
+    expect(row!.statusLabel).toBe("Not a payee yet");
+    expect(row!.screenedAt).toBeNull();
+  });
+
+  it("loadComplianceView: a payee on the Vault that was never screened is 'Not screened', not 'Low' (A5)", async () => {
+    const { owner, business } = await fixture();
+    chainState.getVaultState.mockResolvedValue({ exists: true, policy: { screeningMaxAge: 30n * 86400n, ownerThreshold: 10_000n, autoPayLimit: 1_000n, newVendorMinPaid: 3 } });
+    chainState.getPayee.mockResolvedValue({
+      exists: true,
+      payout: address(21),
+      payoutDomain: 26,
+      risk: 0,
+      screenedAt: 0n,
+      activeAt: 100n,
+      paidCount: 0,
+      terms: { budget: hash(1), requirePo: false, requireDelivery: false, monthlyCap: 1000n },
+    });
+    const [row] = (await loadComplianceView(db, clientFor({}), deployment, owner, business.id)).counterparties;
+    expect(row!.riskLabel).toBe("Not screened");
+    expect(row!.onchainRisk).toBeNull();
+    expect(row!.status).toBe("never");
+    expect(row!.payoutAddress!.toLowerCase()).toBe(address(21).toLowerCase());
+  });
 });

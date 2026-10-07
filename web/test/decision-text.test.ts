@@ -91,6 +91,21 @@ describe("summarizeDecision", () => {
       kind: "custom_op",
       foo: "bar",
     });
-    expect(s.sentence).toBe("Recorded: custom_op");
+    expect(s.sentence).toBe("Custom op");
+  });
+});
+
+import { humanizeKind } from "@/lib/server/decision-text";
+
+describe("recorded actions read as sentences, never as code words (B2)", () => {
+  it("names every action the app records without an underscore", () => {
+    for (const kind of ["withdrawn", "vendor_code_requested", "set_policy", "upgrade_applied", "something_new_later", "payout_change_confirmed"]) {
+      const { sentence } = summarizeDecision({ kind });
+      expect(sentence).not.toMatch(/_|Recorded:/);
+      expect(sentence[0]).toBe(sentence[0]!.toUpperCase());
+    }
+    expect(summarizeDecision({ kind: "withdrawn" }).sentence).toBe("Withdrew funds from the Vault");
+    expect(humanizeKind("something_new_later")).toBe("Something new later");
+    expect(humanizeKind("")).toBe("A change was recorded");
   });
 });

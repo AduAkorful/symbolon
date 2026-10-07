@@ -33,7 +33,7 @@ export interface CounterpartyScreeningRow {
   onchainRisk: number | null;
   riskLabel: string;
   screenedAt: string | null;
-  status: "current" | "due" | "never" | "not_required" | "unavailable";
+  status: "current" | "due" | "never" | "not_required" | "not_payee" | "unavailable";
   statusLabel: string;
   hasAddressMismatch: boolean;
   latestScreeningId: string | null;
@@ -538,10 +538,12 @@ export async function loadComplianceView(
         .orderBy(desc(screenings.screenedAt))
         .limit(1);
 
-      const payoutAddress = onchainPayee?.payout ? getAddress(onchainPayee.payout) : null;
-      const payoutDomain = onchainPayee?.payoutDomain ?? null;
-      const onchainRisk = onchainPayee?.risk ?? null;
-      const screenedAtSec = onchainPayee?.screenedAt ?? 0n;
+      // The lens answers for a seal the Vault doesn't know with zeroes. Those are "no record", not a payout, a risk or a screening.
+      const known = onchainPayee?.exists === true;
+      const screenedAtSec = known ? (onchainPayee?.screenedAt ?? 0n) : 0n;
+      const payoutAddress = known && onchainPayee?.payout ? getAddress(onchainPayee.payout) : null;
+      const payoutDomain = known ? (onchainPayee?.payoutDomain ?? null) : null;
+      const onchainRisk = known && screenedAtSec > 0n ? (onchainPayee?.risk ?? null) : null;
 
       let status: CounterpartyScreeningRow["status"];
       let statusLabel: string;
@@ -549,6 +551,9 @@ export async function loadComplianceView(
       if (maxAge === null || !onchainPayee) {
         status = "unavailable";
         statusLabel = "Unavailable";
+      } else if (!known) {
+        status = "not_payee";
+        statusLabel = "Not a payee yet";
       } else if (maxAge === 0n) {
         status = "not_required";
         statusLabel = "Not required";
@@ -573,7 +578,7 @@ export async function loadComplianceView(
         payoutAddress,
         payoutDomain,
         onchainRisk,
-        riskLabel: onchainRisk === null ? "Unavailable" : RISK_LABELS[onchainRisk] ?? "Unknown",
+        riskLabel: !onchainPayee ? "Unavailable" : onchainRisk === null ? "Not screened" : RISK_LABELS[onchainRisk] ?? "Unknown",
         screenedAt: screenedAtSec > 0n ? new Date(Number(screenedAtSec) * 1000).toISOString() : null,
         status,
         statusLabel,

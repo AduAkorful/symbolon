@@ -12,6 +12,7 @@ import type { ReleaseViewInfo, ReleaseNudgeResult } from "@/lib/server/release";
 import { Rename } from "./Rename";
 import { ReleaseCard } from "./ReleaseCard";
 import { ReleaseNudge } from "./ReleaseNudge";
+import { Address } from "@/components/Address";
 
 interface SettingsViewProps {
   initialData: SettingsViewData & {
@@ -98,7 +99,7 @@ export function SettingsView({
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-10 px-4 py-8">
+    <div className="max-w-5xl space-y-10">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
         <p className="mt-1 text-sm text-graphite">
@@ -172,32 +173,32 @@ export function SettingsView({
           <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-2 border-t border-rule pt-4">
             <div>
               <dt className="text-graphite">Vault Contract</dt>
-              <dd className="font-mono text-ink mt-0.5 break-all">{vaultDetails.address}</dd>
+              <dd className="mt-0.5 text-ink"><Address value={vaultDetails.address} full /></dd>
             </div>
             <div>
               <dt className="text-graphite">Current Implementation (EIP-1967)</dt>
-              <dd className="font-mono text-ink mt-0.5 break-all">
-                {vaultDetails.currentImplementation ?? "Reading slot..."}
+              <dd className="mt-0.5 text-ink">
+                {vaultDetails.currentImplementation ? <Address value={vaultDetails.currentImplementation} full /> : "Can't read it right now"}
               </dd>
             </div>
             <div>
               <dt className="text-graphite">Vault Owner</dt>
-              <dd className="font-mono text-ink mt-0.5 break-all">{vaultDetails.owner}</dd>
+              <dd className="mt-0.5 text-ink"><Address value={vaultDetails.owner} full /></dd>
             </div>
             <div>
               <dt className="text-graphite">Steward Wallet</dt>
-              <dd className="font-mono text-ink mt-0.5 break-all">
+              <dd className="mt-0.5 text-ink">
                 {vaultDetails.steward === "0x0000000000000000000000000000000000000000"
-                  ? "None assigned"
-                  : vaultDetails.steward}
+                  ? "No Steward is set on this Vault"
+                  : <Address value={vaultDetails.steward} full />}
               </dd>
             </div>
             <div>
               <dt className="text-graphite">Compliance Screener</dt>
-              <dd className="font-mono text-ink mt-0.5 break-all">
+              <dd className="mt-0.5 text-ink">
                 {vaultDetails.screener === "0x0000000000000000000000000000000000000000"
                   ? "None (internal checks only)"
-                  : vaultDetails.screener}
+                  : <Address value={vaultDetails.screener} full />}
               </dd>
             </div>
             <div>

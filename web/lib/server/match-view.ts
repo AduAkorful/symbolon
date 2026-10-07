@@ -1,12 +1,16 @@
 import { isAddressEqual } from "viem";
 import type { InvoiceStatus } from "@symbolon/chain";
 import type { MatchResult, DuplicateFinding, PayeeTerms, PurchaseOrder, VaultFacts } from "@symbolon/steward";
-import type { Verification, Invoice } from "@symbolon/seal";
+import { formatAmount, type Verification, type Invoice } from "@symbolon/seal";
+import { showAmount } from "../format";
 
 const ZERO_BYTES32 = `0x${"00".repeat(32)}`;
 const BLOCKED_RISK = 3;
 
 export type EvidenceState = "holds" | "missing" | "blocks" | "info";
+
+/** The match engine reports problems as lower-case fragments; a row on screen starts with a capital */
+const sentence = (text: string) => (text ? text.charAt(0).toUpperCase() + text.slice(1) : text);
 
 export interface EvidenceRow {
   label: string;
@@ -111,11 +115,11 @@ export function evidenceFor(input: MatchViewInput): { rows: EvidenceRow[]; match
     } else if (citedPo && !input.match) {
       add("Purchase order", "blocks", "Invoice cites a PO but the status can't be confirmed right now", "Policy mirror");
     } else if (citedPo && input.match) {
-      add("Purchase order", poProblems.length === 0 ? "holds" : "missing", poProblems.length === 0 ? "Required purchase-order checks hold" : poProblems.join("; "), "Policy mirror");
+      add("Purchase order", poProblems.length === 0 ? "holds" : "missing", poProblems.length === 0 ? "Required purchase-order checks hold" : sentence(poProblems.join("; ")), "Policy mirror");
     } else if (!input.match) {
       add("Purchase order", "blocks", "Can't confirm the purchase-order rules right now", "Policy mirror");
     } else {
-      add("Purchase order", poProblems.length === 0 ? "holds" : "missing", poProblems.length === 0 ? "Required purchase-order checks hold" : poProblems.join("; "), "Policy mirror");
+      add("Purchase order", poProblems.length === 0 ? "holds" : "missing", poProblems.length === 0 ? "Required purchase-order checks hold" : sentence(poProblems.join("; ")), "Policy mirror");
     }
 
     const deliveryRequired = terms?.requireDelivery ?? false;
@@ -143,18 +147,18 @@ export function evidenceFor(input: MatchViewInput): { rows: EvidenceRow[]; match
     } else if (!input.match) {
       add("Delivery", "blocks", "Can't confirm the delivery rules right now", "Policy mirror");
     } else {
-      add("Delivery", deliveryProblems.length === 0 ? "holds" : "missing", deliveryProblems.length === 0 ? "Delivery confirmed" : deliveryProblems.join("; "), "VaultLens / policy mirror");
+      add("Delivery", deliveryProblems.length === 0 ? "holds" : "missing", deliveryProblems.length === 0 ? "Delivery confirmed" : sentence(deliveryProblems.join("; ")), "VaultLens / policy mirror");
     }
 
     if (input.match && !input.match.ok) {
-      add("Policy match", "blocks", input.match.problems.join("; ") || "The policy match did not hold", "Policy mirror");
+      add("Policy match", "blocks", sentence(input.match.problems.join("; ")) || "The policy match did not hold", "Policy mirror");
     }
   }
 
   if (!input.ledger) add("Ledger", "blocks", "Can't confirm payment state", "InvoiceLedger");
   else if (input.ledger.cancelled) add("Ledger", "blocks", "Cancelled onchain", "InvoiceLedger");
   else if (input.ledger.paid) add("Ledger", "info", "Already paid onchain", "InvoiceLedger");
-  else add("Ledger", "holds", input.ledger.seen ? `Remaining ${input.ledger.remaining.toString()} raw units` : "Not settled yet", "InvoiceLedger");
+  else add("Ledger", "holds", input.ledger.seen ? `Remaining to pay: ${showAmount(formatAmount(input.ledger.remaining, 6))}` : "Not settled yet", "InvoiceLedger");
 
   if (input.duplicates?.length) add("Duplicates", "blocks", input.duplicates.map((d) => d.detail).join("; "), "Duplicate screening");
   else add("Duplicates", "holds", "No duplicate found in the current inbox", "Duplicate screening");

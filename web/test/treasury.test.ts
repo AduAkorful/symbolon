@@ -181,6 +181,20 @@ describe("Treasury Service", () => {
     ).rejects.toThrow(AuthError);
   });
 
+  it("reports a budget with no cap as no cap, never as a number (A4)", async () => {
+    const { user, business } = await setupBusiness();
+    chainState.getBudget.mockResolvedValue({
+      exists: true,
+      periodLength: 86400n * 30n,
+      periodIndex: BigInt(Math.floor(Date.now() / 1000 / (86400 * 30))),
+      cap: 2n ** 256n - 1n,
+      spent: 25_000_000_000n,
+    });
+    const res = await loadTreasury(db, mockClient, cfg.deployment, business.id, user);
+    expect(res.budget).toMatchObject({ cap: null, spent: "25000" });
+    expect(JSON.stringify(res)).not.toMatch(/\d{20,}/);
+  });
+
   it("loads complete treasury state and detects shortfalls", async () => {
     const { user, business } = await setupBusiness();
 

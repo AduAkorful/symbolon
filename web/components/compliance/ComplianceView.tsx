@@ -10,6 +10,7 @@ import { sendCall, type SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { postJson } from "@/lib/client/api";
 import type { ComplianceViewModel, CounterpartyScreeningRow } from "@/lib/server/compliance";
+import { formatDay } from "@/lib/format";
 
 export function ComplianceView({
   model,
@@ -163,17 +164,22 @@ export function ComplianceView({
                           <td className="py-3 px-3">
                             <div className="flex items-center gap-1.5 font-mono text-[11px]">
                               <span>
-                                {row.payoutAddress?.slice(0, 6) ?? "Unavailable"}…{row.payoutAddress?.slice(-4) ?? ""}
+                                {row.payoutAddress
+                                  ? `${row.payoutAddress.slice(0, 6)}…${row.payoutAddress.slice(-4)}`
+                                  : row.status === "unavailable"
+                                    ? "Can’t confirm"
+                                    : "Not set yet"}
                               </span>
+                              {row.payoutAddress ? (
                               <button
                                 type="button"
-                                disabled={!row.payoutAddress}
-                                onClick={() => row.payoutAddress && copyText(row.payoutAddress, row.seal)}
+                                onClick={() => copyText(row.payoutAddress!, row.seal)}
                                 title="Copy full payout address"
                                 className="text-[10px] text-graphite hover:text-ink"
                               >
                                 {copied === row.seal ? "Copied" : "Copy"}
                               </button>
+                              ) : null}
                             </div>
                             {row.hasAddressMismatch ? (
                               <span className="mt-1 inline-block rounded bg-red-wash px-1.5 py-0.5 text-[9px] font-medium text-red">
@@ -211,7 +217,7 @@ export function ComplianceView({
                           </td>
 
                           <td className="py-3 px-3 text-graphite">
-                            {row.screenedAt ? new Date(row.screenedAt).toLocaleDateString() : "Never"}
+                            {row.screenedAt ? formatDay(new Date(row.screenedAt)) : "Never"}
                           </td>
 
                           <td className="py-3 pl-3 pr-4 text-right">

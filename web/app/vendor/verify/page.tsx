@@ -3,6 +3,8 @@ import { getDb } from "@/lib/server/db";
 import { requirePageSession } from "@/lib/server/http";
 import { loadSpaces } from "@/lib/server/space";
 import { showCodeToSeal } from "@/lib/server/verification";
+import { formatDateTime } from "@/lib/format";
+import { Address } from "@/components/Address";
 
 export const dynamic = "force-dynamic";
 
@@ -17,9 +19,9 @@ export default async function VendorVerificationPage() {
       <p className="mt-3 max-w-[62ch] text-graphite">A business may call you at a number or channel it already trusts. Read the code below to that person. Do not share it with anyone who contacted you unexpectedly.</p>
       {requests.length ? <ul className="mt-8 divide-y divide-rule border-y border-rule">{requests.map((r) => <li key={r.id} className="py-5">
         <p className="font-medium">{r.businessName}</p>
-        <p className="mt-1 break-all font-mono text-xs text-graphite">Vault: {r.vault ?? "not available"}</p>
+        <p className="mt-1 text-xs text-graphite">Vault: {r.vault ? <Address value={r.vault} full /> : "not available"}</p>
         <p className="mt-4 font-mono text-3xl tracking-[0.3em]" aria-label={`Verification code ${r.code}`}>{r.code}</p>
-        <p className="mt-2 text-xs text-graphite">Expires {r.expiresAt?.toLocaleString()}</p>
+        <p className="mt-2 text-xs text-graphite">Expires {formatDateTime(r.expiresAt)}</p>
       </li>)}</ul> : <p className="mt-8 border-y border-rule py-6 text-graphite">No active verification requests.</p>}
     </div>
   </Shell>;

@@ -10,7 +10,7 @@ import { businesses, createTestDb, members, users } from "@symbolon/db";
 import { eq } from "drizzle-orm";
 import { AuthError } from "@/lib/server/errors";
 import { MAX_BUSINESSES, confirmVault, createBusiness, parseUsdcAmount, prepareFund, prepareVault, prepareVaultSwitch, vaultStanding } from "@/lib/server/business";
-import { readVaultState, stewardStanding } from "@/lib/server/vault-read";
+import { pauseStateOf, readVaultState, stewardStanding } from "@/lib/server/vault-read";
 import { TEMPLATES, describePolicy, duration, usd } from "@/lib/server/policy-text";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -314,6 +314,18 @@ describe("the Steward's standing is what the chain says, checked against the wal
     expect(stewardStanding(null, down).kind).toBe("none");
   });
 
+  it("keeps the owner's pause control available whatever the Steward's standing (A1)", async () => {
+    // a Steward that isn't the recorded wallet: the Vault is still the owner's to pause
+    const mismatch = await readVaultState(stateClient({ paused: false, steward: fresh() }), cfg.deployment, fresh());
+    expect(stewardStanding(S, mismatch).kind).toBe("mismatch");
+    expect(pauseStateOf(mismatch)).toEqual({ known: true, paused: false, block: 123n });
+    const pausedMismatch = await readVaultState(stateClient({ paused: true, steward: fresh() }), cfg.deployment, fresh());
+    expect(pauseStateOf(pausedMismatch)).toEqual({ known: true, paused: true, block: 123n });
+    // an unreadable Vault: no guess about paused, and the control is still offered as "pause"
+    const down = await readVaultState(stateClient("down"), cfg.deployment, fresh());
+    expect(pauseStateOf(down)).toEqual({ known: false });
+  });
+
   it("is ready for the wizard only when paused; owner only; needs a Vault", async () => {
     const u = await person();
     const b = await ownedBusiness(u);
@@ -322,8 +334,9 @@ describe("the Steward's standing is what the chain says, checked against the wal
     await db.update(businesses).set({ vault: vault.toLowerCase() }).where(eq(businesses.id, b.id));
     expect(await vaultStanding(db, stateClient({ paused: true, steward: b.stewardWallet! }), cfg, u, b.id)).toMatchObject({ kind: "paused", ready: true, paused: true, block: "123" });
     expect(await vaultStanding(db, stateClient({ paused: false, steward: b.stewardWallet! }), cfg, u, b.id)).toMatchObject({ kind: "active", ready: false, paused: false });
-    expect(await vaultStanding(db, stateClient({ paused: true, steward: fresh() }), cfg, u, b.id)).toMatchObject({ kind: "mismatch", ready: false, paused: null });
-    expect(await vaultStanding(db, stateClient("down"), cfg, u, b.id)).toMatchObject({ kind: "unknown", ready: false, paused: null });
+    expect(await vaultStanding(db, stateClient({ paused: true, steward: fresh() }), cfg, u, b.id)).toMatchObject({ kind: "mismatch", ready: false, paused: true, block: "123" });
+    expect(await vaultStanding(db, stateClient({ paused: false, steward: fresh() }), cfg, u, b.id)).toMatchObject({ kind: "mismatch", ready: false, paused: false, block: "123" });
+    expect(await vaultStanding(db, stateClient("down"), cfg, u, b.id)).toMatchObject({ kind: "unknown", ready: false, paused: null, block: null });
     const viewer = await ownedBusiness(u, "viewer");
     await db.update(businesses).set({ vault: fresh().toLowerCase() }).where(eq(businesses.id, viewer.id));
     expect((await err(vaultStanding(db, stateClient({ paused: true, steward: fresh() }), cfg, u, viewer.id))).status).toBe(403);

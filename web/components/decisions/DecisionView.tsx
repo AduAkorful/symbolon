@@ -3,6 +3,7 @@ import Link from "next/link";
 import { TxLink } from "@/components/TxLink";
 import type { DecisionDetailView } from "@/lib/server/decisions";
 import { AnchorProof } from "./AnchorProof";
+import { formatDateTime } from "@/lib/format";
 
 const outcomeTone: Record<string, string> = {
   paid: "text-seal bg-seal/10 border-seal/20",
@@ -29,7 +30,7 @@ export function DecisionView({ decision: d, explorerUrl }: Props) {
   const toneClass = outcomeTone[d.outcome] ?? "text-ink bg-paper border-rule";
 
   return (
-    <main className="max-w-[1080px] space-y-10 pb-24">
+    <div className="max-w-[1080px] space-y-10 pb-24">
       {/* Navigation & Status header */}
       <div>
         <p className="text-xs uppercase tracking-wider text-graphite">
@@ -45,7 +46,7 @@ export function DecisionView({ decision: d, explorerUrl }: Props) {
             {d.outcome}
           </span>
           <span className="text-xs text-graphite">
-            {new Date(d.at).toLocaleString()}
+            {formatDateTime(new Date(d.at))}
           </span>
           {d.mode ? (
             <span className="rounded bg-paper px-2 py-0.5 font-mono text-xs uppercase text-graphite border border-rule-soft">
@@ -150,8 +151,7 @@ export function DecisionView({ decision: d, explorerUrl }: Props) {
                       {opt.annualizedBps !== undefined ? (
                         <div>Annualized: {(opt.annualizedBps / 100).toFixed(2)}%</div>
                       ) : null}
-                      {opt.paid ? <div>Paid raw: {opt.paid}</div> : null}
-                    </div>
+                                          </div>
 
                     {opt.reasons && opt.reasons.length > 0 ? (
                       <p className="mt-2 text-xs text-graphite">
@@ -220,7 +220,7 @@ export function DecisionView({ decision: d, explorerUrl }: Props) {
                       {hr.kind === "approval_granted" ? "Approval granted" : "Approval rejected"}
                     </span>
                     <span className="text-graphite">
-                      {new Date(hr.createdAt).toLocaleString()}
+                      {formatDateTime(new Date(hr.createdAt))}
                     </span>
                   </div>
                   {hr.reason ? <p className="text-ink">Reason: {hr.reason}</p> : null}
@@ -257,6 +257,6 @@ export function DecisionView({ decision: d, explorerUrl }: Props) {
           </section>
         </aside>
       </div>
-    </main>
+    </div>
   );
 }

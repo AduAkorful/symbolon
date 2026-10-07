@@ -36,12 +36,15 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
   const currentDeliveryState = hasDeliveryConfirmed ? "confirmed" : hasDeliveryRejected ? "rejected" : null;
   const rejectionReason = hasDeliveryRejected ? dbDeliveryRow?.value.replace("Delivery rejected: ", "") : null;
 
-  // Show delivery actions when: invoice is not paid/cancelled and (delivery required or already has a row)
+  // Show delivery actions when the invoice is still open and delivery matters: this vendor's terms require it, or someone has
+  // already confirmed or rejected it. The evidence row is "info" only when delivery isn't required.
+  const deliveryMatters = dbDeliveryRow?.state !== "info" || currentDeliveryState !== null;
   const showDeliveryActions =
     view.row.status !== "paid" &&
     view.row.status !== "cancelled" &&
     view.row.status !== "rejected" &&
-    view.verification.ok;
+    view.verification.ok &&
+    deliveryMatters;
 
   // Latest decision for this invoice
   const [latestDecision] = await db

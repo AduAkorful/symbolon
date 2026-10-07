@@ -89,7 +89,7 @@ export function SpaceSwitcher({ spaces, current, who, compact = false }: { space
         <Avatar name={now.name} size={24} />
         <span className="min-w-0 flex-1">
           <span className="block truncate font-medium leading-tight">{now.name}</span>
-          {!compact ? <span className="block truncate text-xs text-graphite">{now.role}</span> : null}
+          {!compact ? <span className="hidden truncate text-xs text-graphite md:block">{now.role}</span> : null}
         </span>
         <span aria-hidden className="text-graphite">▾</span>
       </button>
@@ -129,6 +129,9 @@ export function SpaceSwitcher({ spaces, current, who, compact = false }: { space
           })}
           {!spaces.seal && spaces.businesses.length === 0 ? <p className="px-2.5 py-2 text-sm text-graphite">You don’t belong to a Seal or a business yet.</p> : null}
           <div className="mt-1 border-t border-rule pt-1">
+            <Link role="menuitem" href="/profile" onClick={() => setOpen(false)} className={quiet}>
+              Your profile
+            </Link>
             <Link role="menuitem" href="/setup" onClick={() => setOpen(false)} className={quiet}>
               Set up a business
             </Link>

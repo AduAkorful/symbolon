@@ -2,17 +2,19 @@ import Link from "next/link";
 import { arcChain } from "@symbolon/chain";
 import { formatUnits } from "viem";
 import { Shell } from "@/components/shell/Shell";
-import { TxLink } from "@/components/TxLink";
 import { getClient } from "@/lib/server/chain";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
 import { requirePageSession } from "@/lib/server/http";
 import { loadSpaces } from "@/lib/server/space";
-import { readVaultState, readVaultSummary, stewardStanding } from "@/lib/server/vault-read";
+import { pauseStateOf, readVaultState, readVaultSummary, stewardStanding } from "@/lib/server/vault-read";
 import { signerPlanFor } from "@/lib/server/signer-plan";
+import { Address } from "@/components/Address";
+import { PauseControl } from "@/components/steward/PauseControl";
 import { StewardSwitch } from "@/components/steward/StewardSwitch";
 import { loadAhead, loadNeedsYou, loadToday } from "@/lib/server/home";
 import { HomeQueues } from "@/components/home/HomeQueues";
+import { showMoney } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +27,10 @@ export default async function BusinessHome() {
   const explorer = arcChain(config.chainId).blockExplorers!.default.url;
   const summary = b?.vault ? await readVaultSummary(getClient(), config.deployment, b.vault) : null;
   // The Steward's standing is what the Vault says, compared with the wallet we set up (plan 05h, H13–H15)
-  const standing = b?.vault ? stewardStanding(b.stewardWallet, await readVaultState(getClient(), config.deployment, b.vault)) : null;
+  const vaultState = b?.vault ? await readVaultState(getClient(), config.deployment, b.vault) : null;
+  const standing = b?.vault && vaultState ? stewardStanding(b.stewardWallet, vaultState) : null;
+  const pause = vaultState ? pauseStateOf(vaultState) : null;
+  const ownerSigner = b?.role === "owner" ? signerPlanFor(session, config) : null;
 
   const db = await getDb();
   const needsYou = b ? await loadNeedsYou(db, getClient(), config, session.user, b.id) : null;
@@ -33,11 +38,7 @@ export default async function BusinessHome() {
   const ahead = b ? await loadAhead(db, getClient(), config, session.user, b.id) : null;
 
   return (
-    <Shell
-      where={where}
-      current={{ kind: "business", id: b?.id ?? "" }}
-      approvalsCount={needsYou?.awaitingApproval.count ?? 0}
-    >
+    <Shell where={where} current={{ kind: "business", id: b?.id ?? "" }}>
       {b ? (
         <div className="max-w-[1080px]">
           <div className="max-w-[760px]">
@@ -55,9 +56,7 @@ export default async function BusinessHome() {
                 <dt className="text-graphite">Vault</dt>
                 <dd>
                   {b.vault ? (
-                    <TxLink href={`${explorer}/address/${b.vault}`} label="View the Vault on the Arc explorer" className="break-all">
-                      {b.vault}
-                    </TxLink>
+                    <Address value={b.vault} full explorer={explorer} copy />
                   ) : b.role === "owner" ? (
                     <span>
                       Not created yet.{" "}
@@ -76,10 +75,25 @@ export default async function BusinessHome() {
                   <dd>
                     {standing.kind === "none" ? (
                       "No Steward assigned. This Vault was made before Stewards were set up at creation."
-                    ) : standing.kind === "unknown" ? (
-                      <span className="text-red">Can’t confirm the Steward’s state right now.</span>
-                    ) : standing.kind === "mismatch" ? (
-                      <span className="text-red">The Steward this Vault reports isn’t the wallet we set up for this business. Don’t rely on it.</span>
+                    ) : standing.kind === "unknown" || standing.kind === "mismatch" ? (
+                      <>
+                        <span className="text-red">
+                          {standing.kind === "unknown"
+                            ? "Can’t confirm the Steward’s state right now."
+                            : "The Steward this Vault reports isn’t the wallet we set up for this business. Don’t rely on it."}
+                        </span>
+                        {/* The owner can always pause, whatever the Steward's standing */}
+                        {pause && b.role === "owner" ? (
+                          <PauseControl
+                            businessId={b.id}
+                            paused={pause.known && pause.paused}
+                            block={pause.known ? pause.block.toString() : "0"}
+                            known={pause.known}
+                            signer={ownerSigner}
+                            explorer={explorer}
+                          />
+                        ) : null}
+                      </>
                     ) : (
                       <>
                         <StewardSwitch
@@ -106,7 +120,7 @@ export default async function BusinessHome() {
                   <dd>
                     {summary?.ok ? (
                       <>
-                        ${Number(formatUnits(summary.usdc, summary.decimals)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
+                        {showMoney(formatUnits(summary.usdc, summary.decimals), "USDC")}
                         <span className="ml-2 text-xs text-graphite">read from Arc at block {summary.block.toString()}</span>
                       </>
                     ) : (

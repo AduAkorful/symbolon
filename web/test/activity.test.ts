@@ -79,8 +79,11 @@ async function fixture() {
 describe("Activity service and formatters (05s Part C)", () => {
   describe("describeEvent pure formatter (K12)", () => {
     it("formats Paid event", () => {
-      const desc = describeEvent("Paid", { fingerprint: hash(1), paid: 1985000000n });
-      expect(desc.what).toContain("Paid 1985.000000 USDC");
+      const desc = describeEvent("Paid", { fingerprint: hash(1), paid: 1985000000n }, undefined, "USDC");
+      expect(desc.what).toContain("Paid $1,985.00 for invoice");
+      expect(describeEvent("Paid", { fingerprint: hash(1), paid: 1985000000n }, undefined, "EURC").what).toContain("€1,985.00");
+      // an event that doesn't say which token it moved never gets a guessed currency
+      expect(describeEvent("Paid", { fingerprint: hash(1), paid: 1985000000n }).what).toMatch(/^Paid for invoice/);
       expect(desc.tone).toBe("seal");
     });
 

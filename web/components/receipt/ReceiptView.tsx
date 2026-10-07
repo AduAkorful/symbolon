@@ -7,6 +7,8 @@ import { SealStamp } from "@/components/Marks";
 import { PublicHeader } from "@/components/public/PublicHeader";
 import { TxLink } from "@/components/TxLink";
 import type { PublicReceiptResult } from "@/lib/server/receipt";
+import { formatDateTime, showMoney } from "@/lib/format";
+import { Address } from "@/components/Address";
 
 interface Props {
   data: Extract<PublicReceiptResult, { state: "settled" }>;
@@ -47,7 +49,7 @@ export function ReceiptView({ data, explorerUrl }: Props) {
         <div className="mt-4 flex items-start justify-between gap-6">
           <div>
             <h1 className="font-display text-[clamp(2.6rem,5.5vw,4.2rem)] leading-none text-ink">
-              ${data.totalPaidFormatted}
+              {showMoney(data.totalPaidFormatted, data.document.currency.symbol)}
             </h1>
             <p className="mt-3 text-sm text-graphite">
               Paid to {data.vendor.name} for invoice #{data.invoiceNumber}
@@ -82,12 +84,12 @@ export function ReceiptView({ data, explorerUrl }: Props) {
 
           <div className="grid gap-1 border-b border-rule py-3.5 sm:grid-cols-[13rem_1fr]">
             <dt className="text-graphite">Credit settled</dt>
-            <dd className="font-mono text-ink">${data.totalCreditFormatted} USDC</dd>
+            <dd className="font-mono text-ink">{showMoney(data.totalCreditFormatted, data.document.currency.symbol)}</dd>
           </div>
 
           <div className="grid gap-1 border-b border-rule py-3.5 sm:grid-cols-[13rem_1fr]">
             <dt className="text-graphite">Remaining balance</dt>
-            <dd className="font-mono text-ink">${data.ledgerRemainingFormatted} USDC</dd>
+            <dd className="font-mono text-ink">{showMoney(data.ledgerRemainingFormatted, data.document.currency.symbol)}</dd>
           </div>
         </dl>
 
@@ -102,21 +104,21 @@ export function ReceiptView({ data, explorerUrl }: Props) {
               <div key={idx} className="p-4 space-y-2 text-xs">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-mono font-medium text-ink text-sm">
-                    ${s.paidFormatted} USDC
+                    {showMoney(s.paidFormatted, data.document.currency.symbol)}
                   </span>
                   <span className="text-graphite">
-                    {s.timestamp ? s.timestamp.toLocaleString() : "Payment time unavailable"}
+                    {s.timestamp ? formatDateTime(s.timestamp) : "Payment time unavailable"}
                   </span>
                 </div>
 
                 <div className="grid gap-1 text-graphite sm:grid-cols-2">
                   <div>
                     Payer Vault:{" "}
-                    <span className="font-mono text-ink break-all">{s.payer}</span>
+                    <Address value={s.payer} full className="text-ink" />
                   </div>
                   <div>
                     Payout address:{" "}
-                    <span className="font-mono text-ink break-all">{s.payoutAddress}</span> (domain {s.payoutDomain})
+                    <Address value={s.payoutAddress} full className="text-ink" /> (domain {s.payoutDomain})
                   </div>
                 </div>
 

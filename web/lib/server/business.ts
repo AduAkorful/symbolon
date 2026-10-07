@@ -8,7 +8,7 @@ import { appendAppDecision } from "./app-decisions";
 import { AuthError } from "./errors";
 import { describePolicy, isTemplate, type PolicyText } from "./policy-text";
 import type { SessionUser } from "./session";
-import { readVaultState, stewardStanding } from "./vault-read";
+import { pauseStateOf, readVaultState, stewardStanding } from "./vault-read";
 
 // Plan 05h. The server decides what gets signed (H2) and confirms what was signed from the chain (H3).
 
@@ -200,13 +200,16 @@ export async function vaultStanding(
 ): Promise<{ kind: string; steward: string | null; paused: boolean | null; ready: boolean; block: string | null; reason: string | null }> {
   const b = await ownedBusiness(db, cfg, user, businessId);
   if (!b.vault) throw new AuthError(409, "Create the Vault first.");
-  const standing = stewardStanding(b.stewardWallet, await readVaultState(client, cfg.deployment, b.vault));
+  const state = await readVaultState(client, cfg.deployment, b.vault);
+  const standing = stewardStanding(b.stewardWallet, state);
+  const pause = pauseStateOf(state);
   return {
     kind: standing.kind,
     steward: b.stewardWallet ? getAddress(b.stewardWallet) : null,
-    paused: standing.kind === "paused" ? true : standing.kind === "active" ? false : null,
+    // paused is the Vault's own flag, so it is known even when the Steward doesn't match what we recorded
+    paused: pause.known ? pause.paused : null,
     ready: standing.kind === "paused",
-    block: standing.kind === "paused" || standing.kind === "active" ? standing.block.toString() : null,
+    block: pause.known ? pause.block.toString() : null,
     reason: standing.kind === "unknown" ? standing.reason : standing.kind === "mismatch" ? "The Vault's Steward isn't the wallet we set up for this business." : null,
   };
 }

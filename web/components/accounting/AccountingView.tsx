@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import type { AccountingViewData } from "@/lib/server/accounting";
 import { TxLink } from "@/components/TxLink";
+import { formatDateTime, showMoney } from "@/lib/format";
 
 export function AccountingView({
   initialData,
@@ -90,12 +91,12 @@ export function AccountingView({
   const hasMismatches = data.reconciliation.mismatches.length > 0;
 
   return (
-    <main className="px-6 pb-24 pt-10 md:px-10">
+    <div className="pb-24">
       <div className="flex flex-wrap items-baseline justify-between gap-4">
         <div>
           <h1 className="font-display text-4xl md:text-5xl">Accounting</h1>
           <p className="mt-2 max-w-[68ch] text-sm text-graphite">
-            Every payment exports with its invoice fingerprint, order, delivery, transaction, and decision record. Unknown tokens show raw units and are excluded from currency totals.
+            Every payment exports with its invoice fingerprint, order, delivery, transaction, and decision record. A payment in a currency we do not recognise shows its amount without a currency and is left out of the totals.
             The Vault is the bank, so the books reconcile to the chain line by line. Re-sync records the comparison used by exports; otherwise exports remain unverified.
           </p>
         </div>
@@ -197,14 +198,14 @@ export function AccountingView({
         <div className="rounded-sm border border-rule p-4">
           <span className="text-xs text-graphite uppercase tracking-wider">Settled USDC Volume</span>
           <div className="mt-1 font-mono text-2xl font-medium text-ink">
-            {data.totals.usdcTotal} <span className="text-sm text-graphite">USDC</span>
+            {showMoney(data.totals.usdcTotal, "USDC")}
           </div>
         </div>
 
         <div className="rounded-sm border border-rule p-4">
           <span className="text-xs text-graphite uppercase tracking-wider">Settled EURC Volume</span>
           <div className="mt-1 font-mono text-2xl font-medium text-ink">
-            {data.totals.eurcTotal} <span className="text-sm text-graphite">EURC</span>
+            {showMoney(data.totals.eurcTotal, "EURC")}
           </div>
         </div>
       </div>
@@ -239,7 +240,7 @@ export function AccountingView({
                   <td className="pr-4 text-xs font-mono">{p.po}</td>
                   <td className="pr-4 text-xs text-graphite">{p.delivery}</td>
                   <td className="pr-4 text-right font-mono text-xs tabular-nums font-medium">
-                    {p.amount} {p.token}
+                    {p.token === "UNKNOWN" ? `${p.amount} (currency unavailable)` : showMoney(p.amount, p.token)}
                   </td>
                   <td className="pr-4">
                     <TxLink
@@ -299,12 +300,7 @@ export function AccountingView({
                   <tr key={exp.id} className="border-t border-rule">
                     <td className="py-2 pr-4 font-medium uppercase">{exp.format}</td>
                     <td className="pr-4 font-mono text-graphite">
-                      {new Date(exp.createdAt).toLocaleDateString("en-GB", {
-                        day: "2-digit",
-                        month: "short",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      {formatDateTime(exp.createdAt)}
                     </td>
                     <td className="pr-4">{exp.rowCount ?? "—"}</td>
                     <td className="pr-4 font-mono text-graphite">{exp.sha256}</td>
@@ -333,6 +329,6 @@ export function AccountingView({
           ))}
         </ul>
       </section>
-    </main>
+    </div>
   );
 }

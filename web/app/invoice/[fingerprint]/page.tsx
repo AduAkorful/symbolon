@@ -9,6 +9,7 @@ import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
 import { loadPublicInvoice } from "@/lib/server/public-invoice";
 import { showAmount, showDate } from "@/lib/format";
+import { Address } from "@/components/Address";
 
 export const dynamic = "force-dynamic";
 // An invoice link is for the person it was sent to, not for search engines
@@ -75,7 +76,7 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
                   <span className="text-seal" aria-hidden>
                     ✓{" "}
                   </span>
-                  Signed by the Seal <span className="break-all font-mono text-xs">{view.seal.address}</span>
+                  Signed by the Seal <Address value={view.seal.address} full className="text-xs" />
                   {view.seal.handle ? <> (@{view.seal.handle})</> : null}. The signature matches the invoice exactly as written.
                 </li>
                 <li>

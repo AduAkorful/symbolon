@@ -6,6 +6,8 @@ import { useState } from "react";
 import { ensureChain, findWalletFor, wrongWalletMessage, type SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import type { PayoutChangeRequestItem } from "@/lib/server/payout-change";
+import { formatDay, formatDateTime } from "@/lib/format";
+import { Address } from "@/components/Address";
 
 interface Props {
   businessId: string;
@@ -182,7 +184,7 @@ export function VendorRequestsSection({
                 Payout changing to <span className="font-mono">{pendingPayout}</span>
               </p>
               <p className="mt-0.5 text-xs text-graphite">
-                Active from {new Date(pendingActiveAt! * 1000).toLocaleString()}
+                Active from {formatDateTime(new Date(pendingActiveAt! * 1000))}
               </p>
             </div>
             {isOwner && requests[0] ? (
@@ -208,13 +210,13 @@ export function VendorRequestsSection({
                 <span className="font-mono uppercase tracking-wider text-seal font-medium">
                   Pending Owner Confirmation
                 </span>
-                <span className="text-graphite">{new Date(req.createdAt).toLocaleDateString()}</span>
+                <span className="text-graphite">{formatDay(new Date(req.createdAt))}</span>
               </div>
 
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 <div>
                   <span className="text-graphite block">New payout address:</span>
-                  <span className="font-mono break-all font-medium text-ink">{req.newPayout}</span>
+                  <Address value={req.newPayout} full className="font-medium text-ink" />
                 </div>
                 <div>
                   <span className="text-graphite block">Domain / Nonce:</span>

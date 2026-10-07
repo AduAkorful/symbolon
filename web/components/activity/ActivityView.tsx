@@ -4,32 +4,17 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import type { ActivityFeed, ActivityItem } from "@/lib/server/activity";
 import { TxLink } from "@/components/TxLink";
+import { formatDateTime, formatDay } from "@/lib/format";
 
 function formatActivityTime(isoString: string): string {
-  try {
-    const d = new Date(isoString);
-    const now = new Date();
-    const isToday =
-      d.getDate() === now.getDate() &&
-      d.getMonth() === now.getMonth() &&
-      d.getFullYear() === now.getFullYear();
-
-    const timeStr = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-    if (isToday) return `Today ${timeStr}`;
-
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const isYesterday =
-      d.getDate() === yesterday.getDate() &&
-      d.getMonth() === yesterday.getMonth() &&
-      d.getFullYear() === yesterday.getFullYear();
-
-    if (isYesterday) return `Yesterday ${timeStr}`;
-
-    return `${d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })} ${timeStr}`;
-  } catch {
-    return isoString;
-  }
+  const d = new Date(isoString);
+  if (Number.isNaN(d.getTime())) return "Time unavailable";
+  const sameUtcDay = (x: Date, y: Date) => formatDay(x, { year: "always" }) === formatDay(y, { year: "always" });
+  const now = new Date();
+  const timeStr = formatDateTime(d).split(", ").pop() ?? "";
+  if (sameUtcDay(d, now)) return `Today ${timeStr}`;
+  if (sameUtcDay(d, new Date(now.getTime() - 86_400_000))) return `Yesterday ${timeStr}`;
+  return formatDateTime(d);
 }
 
 export function ActivityView({
@@ -107,7 +92,7 @@ export function ActivityView({
   };
 
   return (
-    <main className="px-6 pb-24 pt-10 md:px-10">
+    <div className="pb-24">
       <div className="flex flex-wrap items-baseline justify-between gap-4">
         <div>
           <h1 className="font-display text-4xl md:text-5xl">Activity</h1>
@@ -239,6 +224,6 @@ export function ActivityView({
           </button>
         </div>
       ) : null}
-    </main>
+    </div>
   );
 }

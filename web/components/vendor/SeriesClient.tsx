@@ -7,6 +7,7 @@ import type { SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { signTypedData } from "@/components/vendor/seal-signer";
 import type { PreparedPeriod, SeriesDisplay } from "@/lib/server/series";
+import { formatDay } from "@/lib/format";
 
 export interface ClientOption {
   id: string;
@@ -176,7 +177,7 @@ export function SeriesClient({ initialSeries, clients, signer }: Props) {
   }
 
   return (
-    <main className="px-6 pb-24 pt-10 md:px-10">
+    <div className="pb-24">
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div>
           <h1 className="font-display text-4xl leading-tight">Recurring Series</h1>
@@ -231,11 +232,11 @@ export function SeriesClient({ initialSeries, clients, signer }: Props) {
                     {s.description || "Recurring Series"}
                   </h2>
                   <p className="mt-2 text-xs text-graphite">
-                    Created {new Date(s.createdAt).toLocaleDateString()} · {s.releasedPeriods} of {s.totalPeriods} invoices released
+                    Created {formatDay(new Date(s.createdAt))} · {s.releasedPeriods} of {s.totalPeriods} invoices released
                   </p>
                   {s.status === "active" && s.nextReleaseAt ? (
                     <p className="mt-1 text-xs text-seal font-medium">
-                      Next release: {new Date(s.nextReleaseAt).toLocaleDateString()}
+                      Next release: {formatDay(new Date(s.nextReleaseAt))}
                     </p>
                   ) : null}
                 </div>
@@ -454,8 +455,8 @@ export function SeriesClient({ initialSeries, clients, signer }: Props) {
                         <tr key={p.period}>
                           <td className="p-2.5 font-medium">{p.period}</td>
                           <td className="p-2.5 font-mono">{p.invoiceNumber}</td>
-                          <td className="p-2.5">{new Date(p.issuedAt * 1000).toLocaleDateString()}</td>
-                          <td className="p-2.5">{new Date(p.dueDate * 1000).toLocaleDateString()}</td>
+                          <td className="p-2.5">{formatDay(new Date(p.issuedAt * 1000))}</td>
+                          <td className="p-2.5">{formatDay(new Date(p.dueDate * 1000))}</td>
                           <td className="p-2.5 text-right font-medium">{p.total} {currency}</td>
                         </tr>
                       ))}
@@ -495,6 +496,6 @@ export function SeriesClient({ initialSeries, clients, signer }: Props) {
           </div>
         </Overlay>
       ) : null}
-    </main>
+    </div>
   );
 }

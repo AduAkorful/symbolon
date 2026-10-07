@@ -16,9 +16,14 @@ const json = (v: unknown) => JSON.parse(JSON.stringify(v, (_k, x: unknown) => (t
 export interface SyncReport {
   from: bigint;
   to: bigint;
+  /** The chain's newest block when this run started; `to < head` means the mirror is still catching up */
+  head: bigint;
   events: number;
   invoicesUpdated: number;
 }
+
+/** Log requests in flight at once during a catch-up. Public RPCs rate-limit log queries, so this stays small. */
+const SYNC_CONCURRENCY = 2;
 
 async function resolveBlockTimes(
   client: PublicClient,
@@ -48,19 +53,22 @@ export async function syncLedger(
   client: PublicClient,
   contracts: SymbolonContracts,
   deployment: Deployment,
-  opts: { toBlock?: bigint } = {},
+  opts: { toBlock?: bigint; maxBlocks?: bigint } = {},
 ): Promise<SyncReport> {
   const key = `ledger:${deployment.chainId}:${deployment.contracts.invoiceLedger.toLowerCase()}`;
   const [cursor] = await db.select().from(syncCursors).where(eq(syncCursors.key, key));
   const from = cursor ? cursor.block + 1n : deployment.startBlock;
-  const to = opts.toBlock ?? (await client.getBlockNumber());
-  if (from > to) return { from, to, events: 0, invoicesUpdated: 0 };
+  const head = opts.toBlock ?? (await client.getBlockNumber());
+  // `maxBlocks` bounds one run; the cursor makes the next run continue where this one stopped
+  const to = opts.maxBlocks !== undefined && from + opts.maxBlocks - 1n < head ? from + opts.maxBlocks - 1n : head;
+  if (from > to) return { from, to, head, events: 0, invoicesUpdated: 0 };
 
   const { logs, scannedTo } = await scanLogs(client, {
     address: deployment.contracts.invoiceLedger,
     events: LEDGER_EVENTS,
     fromBlock: from,
     toBlock: to,
+    concurrency: SYNC_CONCURRENCY,
   });
   const touched = [...new Set(logs.map((l) => (l.args as { fingerprint: Hex }).fingerprint.toLowerCase()))];
   const known = touched.length
@@ -112,7 +120,7 @@ export async function syncLedger(
       .values({ key, chainId: deployment.chainId, block: scannedTo })
       .onConflictDoUpdate({ target: syncCursors.key, set: { block: scannedTo, updatedAt: sql`now()` } });
   });
-  return { from, to: scannedTo, events: logs.length, invoicesUpdated: states.length };
+  return { from, to: scannedTo, head, events: logs.length, invoicesUpdated: states.length };
 }
 
 /** Every event a Vault emits, for the audit trail (spec §11): payments, payee and Seal changes, policy, anchors */
@@ -133,9 +141,9 @@ export async function syncVault(
   const [cursor] = await db.select().from(syncCursors).where(eq(syncCursors.key, key));
   const from = cursor ? cursor.block + 1n : (opts.fromBlock ?? deployment.startBlock);
   const to = opts.toBlock ?? (await client.getBlockNumber());
-  if (from > to) return { from, to, events: 0, invoicesUpdated: 0 };
+  if (from > to) return { from, to, head: to, events: 0, invoicesUpdated: 0 };
 
-  const { logs, scannedTo } = await scanLogs(client, { address: vault, events: VAULT_EVENTS, fromBlock: from, toBlock: to });
+  const { logs, scannedTo } = await scanLogs(client, { address: vault, events: VAULT_EVENTS, fromBlock: from, toBlock: to, concurrency: SYNC_CONCURRENCY });
   await db.transaction(async (tx) => {
     if (logs.length) {
       const blockTimes = await resolveBlockTimes(client, logs.map((l) => l.blockNumber));
@@ -165,5 +173,5 @@ export async function syncVault(
       .values({ key, chainId: deployment.chainId, block: scannedTo })
       .onConflictDoUpdate({ target: syncCursors.key, set: { block: scannedTo, updatedAt: sql`now()` } });
   });
-  return { from, to: scannedTo, events: logs.length, invoicesUpdated: 0 };
+  return { from, to: scannedTo, head: to, events: logs.length, invoicesUpdated: 0 };
 }

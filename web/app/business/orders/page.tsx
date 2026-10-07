@@ -6,6 +6,7 @@ import { getDb } from "@/lib/server/db";
 import { requirePageSession } from "@/lib/server/http";
 import { loadSpaces } from "@/lib/server/space";
 import { listOrders } from "@/lib/server/orders";
+import { listKnownVendors } from "@/lib/server/vendors";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,10 @@ export default async function OrdersPage() {
 
   const cfg = getConfig();
   const db = await getDb();
-  const orders = await listOrders(db, getClient(), cfg.deployment, session.user, business.id);
+  const [orders, vendors] = await Promise.all([
+    listOrders(db, getClient(), cfg.deployment, session.user, business.id),
+    listKnownVendors(db, business.id),
+  ]);
 
   // Serialise BigInt fields to strings for client hydration
   const serialised = orders.map((o) => ({
@@ -40,7 +44,7 @@ export default async function OrdersPage() {
 
   return (
     <Shell where={where} current={{ kind: "business", id: business.id }}>
-      <OrdersClient businessId={business.id} initial={serialised} />
+      <OrdersClient businessId={business.id} initial={serialised} vendors={vendors} />
     </Shell>
   );
 }

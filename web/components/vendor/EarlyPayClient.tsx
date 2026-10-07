@@ -8,6 +8,7 @@ import type { SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { signTypedData } from "@/components/vendor/seal-signer";
 import type { OfferDisplay } from "@/lib/server/offers";
+import { formatDay, formatDateTime } from "@/lib/format";
 
 interface InvoiceSummary {
   fingerprint: string;
@@ -132,7 +133,7 @@ export function EarlyPayClient({ invoice, offers: initialOffers, suggested, sign
   }
 
   return (
-    <main className="px-6 pb-24 pt-8 md:px-10">
+    <div className="pb-24">
       <p className="text-sm text-graphite">
         <Link href={`/vendor/invoices/${invoice.fingerprint}`} className="hover:text-ink">
           Invoice {invoice.invoiceNumber}
@@ -294,7 +295,7 @@ export function EarlyPayClient({ invoice, offers: initialOffers, suggested, sign
                   Offer Open
                 </span>
                 <span className="text-xs text-graphite">
-                  Expires {new Date(openOffer.validUntil).toLocaleString()}
+                  Expires {formatDateTime(new Date(openOffer.validUntil))}
                 </span>
               </div>
               <p className="mt-2 text-xl font-medium">
@@ -328,7 +329,7 @@ export function EarlyPayClient({ invoice, offers: initialOffers, suggested, sign
                   <li key={o.id} className="flex items-center justify-between rounded-sm border border-rule/60 p-3 text-xs">
                     <div>
                       <span className="font-medium text-ink">{o.discountPercent}% discount</span>
-                      <span className="ml-2 text-graphite">({new Date(o.createdAt).toLocaleDateString()})</span>
+                      <span className="ml-2 text-graphite">({formatDay(new Date(o.createdAt))})</span>
                     </div>
                     <span className="font-mono uppercase text-graphite">
                       {o.status}
@@ -382,6 +383,6 @@ export function EarlyPayClient({ invoice, offers: initialOffers, suggested, sign
           </div>
         </Overlay>
       ) : null}
-    </main>
+    </div>
   );
 }
