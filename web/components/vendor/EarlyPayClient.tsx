@@ -56,12 +56,11 @@ export function EarlyPayClient({ invoice, offers: initialOffers, suggested, sign
   async function reloadOffers() {
     try {
       const res = await fetch(`/api/vendor/offers?fingerprint=${invoice.fingerprint}`);
-      if (res.ok) {
-        const data = await res.json();
-        setOffers(data.offers);
-      }
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      setOffers(data.offers);
     } catch {
-      // Ignore
+      setError("Couldn't refresh the offers. What's shown may be out of date; reload the page.");
     }
   }
 

@@ -21,6 +21,9 @@ export interface IntentAnswer {
   intent: string;
 }
 
+/** What Ask returns: the answer plus the parameters it ran with (checked against the intent's declaration), so the next question can refer back (plan 05y B5) */
+export type AskedAnswer = IntentAnswer & { params: Record<string, unknown> };
+
 export interface IntentHandler {
   descriptor: IntentDescriptor;
   execute(ctx: IntentContext, params: Record<string, unknown>): Promise<IntentAnswer>;

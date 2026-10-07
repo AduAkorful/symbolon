@@ -14,6 +14,7 @@ export const POST = routeWith<{ params: Promise<{ id: string }> }>(async (reques
     userId: session.user.id,
     question: typeof body.question === "string" ? body.question : undefined,
     intent: typeof body.intent === "string" ? body.intent : undefined,
+    history: body.history,
     params: typeof body.params === "object" && body.params !== null ? (body.params as Record<string, unknown>) : undefined,
   });
 

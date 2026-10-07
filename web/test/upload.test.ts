@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeStewardModel, ModelRefusal, type Extraction, type StewardModel } from "@symbolon/steward";
+import { ModelRefusal, type Extraction, type StewardModel } from "@symbolon/steward";
+import { FakeStewardModel } from "@symbolon/steward/testing";
 import { AuthError } from "@/lib/server/errors";
 import { rateLimit, resetRateLimits } from "@/lib/server/rate";
 import { MAX_PDF_BYTES, MAX_TEXT_BYTES, readUpload, toPrefill } from "@/lib/server/upload";
@@ -124,6 +125,29 @@ describe("reading a file", () => {
       await vi.advanceTimersByTimeAsync(91_000);
       expect(await p).toMatchObject({ ok: false, reason: expect.stringMatching(/too long/) });
     });
+  });
+
+  describe("a file with no invoice in it (plan 05x X6)", () => {
+    const empty = extraction({ invoiceNumber: "", vendorName: " ", payerName: "", vendorEmail: null, payerEmail: null, poNumber: null, lineItems: [], taxes: [], discounts: [], total: "", currency: "", issueDate: "", dueDate: "", terms: null, notes: null });
+
+    it("gives no draft when the reader found nothing, whichever reader it is", async () => {
+      const r = await readUpload(new FakeStewardModel(empty), { bytes: pdf() });
+      expect(r).toEqual({ ok: false, reason: "Couldn't find an invoice in that file. Try another file, or write the invoice yourself." });
+    });
+
+    it("still gives a draft when only some fields were read", async () => {
+      expect((await readUpload(new FakeStewardModel({ ...empty, invoiceNumber: "42" }), { bytes: pdf() })).ok).toBe(true);
+      expect((await readUpload(new FakeStewardModel({ ...empty, lineItems: [{ description: "x", quantity: "1", unitPrice: "2" }] }), { bytes: pdf() })).ok).toBe(true);
+    });
+  });
+
+  it("doesn't guess at amounts written the European way: they are left for the vendor to type (plan 05x X5)", () => {
+    const { prefill, fromFile } = toPrefill(
+      extraction({ lineItems: [{ description: "Webdesign", quantity: "1", unitPrice: "3.450,00" }, { description: "Hosting", quantity: "12", unitPrice: "9,90" }], total: "4.246,87", issueDate: "01.09.2026", dueDate: "30.09.2026" }),
+    );
+    expect(prefill.lines.map((l) => l.unitPrice)).toEqual(["", ""]);
+    expect(prefill.dueDays).toBe("");
+    expect(fromFile.total).toBe("4.246,87");
   });
 
   it("works with the scripted model too", async () => {

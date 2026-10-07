@@ -4,7 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import { symbolonVaultAbi, type ContractCall } from "@symbolon/chain";
 import { signSealMessage, sealDomain, typedData } from "@symbolon/seal";
 
-import { ApprovalLevel, DEFAULT_EARLY_PAY, FakeStewardModel, hashRecord, processInvoice, type InvoiceContext, type StewardMode } from "../src/index.js";
+import { ApprovalLevel, DEFAULT_EARLY_PAY, hashRecord, processInvoice, type InvoiceContext, type StewardMode } from "../src/index.js";
+import { FakeStewardModel } from "../src/testing.js";
 import { CHAIN_ID, DAY, facts, LEDGER, NOW, payee, payout, sealAccount, sealed, USDC, VAULT } from "./fixtures.js";
 
 async function context(mode: StewardMode, overrides: Partial<InvoiceContext> = {}, docOverrides = {}) {

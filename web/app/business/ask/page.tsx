@@ -14,7 +14,7 @@ export default async function BusinessAskPage() {
   if (!where.business) notFound();
 
   const config = getConfig();
-  const hasModelKey = Boolean(config.anthropicApiKey);
+  const typingAvailable = config.model !== undefined;
 
   const current = { kind: "business" as const, id: where.business.id };
 
@@ -24,7 +24,7 @@ export default async function BusinessAskPage() {
         businessId={where.business.id}
         businessName={where.business.name}
         quickQuestions={QUICK_QUESTIONS}
-        hasModelKey={hasModelKey}
+        typingAvailable={typingAvailable}
       />
     </Shell>
   );

@@ -24,7 +24,8 @@ export async function intentSettlements(ctx: IntentContext) {
       const discountBps = Number(args.discountBps);
       if (paid < 0n || credit < paid || !Number.isInteger(discountBps) || discountBps < 0 || discountBps > 10000) return [];
       return [{event,invoice,paid,credit,discountBps,token:invoice.token.toLowerCase()}];
-    } catch { return []; }
+    } catch (e) {
+      console.error("ask: an intent could not read its data", e); return []; }
   });
 }
 

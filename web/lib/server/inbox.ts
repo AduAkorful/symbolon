@@ -1,3 +1,4 @@
+import { livePurchaseOrderEvidence } from "./po-evidence";
 import "server-only";
 
 import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
@@ -84,9 +85,9 @@ export async function listInbox(db: Database, client: PublicClient, cfg: ChainSe
         kind: "invoice",
         id: row.fingerprint,
         fingerprint: row.fingerprint,
-        vendor: document?.vendor.name ?? "Unknown vendor",
+        vendor: document?.vendor.name ?? "Invoice can't be read",
         invoiceNumber: row.invoiceNumber,
-        amount: document ? formatAmount(row.total, document.currency.decimals) : row.total.toString(),
+        amount: document ? formatAmount(row.total, document.currency.decimals) : "—",
         token: document?.currency.symbol ?? "",
         dueDate: row.dueDate,
         trust,
@@ -148,25 +149,9 @@ export async function loadInvoiceDetail(db: Database, client: PublicClient, cfg:
       .where(and(eq(purchaseOrders.businessId, businessId), eq(purchaseOrders.poRef, verification.invoice.poRef)))
       .limit(1);
     if (poRow) {
-      // Try to get live remaining from chain (best-effort; null on failure)
-      let liveRemaining: string | null = null;
-      let liveOpen = !poRow.closedAt;
-      try {
-        if (business.vault) {
-          const contracts = symbolonContracts(client, cfg.deployment);
-          const onchain = await contracts.lens.read.getPurchaseOrder([getAddress(business.vault), verification.invoice.poRef as Hex]);
-          liveOpen = onchain.open;
-          liveRemaining = onchain.remaining.toString();
-        }
-      } catch { /* use DB state */ }
-      dbPo = {
-        poNumber: poRow.poNumber,
-        open: liveOpen,
-        remainingRaw: liveRemaining,
-        releaseAfter: poRow.releaseAfter ?? null,
-        openTx: poRow.openTx ?? null,
-        closedAt: poRow.closedAt ?? null,
-      };
+      dbPo = business.vault
+        ? await livePurchaseOrderEvidence(symbolonContracts(client, cfg.deployment), business.vault, verification.invoice.poRef as Hex, poRow)
+        : { poNumber: poRow.poNumber, open: false, remainingRaw: null, releaseAfter: poRow.releaseAfter ?? null, openTx: poRow.openTx ?? null, closedAt: poRow.closedAt ?? null };
     }
   }
 

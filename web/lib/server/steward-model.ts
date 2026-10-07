@@ -1,13 +1,15 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
-import { AnthropicStewardModel, type StewardModel } from "@symbolon/steward";
+import { AnthropicStewardModel, OpenRouterStewardModel, type StewardModel } from "@symbolon/steward";
 import { getConfig } from "./config";
 
 let cached: StewardModel | undefined;
 
-/** The Claude-backed reader, or null while there is no API key (the screens say reading uploads isn't available yet) */
+/** The configured reader (Claude, or an OpenRouter-hosted model; plan 05x), or null while no model key is set (the screens say it isn't available yet) */
 export function getStewardModel(): StewardModel | null {
-  const key = getConfig().anthropicApiKey;
-  if (!key) return null;
-  return (cached ??= new AnthropicStewardModel(new Anthropic({ apiKey: key })));
+  const m = getConfig().model;
+  if (!m) return null;
+  return (cached ??= m.provider === "anthropic"
+    ? new AnthropicStewardModel(new Anthropic({ apiKey: m.apiKey }))
+    : new OpenRouterStewardModel({ apiKey: m.apiKey, model: m.model, zdr: m.zdr }));
 }

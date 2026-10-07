@@ -42,12 +42,10 @@ export function SettingsView({
   async function handleRefresh() {
     try {
       const res = await fetch(`/api/business/${business.id}/settings`);
-      if (res.ok) {
-        const fresh = await res.json();
-        setData(fresh);
-      }
+      if (!res.ok) throw new Error(String(res.status));
+      setData(await res.json());
     } catch {
-      // ignore
+      setAutoError("Couldn't refresh these settings. What's shown may be out of date; reload the page.");
     }
   }
 

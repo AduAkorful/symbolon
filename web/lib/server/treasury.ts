@@ -302,6 +302,7 @@ export async function loadTreasury(
     .select({
       fingerprint: invoices.fingerprint,
       invoiceNumber: invoices.invoiceNumber,
+      seal: invoices.seal,
       vendorName: seals.displayName,
       vendorHandle: seals.handle,
       token: invoices.token,
@@ -327,7 +328,7 @@ export async function loadTreasury(
       direction: "out" as const,
       ref: inv.fingerprint,
       token: inv.token.toLowerCase(),
-      vendor: inv.vendorName || inv.vendorHandle || "Unknown vendor",
+      vendor: inv.vendorName || inv.vendorHandle || inv.seal,
       invoiceNumber: inv.invoiceNumber,
       dueDate: inv.dueDate,
     };

@@ -81,14 +81,15 @@ export async function listBudgets(
 
 
   // Read decimals and block timestamp
-  let blockTimestamp = BigInt(Math.floor(Date.now() / 1000));
+  // Budget periods are counted in chain time (the contract's block.timestamp), so a failed read is "can't confirm", never the wall clock
+  let blockTimestamp: bigint;
   try {
     const block = await client.getBlock({ blockTag: "latest" });
-    if (block?.timestamp) {
-      blockTimestamp = block.timestamp;
-    }
-  } catch {
-    // fallback to wall clock
+    if (!block?.timestamp) throw new Error("latest block has no timestamp");
+    blockTimestamp = block.timestamp;
+  } catch (e) {
+    console.error("budgets: reading the latest block failed", e);
+    throw new AuthError(502, "Can't confirm the current budget period right now. Try again shortly.");
   }
 
   // Load custom budgets from DB

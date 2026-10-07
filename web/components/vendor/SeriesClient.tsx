@@ -46,12 +46,11 @@ export function SeriesClient({ initialSeries, clients, signer }: Props) {
   async function reloadSeries() {
     try {
       const res = await fetch("/api/vendor/series");
-      if (res.ok) {
-        const data = await res.json();
-        setSeriesList(data.series);
-      }
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      setSeriesList(data.series);
     } catch {
-      // Ignore
+      setError("Couldn't refresh your series. What's shown may be out of date; reload the page.");
     }
   }
 

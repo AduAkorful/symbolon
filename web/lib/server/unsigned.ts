@@ -38,7 +38,7 @@ export async function addUnsignedBill(
   model: StewardModel | null,
 ) {
   await requireMember(db, user.id, businessId, ...BILL_ROLES);
-  if (!model) throw new AuthError(503, "Reading uploaded bills isn't available on this server yet. No bill was stored.");
+  if (!model) throw new AuthError(503, "Reading uploaded bills isn't available right now. No bill was stored.");
   const hash = fileHash(file.bytes);
   const existing = await db.select().from(unsignedBills).where(and(eq(unsignedBills.businessId, businessId), eq(unsignedBills.fileSha256, hash))).limit(1);
   if (existing[0]) return existing[0];

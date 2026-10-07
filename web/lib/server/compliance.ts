@@ -97,37 +97,25 @@ export async function screenPayee(
 
   const vault = getAddress(business.vault);
 
-  // Read the payee's current onchain state when a real client is available.
-  // In tests, a mock provider is injected without a client; the lens read is skipped.
-  type LensPayee = Awaited<ReturnType<ReturnType<typeof symbolonContracts>["lens"]["read"]["getPayee"]>>;
-  let payee: LensPayee | undefined;
-  if (options?.client && options?.deployment) {
-    const c = symbolonContracts(options.client, options.deployment);
-    try {
-      payee = await c.lens.read.getPayee([vault, seal]);
-    } catch {
-      throw new AuthError(502, "Can't confirm this Vault's payees right now. Try again shortly.");
-    }
-  } else if (!options?.provider) {
-    // No client and no test provider: can't proceed at all.
+  // The address to screen is the payee's payout as the Vault reports it. No client or a failed read means we can't confirm it, so nothing is screened.
+  if (!options?.client || !options?.deployment) {
     throw new AuthError(502, "Can't confirm this Vault's payees right now. Try again shortly.");
   }
-
-  if (payee !== undefined && !payee.exists) {
+  let payee: Awaited<ReturnType<ReturnType<typeof symbolonContracts>["lens"]["read"]["getPayee"]>>;
+  try {
+    payee = await symbolonContracts(options.client, options.deployment).lens.read.getPayee([vault, seal]);
+  } catch (e) {
+    console.error("compliance: reading the payee from the Vault failed", e);
+    throw new AuthError(502, "Can't confirm this Vault's payees right now. Try again shortly.");
+  }
+  if (!payee.exists) {
     throw new AuthError(404, "That vendor is not an active payee on the Vault.");
   }
 
-  // Resolve the address to screen: prefer the pending payout when requested, else the active payout.
-  // When payee is undefined (test-only: provider injected without client), fall back to the seal address.
+  // Screen the pending payout when asked for it, else the active one
   const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
-  let targetAddress: Address;
-  if (payee === undefined) {
-    targetAddress = seal; // test-only fallback; provider will screen this address
-  } else if (options?.target === "pending" && payee.pendingPayout && payee.pendingPayout !== ZERO_ADDR) {
-    targetAddress = getAddress(payee.pendingPayout);
-  } else {
-    targetAddress = getAddress(payee.payout);
-  }
+  const targetAddress: Address =
+    options.target === "pending" && payee.pendingPayout && payee.pendingPayout !== ZERO_ADDR ? getAddress(payee.pendingPayout) : getAddress(payee.payout);
 
   const provider =
     options?.provider ??

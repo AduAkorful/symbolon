@@ -80,10 +80,55 @@ describe("loadConfig", () => {
       expect(loadConfig({ ...base, CIRCLE_API_KEY: "k", CIRCLE_ENTITY_SECRET: "e" }).privy).toBeUndefined();
     });
 
-    it("reads the Anthropic key only when it is set", () => {
-      expect(loadConfig(base).anthropicApiKey).toBeUndefined();
-      expect(loadConfig({ ...base, ANTHROPIC_API_KEY: "  " }).anthropicApiKey).toBeUndefined();
-      expect(loadConfig({ ...base, ANTHROPIC_API_KEY: "sk-test" }).anthropicApiKey).toBe("sk-test");
+    describe("the Steward's model (plan 05x X1)", () => {
+      const modelOf = (extra: Record<string, string>) => loadConfig({ ...base, ...extra }).model;
+
+      it("has no model until a key is set; blank keys count as unset", () => {
+        expect(modelOf({})).toBeUndefined();
+        expect(modelOf({ ANTHROPIC_API_KEY: "  ", OPENROUTER_API_KEY: "" })).toBeUndefined();
+        expect("anthropicApiKey" in loadConfig(base)).toBe(false);
+      });
+
+      it("picks the one provider whose key is set", () => {
+        expect(modelOf({ ANTHROPIC_API_KEY: " sk-a " })).toEqual({ provider: "anthropic", apiKey: "sk-a" });
+        expect(modelOf({ OPENROUTER_API_KEY: "sk-or" })).toEqual({ provider: "openrouter", apiKey: "sk-or", model: "openai/gpt-6-luna", zdr: true });
+      });
+
+      it("refuses two keys without a selector, and a selector without its key", () => {
+        expect(() => modelOf({ ANTHROPIC_API_KEY: "a", OPENROUTER_API_KEY: "o" })).toThrow(/STEWARD_LLM/);
+        expect(() => modelOf({ STEWARD_LLM: "openrouter" })).toThrow(/OPENROUTER_API_KEY/);
+        expect(() => modelOf({ STEWARD_LLM: "anthropic", OPENROUTER_API_KEY: "o" })).toThrow(/ANTHROPIC_API_KEY/);
+        expect(() => modelOf({ STEWARD_LLM: "gemini", OPENROUTER_API_KEY: "o" })).toThrow(/STEWARD_LLM/);
+      });
+
+      it("lets the selector choose between two keys", () => {
+        const both = { ANTHROPIC_API_KEY: "a", OPENROUTER_API_KEY: "o" };
+        expect(modelOf({ ...both, STEWARD_LLM: "anthropic" })?.provider).toBe("anthropic");
+        expect(modelOf({ ...both, STEWARD_LLM: " OpenRouter " })?.provider).toBe("openrouter");
+      });
+
+      it("reads the OpenRouter model slug and zero-data-retention setting, and refuses bad ones", () => {
+        const or = { OPENROUTER_API_KEY: "o" };
+        expect(modelOf({ ...or, OPENROUTER_MODEL: "google/gemini-3.1-flash-lite", OPENROUTER_ZDR: "false" })).toEqual({
+          provider: "openrouter",
+          apiKey: "o",
+          model: "google/gemini-3.1-flash-lite",
+          zdr: false,
+        });
+        expect(modelOf({ ...or, OPENROUTER_ZDR: "TRUE" })).toMatchObject({ zdr: true });
+        for (const bad of ["gpt-6-luna", "openai/", "/luna", "openai/gpt 6", "https://evil.example/x/y", "openai/gpt-6\nX: y"]) {
+          expect(() => modelOf({ ...or, OPENROUTER_MODEL: bad })).toThrow(/OPENROUTER_MODEL/);
+        }
+        expect(() => modelOf({ ...or, OPENROUTER_ZDR: "maybe" })).toThrow(/OPENROUTER_ZDR/);
+      });
+
+      it("never puts a key in an error message", () => {
+        try {
+          modelOf({ ANTHROPIC_API_KEY: "sk-secret-a", OPENROUTER_API_KEY: "sk-secret-o" });
+        } catch (e) {
+          expect(String(e)).not.toContain("sk-secret");
+        }
+      });
     });
 
     it("turns Steward wallets on only when the API key and the entity secret are both present", () => {

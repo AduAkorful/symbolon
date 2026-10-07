@@ -187,7 +187,7 @@ describe("auth routes", () => {
       await db.insert(seals).values({ address: me.wallet!, userId: me.id, handle: "route-vendor-a", displayName: "Route Vendor" }).onConflictDoNothing();
       const res = await vendorUpload(upload(pdf));
       expect(res.status).toBe(503);
-      expect(((await res.json()) as { error: string }).error).toMatch(/isn't available on this server yet/);
+      expect(((await res.json()) as { error: string }).error).toMatch(/isn't available right now/);
     });
 
     it("hands the file to the reader and returns a draft", async () => {

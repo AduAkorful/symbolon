@@ -78,8 +78,9 @@ async function Frame({
         const db = await getDb();
         unreadCount = await getUnreadNotificationCount(db, session.user.id);
       }
-    } catch {
-      unreadCount = 0;
+    } catch (e) {
+      console.error("unread notification count failed", e);
+      unreadCount = undefined;
     }
   }
 
@@ -144,8 +145,8 @@ async function Frame({
             .orderBy(desc(chainEvents.blockNumber))
             .limit(1);
           if (pe) pauseTxHash = pe.txHash;
-        } catch {
-          // ignore DB error reading pause tx
+        } catch (e) {
+          console.error("reading the pause transaction failed", e);
         }
       }
 
@@ -153,8 +154,8 @@ async function Frame({
         const session = await getSession();
         if (session) signer = signerPlanFor(session, config);
       }
-    } catch {
-      // ignore onchain read error
+    } catch (e) {
+      console.error("reading Vault state for the shell failed", e);
     }
   }
 

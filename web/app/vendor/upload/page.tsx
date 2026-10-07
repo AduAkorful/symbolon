@@ -16,7 +16,7 @@ export default async function UploadInvoice() {
   const clients = (await listClients(db, session.user)).map((c) => ({ id: c.id, name: c.name, vault: c.vault, email: c.email }));
   return (
     <Shell where={where} current={{ kind: "vendor" }}>
-      <Upload available={Boolean(config.anthropicApiKey)} handle={seal.handle} clients={clients} nextNumber={await nextInvoiceNumber(db, seal.address)} signer={signerPlanFor(session, config)} />
+      <Upload available={config.model !== undefined} handle={seal.handle} clients={clients} nextNumber={await nextInvoiceNumber(db, seal.address)} signer={signerPlanFor(session, config)} />
     </Shell>
   );
 }

@@ -47,6 +47,7 @@ export function ActivityView({
   const [vendor, setVendor] = useState("All vendors");
   const [budget, setBudget] = useState("All budgets");
   const [isPending, startTransition] = useTransition();
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const fetchFiltered = (newWho: string, newVendor: string, newBudget: string) => {
     startTransition(async () => {
@@ -57,13 +58,13 @@ export function ActivityView({
 
       try {
         const res = await fetch(`/api/business/${businessId}/activity?${params.toString()}`);
-        if (res.ok) {
-          const data = await res.json();
-          setItems(data.items || []);
-          setNextCursor(data.nextCursor);
-        }
+        if (!res.ok) throw new Error(String(res.status));
+        const data = await res.json();
+        setLoadError(null);
+        setItems(data.items || []);
+        setNextCursor(data.nextCursor);
       } catch {
-        // fallback
+        setLoadError("Couldn't load the activity. What's shown may be out of date; try again.");
       }
     });
   };
@@ -94,13 +95,13 @@ export function ActivityView({
 
       try {
         const res = await fetch(`/api/business/${businessId}/activity?${params.toString()}`);
-        if (res.ok) {
-          const data = await res.json();
-          setItems((prev) => [...prev, ...(data.items || [])]);
-          setNextCursor(data.nextCursor);
-        }
+        if (!res.ok) throw new Error(String(res.status));
+        const data = await res.json();
+        setLoadError(null);
+        setItems((prev) => [...prev, ...(data.items || [])]);
+        setNextCursor(data.nextCursor);
       } catch {
-        // ignore
+        setLoadError("Couldn't load more activity. Try again.");
       }
     });
   };
@@ -115,6 +116,12 @@ export function ActivityView({
           </p>
         </div>
       </div>
+
+      {loadError ? (
+        <p role="alert" className="mt-4 text-sm text-red">
+          {loadError}
+        </p>
+      ) : null}
 
       <div className="mt-6 flex flex-wrap items-center gap-2">
         {initialFeed.whoOptions.map((w) => (

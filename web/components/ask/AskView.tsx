@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { postJson } from "@/lib/client/api";
+import { buildHistory } from "@/lib/ask-history";
 
 export interface QuickQuestion {
   label: string;
@@ -15,6 +16,8 @@ export interface AskAnswer {
   links: [string, string][];
   source: string;
   intent: string;
+  /** The parameters the question ran with; they travel back as part of the conversation */
+  params?: Record<string, unknown>;
 }
 
 interface Message {
@@ -27,12 +30,12 @@ export function AskView({
   businessId,
   businessName,
   quickQuestions,
-  hasModelKey,
+  typingAvailable,
 }: {
   businessId: string;
   businessName: string;
   quickQuestions: QuickQuestion[];
-  hasModelKey: boolean;
+  typingAvailable: boolean;
 }) {
   const [log, setLog] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -49,7 +52,7 @@ export function AskView({
     try {
       const res = await postJson<{ ok: boolean; answer: AskAnswer }>(
         `/api/business/${businessId}/ask`,
-        intent ? { intent, params } : { question: questionText },
+        intent ? { intent, params } : { question: questionText, history: buildHistory(log) },
       );
       setLog((prev) =>
         prev.map((msg, i) => (i === newIndex ? { ...msg, a: res.answer } : msg)),
@@ -118,6 +121,21 @@ export function AskView({
       </ol>
 
       <div className="mt-8 space-y-3 pt-4">
+        {log.length > 0 ? (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => {
+                setLog([]);
+                setInput("");
+              }}
+              className="text-xs text-graphite underline-offset-2 hover:text-ink hover:underline disabled:opacity-50"
+            >
+              New conversation
+            </button>
+          </div>
+        ) : null}
         <div className="flex flex-wrap gap-2">
           {quickQuestions.map((q) => (
             <button
@@ -132,6 +150,7 @@ export function AskView({
           ))}
         </div>
 
+        {typingAvailable ? (
         <form onSubmit={handleFormSubmit} className="flex gap-2">
           <input
             type="text"
@@ -139,11 +158,7 @@ export function AskView({
             onChange={(e) => setInput(e.target.value)}
             disabled={loading}
             aria-label="Your question for the Steward"
-            placeholder={
-              hasModelKey
-                ? "Ask about invoices, payments, runway, holds…"
-                : "Typing requires an Anthropic API key; try the quick questions above."
-            }
+            placeholder="Ask about invoices, payments, runway, holds…"
             className="w-full rounded-doc border border-rule bg-paper px-3.5 py-2.5 text-sm text-ink placeholder:text-graphite/60 focus:border-ink/50 focus:outline-none focus:ring-1 focus:ring-seal disabled:opacity-60"
           />
           <button
@@ -154,10 +169,6 @@ export function AskView({
             Ask
           </button>
         </form>
-        {!hasModelKey ? (
-          <p className="text-xs text-graphite">
-            Free-form language understanding requires <code className="font-mono text-[11px]">ANTHROPIC_API_KEY</code>. Deterministic quick questions are active.
-          </p>
         ) : null}
       </div>
     </div>

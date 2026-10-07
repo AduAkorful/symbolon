@@ -113,7 +113,12 @@ export async function readUploadWithExtraction(model: StewardModel, file: { byte
   } finally {
     clearTimeout(timer);
   }
-  return { ok: true, extraction: x, ...toPrefill(x) };
+  const filled = toPrefill(x);
+  // A blank or unreadable file can come back as empty fields. Say so rather than open a draft with nothing in it.
+  if (!filled.prefill.invoiceNumber && !filled.prefill.client.name && !clean(x.vendorName, 200) && filled.prefill.lines.length === 0) {
+    return { ok: false, reason: "Couldn't find an invoice in that file. Try another file, or write the invoice yourself." };
+  }
+  return { ok: true, extraction: x, ...filled };
 }
 
 export async function readUpload(model: StewardModel, file: { bytes: Uint8Array; name?: string }): Promise<ReadResult> {

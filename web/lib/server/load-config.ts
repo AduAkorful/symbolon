@@ -24,8 +24,41 @@ export interface AppConfig {
   privy?: { appId: string; appSecret: string; verificationKey?: string };
   /** Circle developer-controlled wallets (Steward wallets). Absent until the API key and the entity secret are both set. */
   stewardCircle?: { apiKey: string; entitySecret: string; walletSetId?: string };
-  /** Claude, for reading uploaded invoices into a draft (never on a payment path). Absent until the key is set. */
-  anthropicApiKey?: string;
+  /** The Steward's reader and explainer (uploads, decision explanations, Ask routing). Never on a payment path. Absent until a key is set. */
+  model?: ModelConfig;
+}
+
+/** Which model backs the Steward's three reading jobs (plan 05x X1) */
+export type ModelConfig =
+  | { provider: "anthropic"; apiKey: string }
+  | { provider: "openrouter"; apiKey: string; model: string; zdr: boolean };
+
+/** Pinned default (plan 05x X3); change it with OPENROUTER_MODEL, not here */
+export const DEFAULT_OPENROUTER_MODEL = "openai/gpt-6-luna";
+const OPENROUTER_SLUG = /^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*$/i;
+
+function modelConfig(env: Env): ModelConfig | undefined {
+  const anthropic = env.ANTHROPIC_API_KEY?.trim() || undefined;
+  const openrouter = env.OPENROUTER_API_KEY?.trim() || undefined;
+  const selector = env.STEWARD_LLM?.trim().toLowerCase() || undefined;
+  if (selector !== undefined && selector !== "anthropic" && selector !== "openrouter") {
+    throw new ConfigError('STEWARD_LLM must be "anthropic" or "openrouter"');
+  }
+  if (selector === undefined && anthropic && openrouter) {
+    throw new ConfigError("ANTHROPIC_API_KEY and OPENROUTER_API_KEY are both set; set STEWARD_LLM to anthropic or openrouter to choose one");
+  }
+  const provider = selector ?? (anthropic ? "anthropic" : openrouter ? "openrouter" : undefined);
+  if (provider === undefined) return undefined;
+  if (provider === "anthropic") {
+    if (!anthropic) throw new ConfigError("STEWARD_LLM is anthropic but ANTHROPIC_API_KEY is not set");
+    return { provider, apiKey: anthropic };
+  }
+  if (!openrouter) throw new ConfigError("STEWARD_LLM is openrouter but OPENROUTER_API_KEY is not set");
+  const model = env.OPENROUTER_MODEL?.trim() || DEFAULT_OPENROUTER_MODEL;
+  if (!OPENROUTER_SLUG.test(model)) throw new ConfigError("OPENROUTER_MODEL must look like provider/model-name");
+  const zdrRaw = env.OPENROUTER_ZDR?.trim().toLowerCase();
+  if (zdrRaw !== undefined && zdrRaw !== "" && zdrRaw !== "true" && zdrRaw !== "false") throw new ConfigError('OPENROUTER_ZDR must be "true" or "false"');
+  return { provider, apiKey: openrouter, model, zdr: zdrRaw !== "false" };
 }
 
 type Env = Record<string, string | undefined>;
@@ -79,7 +112,7 @@ export function loadConfig(env: Env): AppConfig {
   if (production && !privyAppId) throw new ConfigError("NEXT_PUBLIC_PRIVY_APP_ID and PRIVY_APP_SECRET are not set; production has no other way to sign in");
   const entitySecret = env.CIRCLE_ENTITY_SECRET?.trim();
   const walletSetId = env.CIRCLE_WALLET_SET_ID?.trim();
-  const anthropicApiKey = env.ANTHROPIC_API_KEY?.trim();
+  const model = modelConfig(env);
 
   return {
     chainId,
@@ -90,7 +123,7 @@ export function loadConfig(env: Env): AppConfig {
     production,
     ...(databaseUrl ? { databaseUrl } : {}),
     ...(privyAppId && privySecret ? { privy: { appId: privyAppId, appSecret: privySecret, ...(privyKey ? { verificationKey: privyKey } : {}) } } : {}),
-    ...(anthropicApiKey ? { anthropicApiKey } : {}),
+    ...(model ? { model } : {}),
     ...(apiKey && entitySecret ? { stewardCircle: { apiKey, entitySecret, ...(walletSetId ? { walletSetId } : {}) } } : {}),
   };
 }

@@ -56,7 +56,7 @@ export function Upload(props: { available: boolean; handle: string; clients: Cli
         </label>
       ) : (
         <p role="status" className="mt-8 rounded-doc border border-rule p-4 text-sm text-graphite">
-          Reading uploaded invoices isn’t available on this server yet. You can write the invoice yourself.
+          Reading uploaded invoices isn’t available right now. You can write the invoice yourself.
         </p>
       )}
       {problem ? (

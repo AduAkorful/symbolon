@@ -7,7 +7,8 @@ import { getConfig } from "./config";
 import { getDb } from "./db";
 import { AuthError } from "./errors";
 import { executeIntent, listIntentDescriptors } from "./intents/registry";
-import type { IntentAnswer, IntentContext } from "./intents/types";
+import { sanitizeHistory } from "./intents/history";
+import type { AskedAnswer, IntentContext } from "./intents/types";
 import { rateLimit } from "./rate";
 import { getStewardModel } from "./steward-model";
 
@@ -17,7 +18,8 @@ export interface AskInput {
   question?: string;
   intent?: string;
   params?: Record<string, unknown>;
-  modelOverride?: import("@symbolon/steward").StewardModel;
+  /** The earlier turns of this conversation, as the browser sent them; checked before use (plan 05y B2) */
+  history?: unknown;
   db?: Database;
 }
 
@@ -25,7 +27,7 @@ export interface AskInput {
  * Handles a member's question to the Steward (plan 05u Part C).
  * Read-only by construction; never moves money or modifies state.
  */
-export async function askSteward(input: AskInput): Promise<IntentAnswer> {
+export async function askSteward(input: AskInput): Promise<AskedAnswer> {
   const db = input.db ?? (await getDb());
   await requireMember(db, input.userId, input.businessId);
 
@@ -65,21 +67,32 @@ export async function askSteward(input: AskInput): Promise<IntentAnswer> {
     throw new AuthError(400, "Please provide a question or select an intent.");
   }
 
-  const model = input.modelOverride ?? getStewardModel();
+  const model = getStewardModel();
   if (!model || !model.route) {
     return {
-      text: "Typing questions needs an Anthropic key; the questions above work now.",
+      text: "Typing questions isn't available right now; the quick questions work.",
       links: [],
-      source: "From: Steward intent router (no API key configured)",
+      source: "From: Steward intent router (no model configured)",
       intent: "unsupported",
+      params: {},
     };
   }
 
   const descriptors = listIntentDescriptors();
-  const routeRes = await model.route(question, descriptors);
+  const routeRes = await model.route(question, descriptors, sanitizeHistory(input.history, descriptors));
 
   if ("params" in routeRes) {
     return executeIntent(ctx, routeRes.intent, routeRes.params);
+  }
+
+  if (routeRes.reason === "needs_detail") {
+    return {
+      text: "Which one do you mean? Try naming the vendor or the invoice.",
+      links: [],
+      source: "From: Steward intent router",
+      intent: "unsupported",
+      params: {},
+    };
   }
 
   const available = descriptors.map((d) => d.name.replace(/_/g, " ")).join(", ");
@@ -88,5 +101,6 @@ export async function askSteward(input: AskInput): Promise<IntentAnswer> {
     links: [],
     source: "From: Steward intent router",
     intent: "unsupported",
+    params: {},
   };
 }

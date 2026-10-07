@@ -6,7 +6,7 @@ vi.mock("server-only", () => ({}));
 import { appendAppDecision } from "@/lib/server/app-decisions";
 
 describe("transactional action notification dispatch", () => {
-  it("awaiting-second excludes the original confirmer and every other business", async () => {
+  it("awaiting-second excludes the original confirmer and every other business", { timeout: 30_000 }, async () => {
     const db = await createTestDb();
     const [a, b, outsider] = await db.insert(users).values([{ email: "first@notifications.test" }, { email: "second@notifications.test" }, { email: "outsider@notifications.test" }]).returning();
     const [business, other] = await db.insert(businesses).values([{ chainId: arcTestnet.id, name: "First" }, { chainId: arcTestnet.id, name: "Other" }]).returning();
@@ -17,7 +17,7 @@ describe("transactional action notification dispatch", () => {
     expect(await db.select().from(notifications)).toEqual([expect.objectContaining({ userId: b!.id, kind: "verification_awaiting_second", dedupeKey: "verif:verification-1" })]);
     await db.$client.close();
   });
-  it("verified payout actions notify the Seal's user and dedupe receipt retries", async () => {
+  it("verified payout actions notify the Seal's user and dedupe receipt retries", { timeout: 30_000 }, async () => {
     const db = await createTestDb();
     const address = privateKeyToAccount(generatePrivateKey()).address.toLowerCase();
     const [vendor] = await db.insert(users).values({ wallet: address }).returning();

@@ -1,3 +1,4 @@
+import { livePurchaseOrderEvidence } from "./po-evidence";
 import "server-only";
 
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
@@ -220,16 +221,7 @@ export async function listApprovals(
         .from(purchaseOrders)
         .where(and(eq(purchaseOrders.businessId, businessId), eq(purchaseOrders.poRef, inv.poRef)))
         .limit(1);
-      if (poRow) {
-        dbPo = {
-          poNumber: poRow.poNumber,
-          open: !poRow.closedAt,
-          remainingRaw: null,
-          releaseAfter: poRow.releaseAfter ?? null,
-          openTx: poRow.openTx ?? null,
-          closedAt: poRow.closedAt ?? null,
-        };
-      }
+      if (poRow) dbPo = await livePurchaseOrderEvidence(contracts, vault, inv.poRef as Hex, poRow);
     }
 
     const ev = evidenceFor({
@@ -255,15 +247,15 @@ export async function listApprovals(
     const decimals = doc?.currency?.decimals ?? 6;
     items.push({
       fingerprint: row.fingerprint,
-      invoiceNumber: row.invoiceNumber ?? doc?.invoiceNumber ?? "Unknown",
+      invoiceNumber: row.invoiceNumber ?? doc?.invoiceNumber ?? `${row.fingerprint.slice(0, 10)}…`,
       vendor: {
-        name: doc?.vendor?.name ?? "Unknown vendor",
+        name: doc?.vendor?.name ?? row.seal,
         seal: row.seal,
         trust,
       },
-      amountFormatted: doc ? formatAmount(row.total, decimals) : row.total.toString(),
+      amountFormatted: doc ? formatAmount(row.total, decimals) : "—",
       rawAmount: row.total.toString(),
-      token: doc?.currency?.symbol ?? "USDC",
+      token: doc?.currency?.symbol ?? "",
       dueDate: row.dueDate,
       receivedAt: row.receivedAt,
       stewardSentence: summary.sentence,

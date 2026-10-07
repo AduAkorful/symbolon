@@ -188,7 +188,7 @@ export async function loadReceipt(
     document: doc,
     invoiceNumber: doc.invoiceNumber,
     vendor: {
-      name: doc.vendor?.name ?? "Unknown vendor",
+      name: doc.vendor.name,
       seal: doc.seal,
       handle: sealRow?.handle ?? null,
       verifiedDomain: sealRow?.verifiedDomain ?? null,

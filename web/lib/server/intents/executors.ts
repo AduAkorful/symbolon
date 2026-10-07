@@ -16,6 +16,7 @@ import { summarizeDecision } from "../decision-text";
 import { loadTreasury } from "../treasury";
 import { readVaultState, stewardStanding } from "../vault-read";
 import type { IntentAnswer, IntentContext, IntentHandler } from "./types";
+import { latestInvoicesFor, resolveVendors } from "./resolve";
 import { currencyTotals, intentSettlements } from "./settlements";
 
 function formatUsdc(units: bigint): string {
@@ -278,9 +279,10 @@ export const cashPositionIntent: IntentHandler = {
         source: `From: Vault and Reserve balances at block ${treasury.block}`,
         intent: "cash_position",
       };
-    } catch {
+    } catch (e) {
+      console.error("ask: an intent could not read its data", e);
       return {
-        text: "Could not load onchain treasury balances right now. Verify Vault connectivity.",
+        text: "Can't confirm the Vault balances right now. Try again shortly.",
         links: [["Treasury dashboard", "/business/treasury"]],
         source: "From: failed chain read",
         intent: "cash_position",
@@ -331,7 +333,8 @@ export const stewardStatusIntent: IntentHandler = {
         const vState = await readVaultState(ctx.client, ctx.deployment, biz.vault);
         const standing = stewardStanding(biz.stewardWallet, vState);
         onchainStatus = standing.kind === "paused" ? "Paused" : standing.kind === "active" ? "Active" : "Not ready";
-      } catch {
+      } catch (e) {
+        console.error("ask: an intent could not read its data", e);
         onchainStatus = "Unreachable";
       }
     }
@@ -385,7 +388,8 @@ export const reserveStatusIntent: IntentHandler = {
         source: `From: USYC Teller & Oracle round at block ${treasury.block}`,
         intent: "reserve_status",
       };
-    } catch {
+    } catch (e) {
+      console.error("ask: an intent could not read its data", e);
       return {
         text: "Unable to read reserve standing from chain.",
         links: [["Treasury", "/business/treasury"]],
@@ -468,7 +472,7 @@ export const whyDecisionIntent: IntentHandler = {
     }
 
     // Match candidate invoices by fingerprint or invoiceNumber
-    const candidates = await ctx.db
+    let candidates = await ctx.db
       .select({
         fingerprint: invoices.fingerprint,
         invoiceNumber: invoices.invoiceNumber,
@@ -484,6 +488,20 @@ export const whyDecisionIntent: IntentHandler = {
         ),
       )
       .limit(5);
+
+    if (candidates.length === 0) {
+      // Not a number or fingerprint: the person may have named a vendor ("why did you hold Ana's invoice")
+      const named = await resolveVendors(ctx, target.replace(/['’]s$/i, ""));
+      if (named.length > 1) {
+        return {
+          text: `Several vendors match '${target}': ${named.slice(0, 5).map((v) => v.name).join(", ")}. Name one of them.`,
+          links: named.slice(0, 5).map((v) => [v.name, `/business/vendors/${v.seal}`] as [string, string]),
+          source: `From: vendor records at ${now.toISOString().slice(0, 19)}Z`,
+          intent: "why_decision",
+        };
+      }
+      if (named.length === 1) candidates = await latestInvoicesFor(ctx, named[0]!.seal, 1);
+    }
 
     if (candidates.length === 0) {
       return {

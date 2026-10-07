@@ -61,6 +61,7 @@ export function OrdersClient({ businessId, initial }: OrdersProps) {
   const [orders, setOrders] = useState<OrderView[]>(initial);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [reloadError, setReloadError] = useState<string | null>(null);
   const { wallets } = useWallets();
   const { user: privyUser } = usePrivy();
 
@@ -68,12 +69,17 @@ export function OrdersClient({ businessId, initial }: OrdersProps) {
   const reload = async () => {
     try {
       const res = await fetch(`/api/business/${businessId}/order`);
-      if (res.ok) setOrders(await res.json());
-    } catch { /* keep stale */ }
+      if (!res.ok) throw new Error(String(res.status));
+      setOrders(await res.json());
+      setReloadError(null);
+    } catch {
+      setReloadError("Couldn't refresh your orders. What's shown may be out of date; reload the page.");
+    }
   };
 
   return (
     <div id="orders-page" className="max-w-[1080px]">
+      {reloadError ? <p role="alert" className="mb-4 text-sm text-red">{reloadError}</p> : null}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="font-display text-5xl">Orders</h1>

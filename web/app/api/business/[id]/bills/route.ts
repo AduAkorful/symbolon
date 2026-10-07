@@ -6,6 +6,9 @@ import { requireSession, routeWith } from "@/lib/server/http";
 import { rateLimit } from "@/lib/server/rate";
 import { getStewardModel } from "@/lib/server/steward-model";
 
+// Reading a file calls the model: up to 90 s in `readUpload`, plus margin. Vercel Hobby allows up to 300 s (docs read 2026-10-07).
+export const maxDuration = 120;
+
 type Ctx = { params: Promise<{ id: string }> };
 
 export const POST = routeWith<Ctx>(async (request, ctx) => {

@@ -27,6 +27,13 @@ import { readVaultState, stewardStanding } from "./vault-read";
 
 const VIEW_ROLES: Role[] = ["owner", "approver", "requester", "viewer"];
 
+/** A stored invoice record that no longer decodes is said out loud; nothing is guessed in its place */
+const UNREADABLE_VENDOR = "Invoice can't be read";
+function unreadable(problems: string[], fingerprint: string): void {
+  console.error("stored invoice envelope does not decode", fingerprint);
+  problems.push(`Invoice ${fingerprint.slice(0, 10)}… can't be read from its stored record, so it can't be shown or paid.`);
+}
+
 export interface NeedsYouSummary {
   awaitingApproval: {
     count: number;
@@ -108,6 +115,8 @@ export async function loadNeedsYou(
   const [biz] = await db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1);
   if (!biz) throw new AuthError(404, "Business not found.");
 
+  const problems: string[] = [];
+
   // 1. Awaiting approval invoices (count + top 5)
   const awaitingRows = await db
     .select()
@@ -117,10 +126,10 @@ export async function loadNeedsYou(
 
   const topAwaiting: NeedsYouSummary["awaitingApproval"]["top"] = [];
   for (const row of awaitingRows.slice(0, 5)) {
-    let vendorName = "Unknown vendor";
-    let invoiceNumber = row.invoiceNumber ?? "Unknown";
-    let token = "USDC";
-    let amountStr = row.total.toString();
+    let vendorName = UNREADABLE_VENDOR;
+    let invoiceNumber = row.invoiceNumber ?? `${row.fingerprint.slice(0, 10)}…`;
+    let token = "";
+    let amountStr = "—";
     try {
       const decoded = decodeSealedInvoice(row.envelope);
       vendorName = decoded.document.vendor.name;
@@ -128,7 +137,7 @@ export async function loadNeedsYou(
       token = decoded.document.currency.symbol;
       amountStr = formatAmount(row.total, decoded.document.currency.decimals);
     } catch {
-      // fallback
+      unreadable(problems, row.fingerprint);
     }
 
     const [latestDec] = await db
@@ -165,14 +174,14 @@ export async function loadNeedsYou(
 
   const stewardHeldItems: NeedsYouSummary["stewardHeld"]["items"] = [];
   for (const row of stewardHeldRows.slice(0, 5)) {
-    let vendorName = "Unknown vendor";
-    let invoiceNumber = row.invoiceNumber ?? "Unknown";
+    let vendorName = UNREADABLE_VENDOR;
+    let invoiceNumber = row.invoiceNumber ?? `${row.fingerprint.slice(0, 10)}…`;
     try {
       const decoded = decodeSealedInvoice(row.envelope);
       vendorName = decoded.document.vendor.name;
       invoiceNumber = decoded.document.invoiceNumber;
     } catch {
-      // fallback
+      unreadable(problems, row.fingerprint);
     }
 
     const [latestDec] = await db
@@ -206,14 +215,14 @@ export async function loadNeedsYou(
     .orderBy(desc(invoices.receivedAt));
 
   const humanHeldItems: NeedsYouSummary["humanHeld"]["items"] = humanHeldRows.slice(0, 5).map((row) => {
-    let vendorName = "Unknown vendor";
-    let invoiceNumber = row.invoiceNumber ?? "Unknown";
+    let vendorName = UNREADABLE_VENDOR;
+    let invoiceNumber = row.invoiceNumber ?? `${row.fingerprint.slice(0, 10)}…`;
     try {
       const decoded = decodeSealedInvoice(row.envelope);
       vendorName = decoded.document.vendor.name;
       invoiceNumber = decoded.document.invoiceNumber;
     } catch {
-      // fallback
+      unreadable(problems, row.fingerprint);
     }
     return {
       fingerprint: row.fingerprint,
@@ -235,7 +244,6 @@ export async function loadNeedsYou(
     .where(and(eq(payees.businessId, businessId), eq(payees.status, "pending_verification")));
 
   // 6. Problems (Steward fee balance, standing mismatch, failed last run)
-  const problems: string[] = [];
 
   if (biz.vault) {
     const vault = getAddress(biz.vault);
@@ -404,6 +412,7 @@ export async function loadAhead(
     .select({
       fingerprint: invoices.fingerprint,
       invoiceNumber: invoices.invoiceNumber,
+      seal: invoices.seal,
       vendorName: seals.displayName,
       vendorHandle: seals.handle,
       token: invoices.token,
@@ -430,7 +439,7 @@ export async function loadAhead(
       direction: "out" as const,
       ref: inv.fingerprint,
       token: inv.token.toLowerCase(),
-      vendor: inv.vendorName || inv.vendorHandle || "Unknown vendor",
+      vendor: inv.vendorName || inv.vendorHandle || inv.seal,
       invoiceNumber: inv.invoiceNumber,
       dueDate: inv.dueDate,
     };
@@ -468,7 +477,7 @@ export async function loadAhead(
   const upcomingInvoices = unpaid.slice(0, 5).map((inv) => ({
     fingerprint: inv.fingerprint,
     invoiceNumber: inv.invoiceNumber,
-    vendorName: inv.vendorName || inv.vendorHandle || "Unknown vendor",
+    vendorName: inv.vendorName || inv.vendorHandle || inv.seal,
     amountFormatted: formatAmount(inv.total > inv.credited ? inv.total - inv.credited : 0n, 6),
     dueDate: inv.dueDate,
     token: inv.token.toLowerCase() === eurcAddress ? "EURC" : inv.token.toLowerCase() === usdcAddress ? "USDC" : "Unknown token",

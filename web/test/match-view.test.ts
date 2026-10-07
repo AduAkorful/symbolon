@@ -73,6 +73,14 @@ function view(overrides: Partial<Parameters<typeof evidenceFor>[0]> = {}) {
 }
 
 describe("evidenceFor", () => {
+  it("a purchase order whose live state couldn't be read blocks and says so (plan 05y Q1)", () => {
+    const result = view({ invoice: { ...invoice, poRef: bytes32 }, dbPo: { poNumber: "PO-1", open: false, remainingRaw: null, releaseAfter: null, openTx: null, closedAt: null } });
+    const po = result.rows.find((row) => row.label === "Purchase order");
+    expect(po?.state).toBe("blocks");
+    expect(po?.value).toContain("can't confirm");
+    expect(result.matched).toBe(false);
+  });
+
   it("closes only when every check has evidence", () => {
     const result = view();
     expect(result.matched).toBe(true);

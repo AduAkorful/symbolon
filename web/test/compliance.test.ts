@@ -139,7 +139,7 @@ describe("Compliance screening service (05s Part A)", () => {
       owner,
       business.id,
       seal,
-      { provider },
+      { provider, client: clientFor({}), deployment },
     );
 
     expect(row.risk).toBe(0);
@@ -160,11 +160,11 @@ describe("Compliance screening service (05s Part A)", () => {
     const provider = mockProvider();
 
     // Approver succeeds
-    const row = await screenPayee(db, cfg, approver, business.id, seal, { provider });
+    const row = await screenPayee(db, cfg, approver, business.id, seal, { provider, client: clientFor({}), deployment });
     expect(row.result).toBe("APPROVED");
 
     // Viewer forbidden
-    await expect(screenPayee(db, cfg, viewer, business.id, seal, { provider })).rejects.toBeInstanceOf(AuthError);
+    await expect(screenPayee(db, cfg, viewer, business.id, seal, { provider, client: clientFor({}), deployment })).rejects.toBeInstanceOf(AuthError);
   });
 
   it("screenPayee: marks payee blocked offchain when provider returns Blocked", async () => {
@@ -174,7 +174,7 @@ describe("Compliance screening service (05s Part A)", () => {
     const provider = mockProvider({ risk: Risk.Blocked, result: "DENIED", actions: ["DENY"] });
     const cfg = { chainId: arcTestnet.id, testnet: true, deployment, appOrigin: "http://localhost:3000", production: false };
 
-    const row = await screenPayee(db, cfg, owner, business.id, seal, { provider });
+    const row = await screenPayee(db, cfg, owner, business.id, seal, { provider, client: clientFor({}), deployment });
     expect(row.risk).toBe(Risk.Blocked);
     expect(row.result).toBe("DENIED");
 
@@ -198,7 +198,7 @@ describe("Compliance screening service (05s Part A)", () => {
     };
     const cfg = { chainId: arcTestnet.id, testnet: true, deployment, appOrigin: "http://localhost:3000", production: false };
 
-    await expect(screenPayee(db, cfg, owner, business.id, seal, { provider: failingProvider })).rejects.toMatchObject({
+    await expect(screenPayee(db, cfg, owner, business.id, seal, { provider: failingProvider, client: clientFor({}), deployment })).rejects.toMatchObject({
       status: 502,
     });
   });
@@ -211,6 +211,15 @@ describe("Compliance screening service (05s Part A)", () => {
       status: 502,
       message: expect.stringContaining("Can't confirm this Vault's payees right now"),
     });
+  });
+
+  it("screenPayee: a provider alone is not enough: with no client nothing is screened", async () => {
+    const { owner, business, seal } = await fixture();
+    const cfg = { chainId: arcTestnet.id, testnet: true, deployment, appOrigin: "http://localhost:3000", production: false };
+    const provider = mockProvider();
+    const before = (await db.select().from(screenings)).length;
+    await expect(screenPayee(db, cfg, owner, business.id, seal, { provider })).rejects.toMatchObject({ status: 502 });
+    expect(await db.select().from(screenings)).toHaveLength(before);
   });
 
   it("screenPayee: throws 502 when Circle key missing but client present and no provider", async () => {
