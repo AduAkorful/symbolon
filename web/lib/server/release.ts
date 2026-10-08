@@ -166,12 +166,41 @@ export interface ReleaseNudgeResult {
   implementation?: Address;
 }
 
-/** Whether a newer release than the Vault's is out (the dot in the menu). Shared within one request, like the Vault state read. */
+/** How long the menu dot may trust an earlier read: a release is published a few times in a product's life (plan 05zd F3) */
+export const NUDGE_TTL_MS = 10 * 60_000;
+const nudgeMemo = new Map<string, { at: number; value: ReleaseNudgeResult }>();
+const nudgeKey = (chainId: number, vault: Address) => `${chainId}:${vault.toLowerCase()}`;
+
+/** Forgets what the menu dot remembers for a Vault: called when the Vault's own release has just changed */
+export function clearReleaseNudge(chainId: number, vault: Address): void {
+  nudgeMemo.delete(nudgeKey(chainId, vault));
+}
+
+/**
+ * The menu dot's answer: the real read, remembered for ten minutes (a failed read is never remembered). Only the dot uses this;
+ * the Settings screen and anything that decides something reads fresh with `checkReleaseNudge`.
+ */
+export async function menuReleaseNudge(client: PublicClient, deployment: Deployment, vault: Address, now: () => number = Date.now): Promise<ReleaseNudgeResult> {
+  const key = nudgeKey(deployment.chainId, vault);
+  const hit = nudgeMemo.get(key);
+  if (hit && now() - hit.at < NUDGE_TTL_MS) return hit.value;
+  const read = await readReleaseNudge(client, deployment, vault);
+  if (read.certain) nudgeMemo.set(key, { at: now(), value: read.value });
+  return read.value;
+}
+
+/** Whether a newer release than the Vault's is out. Shared within one request, like the Vault state read. */
 export const checkReleaseNudge = cache(async (
   client: PublicClient,
   deployment: Deployment,
   vault: Address,
-): Promise<ReleaseNudgeResult> => {
+): Promise<ReleaseNudgeResult> => (await readReleaseNudge(client, deployment, vault)).value);
+
+async function readReleaseNudge(
+  client: PublicClient,
+  deployment: Deployment,
+  vault: Address,
+): Promise<{ value: ReleaseNudgeResult; certain: boolean }> {
   try {
     const contracts = symbolonContracts(client, deployment);
     const [currentImpl, [latestImplRaw, latestVersionRaw]] = await Promise.all([
@@ -187,8 +216,11 @@ export const checkReleaseNudge = cache(async (
       currentImpl ? contracts.registry.read.release([currentImpl]).catch(() => null) : null,
     ]);
 
+    // an unreadable implementation slot reads as null: that is "can't tell", never "up to date", so it isn't remembered
+    if (!currentImpl) return { value: { hasNudge: false }, certain: false };
+
     if (latestRel.revoked) {
-      return { hasNudge: false };
+      return { value: { hasNudge: false }, certain: true };
     }
 
     const currentVersion = currentRel ? Number(currentRel.version) : 0;
@@ -198,17 +230,16 @@ export const checkReleaseNudge = cache(async (
       latestVersion > currentVersion
     ) {
       return {
-        hasNudge: true,
-        latestVersion,
-        currentVersion,
-        implementation: latestImpl,
+        value: { hasNudge: true, latestVersion, currentVersion, implementation: latestImpl },
+        certain: true,
       };
     }
-    return { hasNudge: false };
+    return { value: { hasNudge: false }, certain: true };
   } catch {
-    return { hasNudge: false };
+    // a failed read is "no nudge" for now and is never remembered
+    return { value: { hasNudge: false }, certain: false };
   }
-});
+}
 
 export interface VaultStateSnapshot {
   owner: Address;
@@ -645,6 +676,7 @@ export async function recordUpgrade(
     txHash,
   });
 
+  clearReleaseNudge(deployment.chainId, vault);
   return {
     ok: true,
     stateMatch,

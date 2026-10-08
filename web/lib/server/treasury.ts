@@ -175,6 +175,59 @@ function ownerWallet(user: Pick<SessionUser, "wallet">): Address {
   return getAddress(user.wallet);
 }
 
+/** One token's balance and decimals at a block; a failed read is reported as unknown (null), never as zero */
+async function readBalance(client: PublicClient, token: Address, vault: Address, blockNumber: bigint, label: string): Promise<{ balance: bigint | null; decimals: number }> {
+  try {
+    const [balance, decimals] = await Promise.all([
+      client.readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [vault], blockNumber }),
+      client.readContract({ address: token, abi: erc20Abi, functionName: "decimals", blockNumber }),
+    ]);
+    return { balance, decimals };
+  } catch (err) {
+    console.warn(`Failed reading ${label} balance:`, err);
+    return { balance: null, decimals: 6 };
+  }
+}
+
+/** The reserve's state from the lens, with the USYC yield and today's subscription limit when the reserve is set up */
+async function readReserve(client: PublicClient, contracts: ReturnType<typeof symbolonContracts>, vault: Address, blockNumber: bigint) {
+  let reserveStatus: Awaited<ReturnType<typeof contracts.lens.read.reserveStatus>> | null = null;
+  let yieldBps: number | null = null;
+  let limitRemaining: bigint | null = null;
+  try {
+    reserveStatus = await contracts.lens.read.reserveStatus([vault], { blockNumber });
+    const status = reserveStatus;
+    if (status.usycTeller !== ZERO_ADDRESS) {
+      const teller = contracts.teller;
+      const [y, limit] = await Promise.all([
+        (async () => {
+          try {
+            return (await reserveYield(client, status.usycTeller, 30)).bps;
+          } catch (err) {
+            console.warn("Could not read USYC reserve yield:", err);
+            return null;
+          }
+        })(),
+        (async () => {
+          if (!status.entitled || !teller) return null;
+          try {
+            const today = await teller.read.todayTimestamp({ blockNumber });
+            const rem = await teller.read.subscriptionLimitRemaining([vault, today], { blockNumber });
+            return typeof rem === "bigint" ? rem : null;
+          } catch {
+            return null;
+          }
+        })(),
+      ]);
+      yieldBps = y;
+      limitRemaining = limit;
+    }
+  } catch (err) {
+    console.warn("Failed reading reserveStatus from lens:", err);
+  }
+  return { reserveStatus, yieldBps, limitRemaining };
+}
+
 /**
  * T1, T2, T3, T5, T7: Load complete treasury state at one block.
  * Read-only for all members.
@@ -195,112 +248,9 @@ export async function loadTreasury(
   const contracts = symbolonContracts(client, deployment);
   const blockNumber = await client.getBlockNumber();
 
-  // 1. Read balances at this block
-  let usdcBal: bigint | null = null;
-  let usdcDecimals = 6;
-  try {
-    const [bal, dec] = await Promise.all([
-      client.readContract({
-        address: deployment.tokens.usdc,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [vault],
-        blockNumber,
-      }),
-      client.readContract({
-        address: deployment.tokens.usdc,
-        abi: erc20Abi,
-        functionName: "decimals",
-        blockNumber,
-      }),
-    ]);
-    usdcBal = bal;
-    usdcDecimals = dec;
-  } catch (err) {
-    console.warn("Failed reading USDC balance:", err);
-  }
-
-  let eurcBal: bigint | null = null;
-  let eurcDecimals = 6;
-  try {
-    const [bal, dec] = await Promise.all([
-      client.readContract({
-        address: deployment.tokens.eurc,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [vault],
-        blockNumber,
-      }),
-      client.readContract({
-        address: deployment.tokens.eurc,
-        abi: erc20Abi,
-        functionName: "decimals",
-        blockNumber,
-      }),
-    ]);
-    eurcBal = bal;
-    eurcDecimals = dec;
-  } catch (err) {
-    console.warn("Failed reading EURC balance:", err);
-  }
-
-  // 2. Read operating budget from lens
-  let budgetAvailable = false;
-  let budgetInfo: TreasuryState["budget"] = null;
-  try {
-    const bgt = await contracts.lens.read.getBudget([vault, ZERO_BYTES32], { blockNumber });
-    budgetAvailable = true;
-    if (bgt.exists) {
-      const nowBn = BigInt(Math.floor(Date.now() / 1000));
-      const currentPeriodIndex = bgt.periodLength > 0n ? nowBn / bgt.periodLength : 0n;
-      const spentThisPeriod = bgt.periodIndex === currentPeriodIndex ? bgt.spent : 0n;
-      budgetInfo = {
-        cap: isUnlimitedCap(bgt.cap) ? null : formatUnits(bgt.cap, usdcDecimals),
-        spent: formatUnits(spentThisPeriod, usdcDecimals),
-        periodLengthDays: Number(bgt.periodLength / 86400n),
-      };
-    }
-  } catch (err) {
-    console.warn("Failed reading budget from lens:", err);
-  }
-
-  // 3. Read reserve status from lens
-  let reserveStatus: Awaited<ReturnType<typeof contracts.lens.read.reserveStatus>> | null = null;
-  let yieldBps: number | null = null;
-  let limitRemaining: bigint | null = null;
-
-  try {
-    reserveStatus = await contracts.lens.read.reserveStatus([vault], { blockNumber });
-    if (reserveStatus.usycTeller !== ZERO_ADDRESS) {
-      try {
-        const y = await reserveYield(client, reserveStatus.usycTeller, 30);
-        yieldBps = y.bps;
-      } catch (err) {
-        console.warn("Could not read USYC reserve yield:", err);
-      }
-
-      if (reserveStatus.entitled && contracts.teller) {
-        try {
-          const today = await contracts.teller.read.todayTimestamp({ blockNumber });
-          const rem = await contracts.teller.read.subscriptionLimitRemaining([vault, today], { blockNumber });
-          limitRemaining = typeof rem === "bigint" ? rem : null;
-        } catch {
-          limitRemaining = null;
-        }
-      }
-    }
-  } catch (err) {
-    console.warn("Failed reading reserveStatus from lens:", err);
-  }
-
-  const reserveAvailable = Boolean(reserveStatus && reserveStatus.usycTeller !== ZERO_ADDRESS);
-  const reserveShares = reserveStatus?.shares ?? 0n;
-  const reserveVal = reserveStatus?.reserveValue ?? 0n;
-  const totalUsdc = (usdcBal ?? 0n) + reserveVal;
-  const reserveBps = totalUsdc > 0n ? Number((reserveVal * 10_000n) / totalUsdc) : 0;
-
-  // 4. Query unpaid invoices for cash flows
-  const unpaid = await db
+  // The reads below depend only on the pinned block, so they go out together (the client batches reads made in the same moment
+  // into one request) with the database queries; each keeps its own failure handling.
+  const unpaidQuery = db
     .select({
       fingerprint: invoices.fingerprint,
       invoiceNumber: invoices.invoiceNumber,
@@ -320,6 +270,72 @@ export async function loadTreasury(
         inArray(invoices.status, ["verified", "scheduled", "awaiting_approval", "held"]),
       ),
     );
+
+  const queuedQuery = db
+    .select()
+    .from(queuedChanges)
+    .where(
+      and(
+        eq(queuedChanges.businessId, businessId),
+        eq(queuedChanges.kind, "set_reserve_policy"),
+        eq(queuedChanges.status, "queued"),
+      ),
+    )
+    .orderBy(desc(queuedChanges.createdAt))
+    .limit(1);
+
+  const proposalQuery = db
+    .select()
+    .from(decisions)
+    .where(
+      and(
+        eq(decisions.businessId, businessId),
+        inArray(decisions.kind, ["sweep", "redeem"]),
+        eq(decisions.subject, "treasury:reserve"),
+      ),
+    )
+    .orderBy(desc(decisions.createdAt))
+    .limit(1);
+
+
+  const [usdc, eurc, budgetRead, reserve, unpaid, [queued], [proposal]] = await Promise.all([
+    readBalance(client, deployment.tokens.usdc, vault, blockNumber, "USDC"),
+    readBalance(client, deployment.tokens.eurc, vault, blockNumber, "EURC"),
+    (async () => {
+      try {
+        return await contracts.lens.read.getBudget([vault, ZERO_BYTES32], { blockNumber });
+      } catch (err) {
+        console.warn("Failed reading budget from lens:", err);
+        return null;
+      }
+    })(),
+    readReserve(client, contracts, vault, blockNumber),
+    unpaidQuery,
+    queuedQuery,
+    proposalQuery,
+  ]);
+  const { balance: usdcBal, decimals: usdcDecimals } = usdc;
+  const { balance: eurcBal, decimals: eurcDecimals } = eurc;
+  const { reserveStatus, yieldBps, limitRemaining } = reserve;
+
+  let budgetInfo: TreasuryState["budget"] = null;
+  const budgetAvailable = budgetRead !== null;
+  if (budgetRead && budgetRead.exists) {
+    const nowBn = BigInt(Math.floor(Date.now() / 1000));
+    const currentPeriodIndex = budgetRead.periodLength > 0n ? nowBn / budgetRead.periodLength : 0n;
+    const spentThisPeriod = budgetRead.periodIndex === currentPeriodIndex ? budgetRead.spent : 0n;
+    budgetInfo = {
+      cap: isUnlimitedCap(budgetRead.cap) ? null : formatUnits(budgetRead.cap, usdcDecimals),
+      spent: formatUnits(spentThisPeriod, usdcDecimals),
+      periodLengthDays: Number(budgetRead.periodLength / 86400n),
+    };
+  }
+
+  const reserveAvailable = Boolean(reserveStatus && reserveStatus.usycTeller !== ZERO_ADDRESS);
+  const reserveShares = reserveStatus?.shares ?? 0n;
+  const reserveVal = reserveStatus?.reserveValue ?? 0n;
+  const totalUsdc = (usdcBal ?? 0n) + reserveVal;
+  const reserveBps = totalUsdc > 0n ? Number((reserveVal * 10_000n) / totalUsdc) : 0;
 
   const nowSec = BigInt(Math.floor(Date.now() / 1000));
   const flowsWithToken = unpaid.map((inv) => {
@@ -419,34 +435,6 @@ export async function loadTreasury(
   } else {
     runwayStatement = `USDC and EURC cash cover recorded bills in the selected ${b.bufferDays ?? DEFAULT_BUFFER_DAYS}-day buffer. The chart shows USDC only.`;
   }
-
-  // 5. Queued reserve policy changes
-  const [queued] = await db
-    .select()
-    .from(queuedChanges)
-    .where(
-      and(
-        eq(queuedChanges.businessId, businessId),
-        eq(queuedChanges.kind, "set_reserve_policy"),
-        eq(queuedChanges.status, "queued"),
-      ),
-    )
-    .orderBy(desc(queuedChanges.createdAt))
-    .limit(1);
-
-  // 6. Latest sweep proposal from Steward (T8)
-  const [proposal] = await db
-    .select()
-    .from(decisions)
-    .where(
-      and(
-        eq(decisions.businessId, businessId),
-        inArray(decisions.kind, ["sweep", "redeem"]),
-        eq(decisions.subject, "treasury:reserve"),
-      ),
-    )
-    .orderBy(desc(decisions.createdAt))
-    .limit(1);
 
   let pendingSweep: TreasuryState["pendingSweepProposal"] = null;
   if (proposal) {

@@ -5,7 +5,7 @@ import { invoiceStatus, type SymbolonContracts } from "@symbolon/chain";
 import { decisions, invoices, type Database } from "@symbolon/db";
 
 /** How many ledger reads run at once: enough to hide the round trips, few enough not to trip a public RPC's rate limit. */
-const RECONCILE_READS = 6;
+const RECONCILE_READS = 16;
 
 export interface Mismatch {
   fingerprint: string;

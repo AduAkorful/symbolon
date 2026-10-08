@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 /**
  * Business sidebar navigation. Only screens that exist are listed; later plans append their entries here when they
@@ -14,11 +14,12 @@ import { useEffect, useState } from "react";
 export function BusinessNav({
   inboxCount,
   approvalsCount,
-  hasReleaseNudge,
+  settingsDot,
 }: {
   inboxCount?: number;
   approvalsCount?: number;
-  hasReleaseNudge?: boolean;
+  /** Rendered after "Settings": the release dot, which arrives after the page (plan 05zd F2) */
+  settingsDot?: ReactNode;
 }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
@@ -28,7 +29,7 @@ export function BusinessNav({
     setOpen(false);
   }, [path]);
 
-  const nav: { name: string; href: string; count?: number; hasDot?: boolean }[] = [
+  const nav: { name: string; href: string; count?: number; dot?: ReactNode }[] = [
 
     { name: "Home", href: "/business" },
     { name: "Inbox", href: "/business/inbox", count: inboxCount },
@@ -42,7 +43,7 @@ export function BusinessNav({
     { name: "Compliance", href: "/business/compliance" },
     { name: "Team", href: "/business/team" },
     { name: "Policy", href: "/business/policy" },
-    { name: "Settings", href: "/business/settings", hasDot: hasReleaseNudge },
+    { name: "Settings", href: "/business/settings", dot: settingsDot },
     { name: "Ask the Steward", href: "/business/ask" },
   ];
 
@@ -81,12 +82,7 @@ export function BusinessNav({
               >
                 <span className="flex items-center gap-1.5">
                   <span>{item.name}</span>
-                  {item.hasDot ? (
-                    <span
-                      className="h-1.5 w-1.5 rounded-full bg-seal"
-                      aria-label="Release update available"
-                    />
-                  ) : null}
+                  {item.dot}
                 </span>
                 {item.count !== undefined && item.count > 0 ? (
 

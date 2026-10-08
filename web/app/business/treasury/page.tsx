@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { Shell } from "@/components/shell/Shell";
 import { TreasuryView } from "@/components/treasury/TreasuryView";
 import { getClient } from "@/lib/server/chain";
@@ -8,6 +9,7 @@ import { requirePageSession } from "@/lib/server/http";
 import { signerPlanFor } from "@/lib/server/signer-plan";
 import { loadSpaces } from "@/lib/server/space";
 import { loadTreasury } from "@/lib/server/treasury";
+import { PageLoading } from "@/components/ui/PageLoading";
 import { PageTitle } from "@/components/ui/Type";
 
 export const dynamic = "force-dynamic";
@@ -54,22 +56,31 @@ export default async function BusinessTreasuryPage() {
     );
   }
 
+  return (
+    <Shell where={where} current={{ kind: "business", id: business.id }}>
+      <Suspense fallback={<PageLoading title="Treasury" shape="summary" />}>
+        <TreasuryContent session={session} businessId={business.id} isOwner={business.role === "owner"} />
+      </Suspense>
+    </Shell>
+  );
+}
+
+/** The part of the page that reads Arc; the frame and title are already on screen while this finishes (plan 05zd F6) */
+async function TreasuryContent({ session, businessId, isOwner }: { session: Awaited<ReturnType<typeof requirePageSession>>; businessId: string; isOwner: boolean }) {
   const db = await getDb();
   const config = getConfig();
   const client = getClient();
 
-  const state = await loadTreasury(db, client, config.deployment, business.id, session.user);
+  const state = await loadTreasury(db, client, config.deployment, businessId, session.user);
   const signer = signerPlanFor(session, config);
 
   return (
-    <Shell where={where} current={{ kind: "business", id: business.id }}>
-      <TreasuryView
-        businessId={business.id}
-        initialState={state}
-        signer={signer}
-        explorer={config.deployment.explorer}
-        isOwner={business.role === "owner"}
-      />
-    </Shell>
+    <TreasuryView
+      businessId={businessId}
+      initialState={state}
+      signer={signer}
+      explorer={config.deployment.explorer}
+      isOwner={isOwner}
+    />
   );
 }

@@ -128,10 +128,36 @@ describe("screens use the shared UI pieces (plan 05zb)", () => {
     expect(offenders(/\b(?:at|through|from|in) block\b/i)).toEqual([]);
   });
 
+  it("the page frame never waits on Arc: the Vault read lives only in the streamed slots (plan 05zd F2)", () => {
+    const shell = readFileSync(join(root, "components/shell/Shell.tsx"), "utf8");
+    expect(shell).not.toMatch(/readVaultState|checkReleaseNudge|loadShellVault|getClient/);
+    const slots = readFileSync(join(root, "components/shell/VaultSlots.tsx"), "utf8");
+    // every piece that waits is inside a Suspense boundary
+    expect((slots.match(/<Suspense/g) ?? []).length).toBeGreaterThanOrEqual(5);
+  });
+
   it("Ask's answer sources never name a block either", () => {
     const dir = join(root, "lib/server/intents");
     const bad = readdirSync(dir).filter((f) => f.endsWith(".ts")).filter((f) => /\bblock \$\{|at block\b/i.test(readFileSync(join(dir, f), "utf8")));
     expect(bad).toEqual([]);
+  });
+
+  it("the slow pages draw their frame and title first and stream the part that reads Arc (plan 05zd F6)", () => {
+    const pages: [string, RegExp][] = [
+      ["app/business/treasury/page.tsx", /loadTreasury/],
+      ["app/business/accounting/page.tsx", /loadAccounting/],
+      ["app/business/approvals/page.tsx", /listApprovals/],
+    ];
+    for (const [file, loader] of pages) {
+      const source = readFileSync(join(root, file), "utf8");
+      const [head = "", content = ""] = source.split(/\nasync function \w+Content/);
+      const page = head.replace(/^import .*$/gm, "");
+      // the default export returns the frame and a Suspense; the loader is only called in the streamed component under it
+      expect(page, file).toContain("<Suspense");
+      expect(page, file).toContain("PageLoading");
+      expect(page, file).not.toMatch(loader);
+      expect(content, file).toMatch(loader);
+    }
   });
 
   it("never makes a page wait for the ledger sync or a log scan: it runs after the response (plan 05zd F4)", () => {

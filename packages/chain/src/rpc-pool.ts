@@ -117,7 +117,9 @@ export function createRpcPool(endpoints: RpcEndpoint[], opts: RpcPoolOptions = {
     let bestScore = Infinity;
     for (const s of states) {
       if (tried.has(s) || s.coolUntil > t || s.inFlight >= maxInFlight || (s.skip.get(method) ?? 0) > t) continue;
-      const score = (s.inFlight + 1) * s.latency;
+      // an endpoint that must still wait out its gap is worse than an idle one that can start now, so a chain of dependent calls
+      // rotates across the endpoints instead of queueing on the fastest one
+      const score = (s.inFlight + 1) * s.latency + Math.max(0, s.nextStartAt - t);
       if (score < bestScore) {
         best = s;
         bestScore = score;

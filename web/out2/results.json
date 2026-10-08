@@ -1,0 +1,309 @@
+[
+ {
+  "path": "/setup",
+  "width": 1440,
+  "status": 200,
+  "issues": {
+   "geometry": {
+    "viewport": 1440,
+    "mainLeft": 230,
+    "mainRight": 1210,
+    "h1Left": 254,
+    "contentRight": 1186,
+    "empty": 24
+   },
+   "sizes": [
+    [
+     "14",
+     7
+    ],
+    [
+     "12",
+     4
+    ],
+    [
+     "16",
+     2
+    ],
+    [
+     "48",
+     1
+    ]
+   ],
+   "fonts": [
+    [
+     "schibsted",
+     13
+    ],
+    [
+     "caslon",
+     1
+    ]
+   ],
+   "buttons": [
+    [
+     "40h r4 14px pad0px/16px",
+     1
+    ]
+   ],
+   "inputs": [
+    [
+     "40h r4 14px pad8px/12px",
+     1
+    ]
+   ]
+  },
+  "dialogs": []
+ },
+ {
+  "path": "/setup",
+  "width": 375,
+  "status": 200,
+  "issues": {
+   "tap-target": [
+    "1x1 a.sr-only.focus:not-sr-only.focus:fixed \"Skip to content\"",
+    "105x31 a",
+    "101x20 a.text-sm.text-graphite.underline \"Back to the app\""
+   ],
+   "geometry": {
+    "viewport": 375,
+    "mainLeft": 0,
+    "mainRight": 375,
+    "h1Left": 24,
+    "contentRight": 351,
+    "empty": 24
+   },
+   "sizes": [
+    [
+     "14",
+     7
+    ],
+    [
+     "12",
+     4
+    ],
+    [
+     "16",
+     2
+    ],
+    [
+     "36",
+     1
+    ]
+   ],
+   "fonts": [
+    [
+     "schibsted",
+     13
+    ],
+    [
+     "caslon",
+     1
+    ]
+   ],
+   "buttons": [
+    [
+     "44h r4 14px pad0px/16px",
+     1
+    ]
+   ],
+   "inputs": [
+    [
+     "44h r4 14px pad8px/12px",
+     1
+    ]
+   ]
+  }
+ },
+ {
+  "path": "/vendor/start",
+  "width": 1440,
+  "status": 200,
+  "issues": {
+   "geometry": {
+    "viewport": 1440,
+    "mainLeft": 100,
+    "mainRight": 1340,
+    "h1Left": 140,
+    "contentRight": 1300,
+    "empty": 40
+   },
+   "sizes": [
+    [
+     "14",
+     39
+    ],
+    [
+     "12",
+     8
+    ],
+    [
+     "16",
+     1
+    ],
+    [
+     "24",
+     1
+    ],
+    [
+     "48",
+     1
+    ]
+   ],
+   "fonts": [
+    [
+     "schibsted",
+     45
+    ],
+    [
+     "ui-monospace",
+     3
+    ],
+    [
+     "caslon",
+     2
+    ]
+   ],
+   "buttons": [
+    [
+     "40h r4 14px pad8px/12px",
+     1
+    ],
+    [
+     "36h r4 14px pad0px/12px",
+     1
+    ],
+    [
+     "40h r4 16px pad0px/0px",
+     1
+    ],
+    [
+     "42h r4 14px pad8px/12px",
+     1
+    ],
+    [
+     "40h r4 14px pad0px/16px",
+     1
+    ],
+    [
+     "24h r4 12px pad4px/8px",
+     1
+    ]
+   ]
+  },
+  "dialogs": [
+   {
+    "opener": "Notifications",
+    "geo": {
+     "width": 416,
+     "nestedFrames": 0,
+     "titleInset": 17,
+     "title": "Notifications"
+    },
+    "issues": {
+     "sizes": [
+      [
+       "14",
+       1
+      ],
+      [
+       "20",
+       1
+      ]
+     ],
+     "fonts": [
+      [
+       "caslon",
+       1
+      ],
+      [
+       "schibsted",
+       1
+      ]
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "path": "/vendor/start",
+  "width": 375,
+  "status": 200,
+  "issues": {
+   "tap-target": [
+    "1x1 a.sr-only.focus:not-sr-only.focus:fixed \"Skip to content\"",
+    "105x31 a.shrink-0",
+    "45x24 button.ml-2.shrink-0.whitespace-nowrap \"Copy\""
+   ],
+   "clipped": [
+    "span.block.truncate.font-medium \"Studio Ana Design\" (120>63)"
+   ],
+   "geometry": {
+    "viewport": 375,
+    "mainLeft": 0,
+    "mainRight": 375,
+    "h1Left": 24,
+    "contentRight": 351,
+    "empty": 24
+   },
+   "sizes": [
+    [
+     "14",
+     37
+    ],
+    [
+     "16",
+     11
+    ],
+    [
+     "12",
+     7
+    ],
+    [
+     "24",
+     1
+    ],
+    [
+     "36",
+     1
+    ]
+   ],
+   "fonts": [
+    [
+     "schibsted",
+     53
+    ],
+    [
+     "ui-monospace",
+     2
+    ],
+    [
+     "caslon",
+     2
+    ]
+   ],
+   "buttons": [
+    [
+     "40h r4 14px pad8px/12px",
+     1
+    ],
+    [
+     "44h r4 16px pad0px/0px",
+     1
+    ],
+    [
+     "44h r4 14px pad8px/12px",
+     1
+    ],
+    [
+     "44h r4 14px pad0px/16px",
+     1
+    ],
+    [
+     "24h r4 12px pad4px/8px",
+     1
+    ]
+   ]
+  }
+ }
+]

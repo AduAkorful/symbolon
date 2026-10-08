@@ -15,6 +15,9 @@ import { encodeAbiParameters, encodeEventTopics, encodeFunctionData, getAddress,
 import { symbolonVaultAbi } from "@symbolon/chain";
 import {
   checkReleaseNudge,
+  clearReleaseNudge,
+  menuReleaseNudge,
+  NUDGE_TTL_MS,
   compareVaultSnapshots,
   getEip1967ImplementationSlot,
   loadReleaseInfo,
@@ -542,5 +545,50 @@ describe("upgrade preparation and recording", () => {
   });
 });
 
+describe("menuReleaseNudge (plan 05zd F3)", () => {
+  const v1Impl = "0x02bCb1288338d47e31342737772D0b32bBA3842A";
+  const v2Impl = "0xA6aA3c4DB43f36b061939feF1f822E14bF06BcF8";
+  const rel = (version: bigint) => ({ version, publishedAt: 1n, revoked: false, notesHash: "0x" + "00".repeat(32) });
+  const clientFor = (current: string, failing = false) => {
+    const reads = { count: 0 };
+    const client = {
+      getStorageAt: vi.fn().mockImplementation(async () => { reads.count++; if (failing) throw new Error("down"); return "0x" + "0".repeat(24) + current.slice(2); }),
+      readContract: vi.fn().mockImplementation(async ({ functionName, args }) => {
+        if (functionName === "latest") return [v2Impl, 2n];
+        if (functionName === "release") return args?.[0]?.toLowerCase() === v1Impl.toLowerCase() ? rel(1n) : rel(2n);
+        return null;
+      }),
+    } as unknown as PublicClient;
+    return { client, reads };
+  };
 
+  it("reads the chain once, then answers from memory until the time is up", async () => {
+    const vault = address(21);
+    clearReleaseNudge(deployment.chainId, vault);
+    const { client, reads } = clientFor(v1Impl);
+    let t = 1_000;
+    expect((await menuReleaseNudge(client, deployment, vault, () => t)).hasNudge).toBe(true);
+    expect((await menuReleaseNudge(client, deployment, vault, () => t + 5_000)).hasNudge).toBe(true);
+    expect(reads.count).toBe(1);
+    t += NUDGE_TTL_MS + 1;
+    await menuReleaseNudge(client, deployment, vault, () => t);
+    expect(reads.count).toBe(2);
+  });
 
+  it("forgets on request (the Vault's release just changed) and never remembers a failed read", async () => {
+    const vault = address(22);
+    clearReleaseNudge(deployment.chainId, vault);
+    const first = clientFor(v1Impl);
+    await menuReleaseNudge(first.client, deployment, vault, () => 1);
+    clearReleaseNudge(deployment.chainId, vault);
+    const upgraded = clientFor(v2Impl);
+    expect((await menuReleaseNudge(upgraded.client, deployment, vault, () => 2)).hasNudge).toBe(false);
+
+    const other = address(23);
+    clearReleaseNudge(deployment.chainId, other);
+    const broken = clientFor(v1Impl, true);
+    expect((await menuReleaseNudge(broken.client, deployment, other, () => 1)).hasNudge).toBe(false);
+    const healthy = clientFor(v1Impl);
+    expect((await menuReleaseNudge(healthy.client, deployment, other, () => 2)).hasNudge).toBe(true);
+  });
+});

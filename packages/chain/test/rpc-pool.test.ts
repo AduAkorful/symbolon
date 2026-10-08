@@ -61,6 +61,19 @@ describe("the RPC pool", () => {
     for (const e of [a, b, d]) expect(e.calls()).toBeGreaterThan(3);
   });
 
+  it("sends one call after another to an endpoint that can start now, not to the fastest one still waiting out its gap", async () => {
+    const c = clock();
+    const [a, b] = [endpoint("a", () => "a"), endpoint("b", () => "b")];
+    const pool = createRpcPool([a, b], { ...c, minGapMs: 250 });
+    const started = c.now();
+    // dependent calls, one at a time: the second must not wait 250 ms for the endpoint the first used
+    await pool.send({ method: "eth_call" });
+    await pool.send({ method: "eth_call" });
+    expect(c.now() - started).toBeLessThan(250);
+    expect(a.calls()).toBe(1);
+    expect(b.calls()).toBe(1);
+  });
+
   it("moves a rate-limited call to another endpoint and leaves the limiting one alone for a while", async () => {
     const c = clock();
     const limited = endpoint("limited", () => { throw new RpcError("Too Many Requests", undefined, 429); });

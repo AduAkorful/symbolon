@@ -103,6 +103,21 @@ body {
   animation: menu-in var(--dur-quick) var(--ease-arrive) both;
 }
 
+/* The pause banner arrives after the page: it eases open instead of pushing the content down at once (plan 05zd F2) */
+@keyframes banner-in {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    max-height: 8rem;
+  }
+}
+.banner-in {
+  overflow: hidden;
+  animation: banner-in var(--dur-quick) var(--ease-arrive) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
