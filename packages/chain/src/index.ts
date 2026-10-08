@@ -1,6 +1,7 @@
 export * from "./chains.js";
 export * from "./deployment.js";
 export * from "./client.js";
+export * from "./rpc-pool.js";
 export * from "./contracts.js";
 export * from "./reads.js";
 export * from "./calls.js";

@@ -22,6 +22,8 @@ export interface AskAnswer {
   intent: string;
   /** The parameters the question ran with; they travel back as part of the conversation */
   params?: Record<string, unknown>;
+  /** For a conversational reply: what the lookups behind it said */
+  facts?: { text: string; source: string }[];
 }
 
 interface Message {
@@ -82,20 +84,33 @@ export function AskView({
     <div className="grid gap-x-12 gap-y-8 xl:grid-cols-[minmax(0,1fr)_21rem]">
       <div className="min-w-0 border-b border-rule pb-6 xl:col-span-2">
         <PageTitle>Ask the Steward</PageTitle>
-        <Lead className="mt-3">Answers come straight from {businessName}’s ledger, invoices and decision records. Asking can’t move money.</Lead>
+        <Lead className="mt-3">Ask in your own words. Answers come from {businessName}’s ledger, invoices and decision records, and say where they came from. Asking can’t move money.</Lead>
       </div>
 
       <div className="flex min-h-[28rem] min-w-0 flex-col">
         <ol className="flex-1 space-y-6" aria-live="polite">
           {log.length === 0 ? (
-            <li className="text-graphite">Pick a question, or type your own below. Answers cite where they come from.</li>
+            <li className="text-graphite">Say hello, ask a question, or pick one on the right. Try “What should I do next?”</li>
           ) : null}
           {log.map((m, i) => (
             <li key={i} className="space-y-3">
               <p className="ml-auto w-fit max-w-[85%] rounded-doc bg-ink px-4 py-2.5 text-paper">{m.q}</p>
               {m.a ? (
                 <div className="max-w-[90%] space-y-2 border-l-2 border-seal pl-4">
-                  <p className="leading-relaxed text-ink">{m.a.text}</p>
+                  <p className="whitespace-pre-line leading-relaxed text-ink">{m.a.text}</p>
+                  {m.a.facts && m.a.facts.length > 0 ? (
+                    <details className="text-sm text-graphite">
+                      <summary className="cursor-pointer select-none hover:text-ink">Show the numbers</summary>
+                      <ul className="mt-2 space-y-2 border-l border-rule pl-3">
+                        {m.a.facts.map((f, k) => (
+                          <li key={k}>
+                            <p className="whitespace-pre-line text-ink">{f.text}</p>
+                            <p>{f.source}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  ) : null}
                   {m.a.links && m.a.links.length > 0 ? (
                     <div className="flex flex-wrap gap-2 pt-1">
                       {m.a.links.map(([label, href]) => (

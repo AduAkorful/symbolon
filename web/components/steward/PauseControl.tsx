@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { ProblemDialog } from "@/components/ProblemDialog";
 import { sendCall, wasRejected, type SignerPlan } from "@/components/setup/owner-signer";
 import { TxLink } from "@/components/TxLink";
 import { Button } from "@/components/ui/button";
@@ -36,7 +37,7 @@ export function PauseControl({ businessId, paused, block, known = true, signer, 
   }, [paused, block, curBlock]);
 
   const [busy, setBusy] = useState<string | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
+  const [problem, setProblem] = useState<{ doing: "pause" | "resume"; message: string } | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [tx, setTx] = useState<{ hash: string; did: "pause" | "resume" } | null>(null);
 
@@ -44,6 +45,7 @@ export function PauseControl({ businessId, paused, block, known = true, signer, 
     if (!signer || signer.kind === "none") return;
     setBusy("Preparing…");
     setProblem(null);
+    const fail = (message: string) => setProblem({ doing: action, message });
     try {
       const call = await postJson<{ to: string; data: string }>(`/api/business/${businessId}/vault`, { action });
       setBusy("Waiting for wallet…");
@@ -65,9 +67,9 @@ export function PauseControl({ businessId, paused, block, known = true, signer, 
         }
         await wait(2000);
       }
-      setProblem("The change isn't showing on Arc yet. Reload in a moment to see where it stands.");
+      fail("The change isn't showing on Arc yet. Reload in a moment to see where it stands.");
     } catch (e) {
-      setProblem(wasRejected(e) ? "You closed the wallet's request." : e instanceof Error ? e.message : "Something went wrong.");
+      fail(wasRejected(e) ? "You closed the wallet's request, so nothing was sent." : e instanceof Error ? e.message : "Something went wrong.");
     } finally {
       setBusy(null);
     }
@@ -76,6 +78,14 @@ export function PauseControl({ businessId, paused, block, known = true, signer, 
   if (!signer || signer.kind === "none") {
     return null;
   }
+
+  const dialog = problem ? (
+    <ProblemDialog
+      title={problem.doing === "pause" ? "Couldn’t pause payments" : "Couldn’t resume payments"}
+      message={problem.message}
+      onClose={() => setProblem(null)}
+    />
+  ) : null;
 
   if (compact) {
     return (
@@ -95,7 +105,7 @@ export function PauseControl({ businessId, paused, block, known = true, signer, 
             {busy ?? (<><span className="sm:hidden">Pause</span><span className="hidden sm:inline">Pause payments</span></>)}
           </Button>
         )}
-        {problem ? <span className="max-w-[30ch] text-xs text-red" role="alert">{problem}</span> : null}
+        {dialog}
       </div>
     );
   }
@@ -134,11 +144,7 @@ export function PauseControl({ businessId, paused, block, known = true, signer, 
         </p>
       ) : null}
 
-      {problem ? (
-        <p role="alert" className="mt-2 text-sm text-red">
-          {problem}
-        </p>
-      ) : null}
+      {dialog}
     </div>
   );
 }

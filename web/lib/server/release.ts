@@ -9,6 +9,7 @@ import {
   type Address,
   type PublicClient,
 } from "viem";
+import { cache } from "react";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import {
@@ -165,11 +166,12 @@ export interface ReleaseNudgeResult {
   implementation?: Address;
 }
 
-export async function checkReleaseNudge(
+/** Whether a newer release than the Vault's is out (the dot in the menu). Shared within one request, like the Vault state read. */
+export const checkReleaseNudge = cache(async (
   client: PublicClient,
   deployment: Deployment,
   vault: Address,
-): Promise<ReleaseNudgeResult> {
+): Promise<ReleaseNudgeResult> => {
   try {
     const contracts = symbolonContracts(client, deployment);
     const [currentImpl, [latestImplRaw, latestVersionRaw]] = await Promise.all([
@@ -206,7 +208,7 @@ export async function checkReleaseNudge(
   } catch {
     return { hasNudge: false };
   }
-}
+});
 
 export interface VaultStateSnapshot {
   owner: Address;

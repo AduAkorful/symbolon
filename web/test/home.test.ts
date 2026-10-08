@@ -213,7 +213,6 @@ describe("Home Queues Service", () => {
     const today = await loadToday(db, client, cfg, user, business.id);
 
     expect(today.decisionsCount).toBeGreaterThanOrEqual(1);
-    expect(today.asOfBlock).toBe("20000");
     expect(today.asOfTime).toBeInstanceOf(Date);
   });
   it("Ahead coverage uses the selected buffer and refuses a cash claim on failed balances", async () => {

@@ -123,4 +123,18 @@ describe("screens use the shared UI pieces (plan 05zb)", () => {
     );
     expect(found).toEqual([]);
   });
+
+  it("never shows a block number to a person: say \"just now\" or how long ago, not which block (operator, 2026-10-08)", () => {
+    expect(offenders(/\b(?:at|through|from|in) block\b/i)).toEqual([]);
+  });
+
+  it("Ask's answer sources never name a block either", () => {
+    const dir = join(root, "lib/server/intents");
+    const bad = readdirSync(dir).filter((f) => f.endsWith(".ts")).filter((f) => /\bblock \$\{|at block\b/i.test(readFileSync(join(dir, f), "utf8")));
+    expect(bad).toEqual([]);
+  });
+
+  it("never makes a page wait for the ledger sync or a log scan: it runs after the response (plan 05zd F4)", () => {
+    expect(offenders(/await\s+(?:ensureFresh|syncToHead|syncLedger|syncProtocolEvents|scanLogs)\(/)).toEqual([]);
+  });
 });

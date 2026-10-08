@@ -104,7 +104,7 @@ export default async function BusinessVendorDetailPage({ params }: { params: Pro
               <div><dt className="text-graphite">Monthly cap</dt><dd className="break-all">{usd(BigInt(vendor.canBePaid.terms.monthlyCap))} a month</dd></div>
               <div><dt className="text-graphite">Paid invoices</dt><dd>{vendor.canBePaid.paidCount}</dd></div>
               <div><dt className="text-graphite">Matching requirements</dt><dd>PO {vendor.canBePaid.terms.requirePo ? "required" : "not required"} · delivery {vendor.canBePaid.terms.requireDelivery ? "required" : "not required"}</dd></div>
-              <div><dt className="text-graphite">Screening</dt><dd>{vendor.canBePaid.screening.risk}{vendor.canBePaid.screening.at !== "0" ? " · read at block " + vendor.blockNumber : ""}</dd></div>
+              <div><dt className="text-graphite">Screening</dt><dd>{vendor.canBePaid.screening.risk}</dd></div>
             </dl>
             {business.role === "owner" && budgetsData ? (
               <PayeeTermsEditor

@@ -28,17 +28,21 @@ export default async function BusinessHome() {
   const config = getConfig();
   const b = where.business;
   const explorer = arcChain(config.chainId).blockExplorers!.default.url;
-  const summary = b?.vault ? await readVaultSummary(getClient(), config.deployment, b.vault) : null;
-  // The Steward's standing is what the Vault says, compared with the wallet we set up (plan 05h, H13–H15)
-  const vaultState = b?.vault ? await readVaultState(getClient(), config.deployment, b.vault) : null;
+  const client = getClient();
+  const db = await getDb();
+  // Everything the page needs is asked for together: the reads share one round trip to Arc and the loaders overlap, instead of
+  // each waiting for the one before
+  const [summary, vaultState, needsYou, today, ahead] = await Promise.all([
+    b?.vault ? readVaultSummary(client, config.deployment, b.vault) : null,
+    // The Steward's standing is what the Vault says, compared with the wallet we set up (plan 05h, H13–H15)
+    b?.vault ? readVaultState(client, config.deployment, b.vault) : null,
+    b ? loadNeedsYou(db, client, config, session.user, b.id) : null,
+    b ? loadToday(db, client, config, session.user, b.id) : null,
+    b ? loadAhead(db, client, config, session.user, b.id) : null,
+  ]);
   const standing = b?.vault && vaultState ? stewardStanding(b.stewardWallet, vaultState) : null;
   const pause = vaultState ? pauseStateOf(vaultState) : null;
   const ownerSigner = b?.role === "owner" ? signerPlanFor(session, config) : null;
-
-  const db = await getDb();
-  const needsYou = b ? await loadNeedsYou(db, getClient(), config, session.user, b.id) : null;
-  const today = b ? await loadToday(db, getClient(), config, session.user, b.id) : null;
-  const ahead = b ? await loadAhead(db, getClient(), config, session.user, b.id) : null;
 
   return (
     <Shell where={where} current={{ kind: "business", id: b?.id ?? "" }}>
@@ -122,7 +126,7 @@ export default async function BusinessHome() {
                   {summary?.ok ? (
                     <>
                       <Money className="font-medium">{showMoney(formatUnits(summary.usdc, summary.decimals), "USDC")}</Money>
-                      <span className="ml-2 text-graphite">read from Arc at block {summary.block.toString()}</span>
+                      <span className="ml-2 text-graphite">live from Arc</span>
                     </>
                   ) : (
                     <span className="text-red">Can’t confirm the balance right now.</span>

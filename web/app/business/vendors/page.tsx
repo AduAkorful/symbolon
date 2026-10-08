@@ -88,7 +88,7 @@ export default async function BusinessVendorsPage() {
                         ? `Paid ${payee.paidCount} ${payee.paidCount === 1 ? "invoice" : "invoices"} · ${usd(BigInt(payee.terms.monthlyCap))} a month · PO ${payee.terms.requirePo ? "required" : "not required"} · delivery ${payee.terms.requireDelivery ? "required" : "not required"}`
                         : v.invoiceOnFile ? "An invoice is on file" : "No invoice yet"}
                     </p>
-                    {payee.confirmed && payee.exists ? <p className="mt-1 text-graphite">Screening: {payee.screening.risk}{payee.screening.at !== "0" ? ` · block ${v.blockNumber}` : ""}</p> : null}
+                    {payee.confirmed && payee.exists ? <p className="mt-1 text-graphite">Screening: {payee.screening.risk}</p> : null}
                   </div>
                 </li>
               );

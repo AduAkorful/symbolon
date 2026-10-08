@@ -7,18 +7,22 @@ export interface HistoryTurn {
   question: string;
   intent: string;
   params: Record<string, unknown>;
+  /** What the person was shown (plan 05ze): context for wording a follow-up, never a source of facts */
+  reply?: string;
 }
 
 interface LoggedTurn {
   q: string;
-  a?: { intent: string; params?: Record<string, unknown> };
+  a?: { text?: string; intent: string; params?: Record<string, unknown> };
   error?: string;
 }
 
-/** The earlier turns that resolved to a real question: the person's words, the intent and its parameters, never the answer text */
+const MAX_REPLY = 900;
+
+/** The earlier turns that were answered: the person's words, what they resolved to, and the reply they saw (plan 05ze) */
 export function buildHistory(log: LoggedTurn[]): HistoryTurn[] {
   return log
-    .filter((m) => m.a && m.a.intent !== "unsupported")
-    .map((m) => ({ question: m.q, intent: m.a!.intent, params: m.a!.params ?? {} }))
+    .filter((m) => m.a)
+    .map((m) => ({ question: m.q, intent: m.a!.intent, params: m.a!.params ?? {}, ...(m.a!.text ? { reply: m.a!.text.slice(0, MAX_REPLY) } : {}) }))
     .slice(-HISTORY_TURNS);
 }

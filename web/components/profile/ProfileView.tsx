@@ -137,9 +137,8 @@ export function ProfileView({ initialData }: { initialData: ProfileData }) {
 
       <section aria-labelledby="notify-heading" className="space-y-4">
         <SectionTitle id="notify-heading">Notifications</SectionTitle>
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-doc border border-rule px-6 py-5">
-          <p className="max-w-[60ch] text-sm text-ink">Notices appear inside the app. Email, Slack, Telegram and push delivery aren’t available yet.</p>
-          <LinkButton href="/notifications" variant="secondary" size="sm">Open your notifications</LinkButton>
+        <div className="rounded-doc border border-rule px-6 py-5">
+          <p className="max-w-[60ch] text-sm text-ink">Notices appear under the bell at the top of every page. Email, Slack, Telegram and push delivery aren’t available yet.</p>
         </div>
       </section>
 

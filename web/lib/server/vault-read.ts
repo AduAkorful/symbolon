@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { erc20Abi, getAddress, type PublicClient } from "viem";
 import { symbolonContracts, type Deployment } from "@symbolon/chain";
 
@@ -5,8 +6,11 @@ export type VaultSummary =
   | { ok: true; usdc: bigint; decimals: number; block: bigint }
   | { ok: false; reason: string };
 
-/** The Vault's USDC balance at one block. A failed read is a failed read the screen names; it is never shown as zero. */
-export async function readVaultSummary(client: PublicClient, deployment: Deployment, vault: string): Promise<VaultSummary> {
+/**
+ * The Vault's USDC balance at one block. A failed read is a failed read the screen names; it is never shown as zero. Within one page
+ * request every caller with the same arguments shares one read (React's request-scoped `cache`; outside a request it is a plain call).
+ */
+export const readVaultSummary = cache(async (client: PublicClient, deployment: Deployment, vault: string): Promise<VaultSummary> => {
   try {
     const token = deployment.tokens.usdc;
     const blockNumber = await client.getBlockNumber();
@@ -18,7 +22,7 @@ export async function readVaultSummary(client: PublicClient, deployment: Deploym
   } catch {
     return { ok: false, reason: "Can't confirm the balance right now." };
   }
-}
+});
 
 export type VaultState =
   | { ok: true; paused: boolean; steward: string; owner: string; block: bigint }
@@ -26,8 +30,11 @@ export type VaultState =
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 
-/** Whether the Vault is paused and who its Steward is, from the lens at one block. A failed read is a failed read, never "active". */
-export async function readVaultState(client: PublicClient, deployment: Deployment, vault: string): Promise<VaultState> {
+/**
+ * Whether the Vault is paused and who its Steward is, from the lens at one block. A failed read is a failed read, never "active". The
+ * shell, the page and the loaders all ask for this; within one request they share one read.
+ */
+export const readVaultState = cache(async (client: PublicClient, deployment: Deployment, vault: string): Promise<VaultState> => {
   try {
     const blockNumber = await client.getBlockNumber();
     const state = await symbolonContracts(client, deployment).lens.read.getVaultState([getAddress(vault)], { blockNumber });
@@ -35,7 +42,7 @@ export async function readVaultState(client: PublicClient, deployment: Deploymen
   } catch {
     return { ok: false, reason: "Can't confirm the Steward's state right now." };
   }
-}
+});
 
 /** What the screens say about the Steward, decided from the chain's state and the Steward wallet we recorded (plan 05h, H13–H15) */
 export type StewardStanding =

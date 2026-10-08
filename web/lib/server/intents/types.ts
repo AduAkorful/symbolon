@@ -22,7 +22,11 @@ export interface IntentAnswer {
 }
 
 /** What Ask returns: the answer plus the parameters it ran with (checked against the intent's declaration), so the next question can refer back (plan 05y B5) */
-export type AskedAnswer = IntentAnswer & { params: Record<string, unknown> };
+export type AskedAnswer = IntentAnswer & {
+  params: Record<string, unknown>;
+  /** A conversational reply (plan 05ze): what the lookups behind it said, shown under "Show the numbers" */
+  facts?: { text: string; source: string }[];
+};
 
 export interface IntentHandler {
   descriptor: IntentDescriptor;

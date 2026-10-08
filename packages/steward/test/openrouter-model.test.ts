@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { extractionSchema, ModelRefusal, type Extraction, type IntentDescriptor } from "../src/model.js";
 import { OpenRouterError, OpenRouterStewardModel, OPENROUTER_URL } from "../src/openrouter-model.js";
-import { routeSchemaFor, toRouteResult } from "../src/route-schema.js";
+import { planSchemaFor, routeSchemaFor, toPlanResult, toRouteResult } from "../src/route-schema.js";
 import type { DecisionRecord } from "../src/records.js";
 
 const KEY = "sk-or-test-key-DO-NOT-LOG";
@@ -340,5 +340,45 @@ describe("route with conversation history (plan 05y B3)", () => {
     const h = harness([reply(JSON.stringify({ intent: "held_invoices", params: { days: null, invoice: null }, reason: null }))]);
     await h.model.route("x", intents, [{ question: "q", intent: "held_invoices", params: {}, answer: "SECRET ANSWER TEXT" } as never]);
     expect(h.sent[0]!.body.messages[0].content).not.toContain("SECRET ANSWER TEXT");
+  });
+});
+
+describe("OpenRouterStewardModel.plan and phrase (plan 05ze)", () => {
+  it("plans up to three lookups, drops repeated ones and undeclared params, with a strict-safe schema", async () => {
+    const answer = {
+      reads: [
+        { intent: "payments_due", params: { days: 14, invoice: "x" } },
+        { intent: "payments_due", params: { days: 14, invoice: null } },
+        { intent: "held_invoices", params: { days: null, invoice: null } },
+      ],
+      clarify: null,
+    };
+    const h = harness([reply(JSON.stringify(answer))]);
+    const res = await h.model.plan("can I cover what is due?", intents, [{ question: "hi", intent: "conversation", params: {}, reply: "Hello." }]);
+    expect(res).toEqual({ reads: [{ intent: "payments_due", params: { days: 14 } }, { intent: "held_invoices", params: {} }] });
+    const { body } = h.sent[0]!;
+    assertStrictSafe(body.response_format.json_schema.schema);
+    expect(body.messages[0].content).toContain("<previous_turns>");
+    expect(body.messages[0].content).toContain("Hello.");
+  });
+
+  it("keeps a question back only when nothing needs reading, and treats bad output or a refusal as no reads", () => {
+    expect(toPlanResult({ reads: [], clarify: " Which vendor? " }, intents)).toEqual({ reads: [], clarify: "Which vendor?" });
+    expect(toPlanResult({ reads: [{ intent: "held_invoices", params: { days: null, invoice: null } }], clarify: "Which?" }, intents)).toEqual({ reads: [{ intent: "held_invoices", params: {} }] });
+    expect(planSchemaFor(intents).safeParse({ reads: [{ intent: "nope", params: {} }], clarify: null }).success).toBe(false);
+  });
+
+  it("returns no reads on a refusal or unparseable plan, and the reply text from phrase", async () => {
+    for (const c of [reply("not json"), reply({ role: "assistant", content: null, refusal: "no" })]) {
+      const h = harness([c]);
+      expect(await h.model.plan("hello", intents)).toEqual({ reads: [] });
+    }
+    const h = harness([reply("  Nothing is due this week.  ")]);
+    const text = await h.model.phrase({ question: "anything due?", history: [], facts: [{ topic: "payments_due", text: "No payments are due in the next 7 days.", source: "From: stored invoice records" }], topics: intents });
+    expect(text).toBe("Nothing is due this week.");
+    const sent = h.sent[0]!.body.messages;
+    expect(sent[0].content).toContain("ONLY the facts");
+    expect(sent[1].content).toContain("No payments are due in the next 7 days.");
+    expect(sent[1].content).toContain("anything due?");
   });
 });

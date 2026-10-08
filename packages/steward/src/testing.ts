@@ -1,5 +1,5 @@
 import type { DecisionRecord } from "./records.js";
-import type { Extraction, IntentDescriptor, RouteResult, RouteTurn, StewardModel } from "./model.js";
+import type { Extraction, IntentDescriptor, PhraseInput, PlanResult, RouteResult, RouteTurn, StewardModel } from "./model.js";
 
 // Test double only. It lives behind the "@symbolon/steward/testing" subpath so no app or package code reaches it through the main entry.
 
@@ -9,7 +9,22 @@ export class FakeStewardModel implements StewardModel {
     private readonly extraction?: Extraction,
     private readonly explanation = "Decision recorded.",
     private readonly routes: Record<string, RouteResult> = {},
+    /** Scripted plans by question; anything else is planned from the scripted routes */
+    private readonly plans: Record<string, PlanResult> = {},
+    /** Scripted reply writer; the default repeats the facts */
+    private readonly writer: (input: PhraseInput) => string = (input) => input.facts.map((f) => f.text).join(" ") || "Hello. What would you like to look up?",
   ) {}
+
+  async plan(question: string, intents: IntentDescriptor[], history?: RouteTurn[]): Promise<PlanResult> {
+    if (this.plans[question]) return this.plans[question];
+    const routed = await this.route(question, intents, history);
+    if ("params" in routed) return { reads: [{ intent: routed.intent, params: routed.params }] };
+    return routed.reason === "needs_detail" ? { reads: [], clarify: "Which vendor or invoice do you mean?" } : { reads: [] };
+  }
+
+  async phrase(input: PhraseInput): Promise<string> {
+    return this.writer(input);
+  }
 
   async extractInvoice(): Promise<Extraction> {
     if (!this.extraction) throw new Error("no scripted extraction");

@@ -4,9 +4,9 @@ import { z } from "zod";
 
 import type { DocumentDraft } from "@symbolon/seal";
 
-import { EXPLAIN_SYSTEM, EXTRACT_SYSTEM, routeSystem } from "./prompts.js";
+import { EXPLAIN_SYSTEM, EXTRACT_SYSTEM, phraseSystem, phraseUser, planSystem, routeSystem } from "./prompts.js";
 import type { DecisionRecord } from "./records.js";
-import { routeSchemaFor, toRouteResult } from "./route-schema.js";
+import { planSchemaFor, routeSchemaFor, toPlanResult, toRouteResult } from "./route-schema.js";
 
 /** What the model reads out of an uploaded invoice: a draft for the vendor to confirm, never sealed as-is */
 export const extractionSchema = z.object({
@@ -56,11 +56,30 @@ export interface RouteUnsupported {
 
 export type RouteResult = RouteSuccess | RouteUnsupported;
 
-/** One earlier question in a conversation: the person's own words and what it resolved to. Never the answer text (plan 05y B2). */
+/**
+ * One earlier question in a conversation: the person's own words and what it resolved to. `reply` is what the person was shown
+ * (plan 05ze); routing ignores it, planning and phrasing read it as context for wording only, never as a source of facts.
+ */
 export interface RouteTurn {
   question: string;
   intent: string;
   params: Record<string, unknown>;
+  reply?: string;
+}
+
+/** The lookups a turn needs, or a question back when a vendor or invoice is missing (plan 05ze) */
+export interface PlanResult {
+  reads: RouteSuccess[];
+  clarify?: string;
+}
+
+/** What the model may use to write a reply: only these read results (each is a sentence our own code built from a read) */
+export interface PhraseInput {
+  question: string;
+  history: RouteTurn[];
+  facts: { topic: string; text: string; source: string }[];
+  /** What Ask can look up, so a reply with no facts can say what it can do */
+  topics: IntentDescriptor[];
 }
 
 export interface StewardModel {
@@ -69,6 +88,10 @@ export interface StewardModel {
   explain(record: DecisionRecord): Promise<string>;
   /** Routes a question to one of the registered intents (plan 05u N10, N12) */
   route?: (question: string, intents: IntentDescriptor[], history?: RouteTurn[]) => Promise<RouteResult>;
+  /** Which read-only lookups a conversational turn needs (plan 05ze) */
+  plan?: (question: string, intents: IntentDescriptor[], history?: RouteTurn[]) => Promise<PlanResult>;
+  /** The reply, in conversation, from the facts alone; the caller checks it before anyone reads it (plan 05ze) */
+  phrase?: (input: PhraseInput) => Promise<string>;
 }
 
 export class ModelRefusal extends Error {
@@ -143,6 +166,35 @@ export class AnthropicStewardModel implements StewardModel {
       return { intent: "unsupported", reason: "Could not route question." };
     }
     return toRouteResult(parsed, intents);
+  }
+
+  async plan(question: string, intents: IntentDescriptor[], history?: RouteTurn[]): Promise<PlanResult> {
+    const response = await this.client.messages.parse({
+      model: this.model,
+      max_tokens: 1_000,
+      system: planSystem(intents, history),
+      messages: [{ role: "user", content: question }],
+      output_config: { format: zodOutputFormat(planSchemaFor(intents)) },
+    });
+    if (response.stop_reason === "refusal" || !response.parsed_output) return { reads: [] };
+    return toPlanResult(response.parsed_output, intents);
+  }
+
+  async phrase(input: PhraseInput): Promise<string> {
+    const response = await this.client.messages.create({
+      model: this.model,
+      max_tokens: 800,
+      thinking: { type: "adaptive" },
+      output_config: { effort: "low" },
+      system: phraseSystem(),
+      messages: [{ role: "user", content: phraseUser(input) }],
+    });
+    if (response.stop_reason === "refusal") throw new ModelRefusal(response.stop_details?.category ?? null);
+    return response.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("")
+      .trim();
   }
 }
 

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { after } from "next/server";
 import { Shell } from "@/components/shell/Shell";
 import { InboxActions } from "@/components/inbox/InboxActions";
 import { getClient } from "@/lib/server/chain";
@@ -6,7 +7,7 @@ import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
 import { requirePageSession } from "@/lib/server/http";
 import { loadSpaces } from "@/lib/server/space";
-import { ensureFresh } from "@/lib/server/sync";
+import { lastSyncState, refreshLedgerAfterResponse } from "@/lib/server/sync";
 import { filterInbox, listInbox, type InboxFilter } from "@/lib/server/inbox";
 import { businessStatus, statusToneClass, trustName, unsignedLabel } from "@/lib/business-status";
 import { formatDay, showMoney } from "@/lib/format";
@@ -32,7 +33,10 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   if (!business) return <Shell where={where} current={{ kind: "business", id: "" }}><p>You don’t belong to a business yet.</p></Shell>;
   const cfg = getConfig();
   const db = await getDb();
-  const sync = await ensureFresh(db, getClient(), cfg);
+  // The ledger copy is brought forward after the page is sent; the page draws from the database and says how the last sync went
+  const client = getClient();
+  after(() => refreshLedgerAfterResponse(db, client, cfg));
+  const sync = lastSyncState() ?? { ok: true as const, catchingUp: false as const };
   const query = await searchParams;
   const requested = query.filter as InboxFilter | undefined;
   const filter = requested && filters.some(([value]) => value === requested) ? requested : "all";

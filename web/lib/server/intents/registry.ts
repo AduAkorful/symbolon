@@ -21,6 +21,7 @@ import {
   treasuryMovesIntent,
   vendorSummaryIntent,
 } from "./topics";
+import { nextStepsIntent } from "./next-steps";
 import type { AskedAnswer, IntentContext, IntentHandler } from "./types";
 
 export const INTENT_HANDLERS: Record<string, IntentHandler> = {
@@ -41,9 +42,11 @@ export const INTENT_HANDLERS: Record<string, IntentHandler> = {
   pending_changes: pendingChangesIntent,
   policy_summary: policySummaryIntent,
   screening_status: screeningStatusIntent,
+  next_steps: nextStepsIntent,
 };
 
 export const QUICK_QUESTIONS = [
+  { label: "What should I do next?", intent: "next_steps", params: {} },
   { label: "What are we paying this week?", intent: "payments_due", params: { days: 7 } },
   { label: "Why are any invoices held?", intent: "held_invoices", params: {} },
   { label: "What is our cash runway and position?", intent: "cash_position", params: {} },

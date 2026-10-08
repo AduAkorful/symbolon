@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/server/db";
 import { readBody, requireSession, route } from "@/lib/server/http";
-import { markNotifications } from "@/lib/server/notifications";
+import { listNotifications, markNotifications } from "@/lib/server/notifications";
+
+/** The person's notices and unread count, for the bell's panel */
+export const GET = route(async () => {
+  const session = await requireSession();
+  const { items, unreadCount } = await listNotifications(await getDb(), session.user.id);
+  return NextResponse.json({ items, unreadCount }, { headers: { "cache-control": "no-store" } });
+});
 
 export const POST = route(async (request) => {
   const session = await requireSession();

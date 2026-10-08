@@ -1,9 +1,9 @@
 import { z } from "zod";
 
-import { extractionSchema, ModelRefusal, type Extraction, type IntentDescriptor, type RouteResult, type RouteTurn, type StewardModel } from "./model.js";
-import { EXPLAIN_SYSTEM, EXTRACT_SYSTEM, routeSystem } from "./prompts.js";
+import { extractionSchema, ModelRefusal, type Extraction, type IntentDescriptor, type PhraseInput, type PlanResult, type RouteResult, type RouteTurn, type StewardModel } from "./model.js";
+import { EXPLAIN_SYSTEM, EXTRACT_SYSTEM, phraseSystem, phraseUser, planSystem, routeSystem } from "./prompts.js";
 import type { DecisionRecord } from "./records.js";
-import { routeSchemaFor, toRouteResult } from "./route-schema.js";
+import { planSchemaFor, routeSchemaFor, toPlanResult, toRouteResult } from "./route-schema.js";
 
 // Plan 05x. The Steward's reader on OpenRouter's chat-completions API, over plain fetch. Like the Claude-backed model it only
 // reads and explains; nothing here can sign, send, or change a setting, and its output is validated by our own schemas.
@@ -11,7 +11,7 @@ import { routeSchemaFor, toRouteResult } from "./route-schema.js";
 /** OpenRouter's OpenAI-compatible endpoint (docs: openrouter.ai/docs, observed working 2026-10-06) */
 export const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-type Job = "extract" | "explain" | "route";
+type Job = "extract" | "explain" | "route" | "plan" | "phrase";
 
 export interface OpenRouterOptions {
   apiKey: string;
@@ -22,7 +22,7 @@ export interface OpenRouterOptions {
   fetch?: typeof fetch;
   /** One line per call: job, model, status, time, cost and token counts. Never content, never the key. */
   log?: (line: Record<string, unknown>) => void;
-  timeoutsMs?: Record<Job, number>;
+  timeoutsMs?: Partial<Record<Job, number>>;
   retryDelayMs?: number;
 }
 
@@ -38,7 +38,7 @@ export class OpenRouterError extends Error {
   }
 }
 
-const DEFAULT_TIMEOUTS: Record<Job, number> = { extract: 75_000, explain: 20_000, route: 15_000 };
+const DEFAULT_TIMEOUTS: Record<Job, number> = { extract: 75_000, explain: 20_000, route: 15_000, plan: 9_000, phrase: 9_000 };
 const RETRYABLE = new Set([429, 502, 503, 504]);
 
 interface Choice {
@@ -60,7 +60,7 @@ export class OpenRouterStewardModel implements StewardModel {
   constructor(private readonly opts: OpenRouterOptions) {
     this.fetchFn = opts.fetch ?? globalThis.fetch.bind(globalThis);
     this.log = opts.log ?? ((line) => console.info("steward model call", line));
-    this.timeouts = opts.timeoutsMs ?? DEFAULT_TIMEOUTS;
+    this.timeouts = { ...DEFAULT_TIMEOUTS, ...opts.timeoutsMs };
     this.retryDelayMs = opts.retryDelayMs ?? 1_500;
   }
 
@@ -129,6 +129,45 @@ export class OpenRouterStewardModel implements StewardModel {
     }
     if (!parsed.success) return { intent: "unsupported", reason: "Could not route question." };
     return toRouteResult(parsed.data, intents);
+  }
+
+  async plan(question: string, intents: IntentDescriptor[], history?: RouteTurn[]): Promise<PlanResult> {
+    const schema = planSchemaFor(intents);
+    let content: string;
+    try {
+      const choice = await this.call("plan", {
+        max_tokens: 500,
+        response_format: { type: "json_schema", json_schema: { name: "plan", strict: true, schema: z.toJSONSchema(schema) } },
+        messages: [
+          { role: "system", content: planSystem(intents, history) },
+          { role: "user", content: question },
+        ],
+      });
+      content = contentOf(choice);
+    } catch (e) {
+      if (e instanceof ModelRefusal) return { reads: [] };
+      throw e;
+    }
+    let parsed;
+    try {
+      parsed = schema.safeParse(JSON.parse(content));
+    } catch {
+      return { reads: [] };
+    }
+    return parsed.success ? toPlanResult(parsed.data, intents) : { reads: [] };
+  }
+
+  async phrase(input: PhraseInput): Promise<string> {
+    const choice = await this.call("phrase", {
+      max_tokens: 500,
+      messages: [
+        { role: "system", content: phraseSystem() },
+        { role: "user", content: phraseUser(input) },
+      ],
+    });
+    const text = contentOf(choice).trim();
+    if (!text) throw new Error("the model returned no reply");
+    return text;
   }
 
   /** One chat completion with the shared request fields, one retry on a transient failure, and a log line either way */

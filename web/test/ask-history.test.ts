@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import type { IntentDescriptor } from "@symbolon/steward";
 import { buildHistory, HISTORY_TURNS } from "@/lib/ask-history";
-import { sanitizeHistory } from "@/lib/server/intents/history";
+import { sanitizeConversation, sanitizeHistory } from "@/lib/server/intents/history";
 
 const intents: IntentDescriptor[] = [
   { name: "payments_due", description: "", params: { days: { type: "number", description: "" } } },
@@ -48,7 +48,7 @@ describe("sanitizeHistory (plan 05y B2)", () => {
 });
 
 describe("buildHistory (plan 05y B1)", () => {
-  it("builds turns from completed answers, skipping unsupported ones and errors", () => {
+  it("builds turns from completed answers with the reply the person saw, skipping errors and unanswered turns (plan 05ze)", () => {
     const log = [
       { q: "What are we paying this week?", a: { text: "t", links: [], source: "s", intent: "payments_due", params: { days: 7 } } },
       { q: "gibberish", a: { text: "t", links: [], source: "s", intent: "unsupported", params: {} } },
@@ -56,7 +56,11 @@ describe("buildHistory (plan 05y B1)", () => {
       { q: "pending" },
       { q: "Why are any invoices held?", a: { text: "t", links: [], source: "s", intent: "held_invoices", params: {} } },
     ];
-    expect(buildHistory(log)).toEqual([turn("What are we paying this week?", "payments_due", { days: 7 }), turn("Why are any invoices held?", "held_invoices")]);
+    expect(buildHistory(log)).toEqual([
+      { ...turn("What are we paying this week?", "payments_due", { days: 7 }), reply: "t" },
+      { ...turn("gibberish", "unsupported"), reply: "t" },
+      { ...turn("Why are any invoices held?", "held_invoices"), reply: "t" },
+    ]);
   });
 
   it("keeps only the newest N turns", () => {
@@ -64,5 +68,31 @@ describe("buildHistory (plan 05y B1)", () => {
     const out = buildHistory(log);
     expect(out).toHaveLength(HISTORY_TURNS);
     expect(out[0]?.question).toBe("q4");
+  });
+});
+
+describe("sanitizeConversation (plan 05ze)", () => {
+  it("keeps replies and conversation turns, and drops what doesn't fit", () => {
+    const out = sanitizeConversation(
+      [
+        { ...turn("hi", "conversation"), reply: "Hello." },
+        { ...turn("what is due", "payments_due", { days: 7 }), reply: "Nothing is due." },
+        turn("bad", "held_invoices", { days: 3 }),
+        { ...turn("gibberish", "unsupported"), reply: "x".repeat(901) },
+        turn("wire", "wire_money"),
+      ],
+      intents,
+    );
+    expect(out).toEqual([
+      { question: "hi", intent: "conversation", params: {}, reply: "Hello." },
+      { question: "what is due", intent: "payments_due", params: { days: 7 }, reply: "Nothing is due." },
+      { question: "gibberish", intent: "conversation", params: {} },
+    ]);
+  });
+
+  it("drops the whole history when a turn is malformed or holds control characters", () => {
+    expect(sanitizeConversation([turn("ok", "conversation"), { question: 3 }], intents)).toEqual([]);
+    expect(sanitizeConversation([{ ...turn("ok", "conversation"), reply: "bad\u202etext" }], intents)).toEqual([{ question: "ok", intent: "conversation", params: {} }]);
+    expect(sanitizeConversation("nope", intents)).toEqual([]);
   });
 });

@@ -7,8 +7,10 @@ import { getConfig } from "./config";
 import { getDb } from "./db";
 import { AuthError } from "./errors";
 import { executeIntent, listIntentDescriptors } from "./intents/registry";
-import { sanitizeHistory } from "./intents/history";
+import { checkReply } from "./ask-check";
+import { CONVERSATION_INTENT, sanitizeConversation, sanitizeHistory } from "./intents/history";
 import type { AskedAnswer, IntentContext } from "./intents/types";
+import type { IntentDescriptor, PlanResult, RouteTurn, StewardModel } from "@symbolon/steward";
 import { rateLimit } from "./rate";
 import { getStewardModel } from "./steward-model";
 
@@ -79,6 +81,8 @@ export async function askSteward(input: AskInput): Promise<AskedAnswer> {
   }
 
   const descriptors = listIntentDescriptors();
+  if (model.plan && model.phrase) return converse({ ctx, model: model as ConversingModel, question, history: sanitizeConversation(input.history, descriptors), descriptors });
+
   const routeRes = await model.route(question, descriptors, sanitizeHistory(input.history, descriptors));
 
   if ("params" in routeRes) {
@@ -101,6 +105,83 @@ export async function askSteward(input: AskInput): Promise<AskedAnswer> {
     links: [],
     source: "From: Steward intent router",
     intent: "unsupported",
+    params: {},
+  };
+}
+
+type ConversingModel = StewardModel & Required<Pick<StewardModel, "plan" | "phrase">>;
+
+const stripFrom = (source: string) => source.replace(/^From:\s*/i, "");
+const unique = <T,>(items: T[]) => [...new Set(items)];
+
+/**
+ * A typed message as a conversation turn (plan 05ze): plan the lookups, run them, let the model word a reply from what they
+ * returned, and show that reply only if it passes `checkReply`. Anything else falls back to the lookups' own sentences.
+ */
+async function converse(args: { ctx: IntentContext; model: ConversingModel; question: string; history: RouteTurn[]; descriptors: IntentDescriptor[] }): Promise<AskedAnswer> {
+  const { ctx, model, question, history, descriptors } = args;
+  const modelDown: AskedAnswer = {
+    text: "I couldn't reach the language model just now, so I can't chat. The quick questions beside this still work.",
+    links: [],
+    source: "From: Steward (model unavailable)",
+    intent: CONVERSATION_INTENT,
+    params: {},
+  };
+
+  let plan: PlanResult;
+  try {
+    plan = await model.plan(question, descriptors, history);
+  } catch (e) {
+    console.error("ask: the model could not plan", e);
+    return modelDown;
+  }
+
+  if (plan.reads.length === 0 && plan.clarify && checkReply(plan.clarify, { facts: [], question }).ok) {
+    return { text: plan.clarify, links: [], source: "From: your question", intent: CONVERSATION_INTENT, params: {} };
+  }
+
+  const results = await Promise.all(
+    plan.reads.map((r) =>
+      executeIntent(ctx, r.intent, r.params).catch((e): AskedAnswer => {
+        console.error("ask: a lookup failed", r.intent, e);
+        return { text: "I couldn't read that just now.", links: [], source: "From: a failed read", intent: r.intent, params: {} };
+      }),
+    ),
+  );
+  const facts = results.map((r) => ({ text: r.text, source: r.source }));
+  const links = unique(results.flatMap((r) => r.links.map(([label, href]) => `${label}\u0000${href}`))).map((k) => k.split("\u0000") as [string, string]);
+
+  let reply: string | null = null;
+  try {
+    reply = await model.phrase({ question, history, facts: results.map((r) => ({ topic: r.intent, text: r.text, source: r.source })), topics: descriptors });
+  } catch (e) {
+    console.error("ask: the model could not write a reply", e);
+  }
+  if (reply !== null) {
+    const verdict = checkReply(reply, { facts: facts.flatMap((f) => [f.text, f.source]), question });
+    if (verdict.ok) {
+      return {
+        text: reply.trim(),
+        links,
+        source: results.length === 0 ? "From: the conversation (nothing was looked up)" : `From: ${unique(results.map((r) => stripFrom(r.source))).join("; ")}`,
+        intent: results[0]?.intent ?? CONVERSATION_INTENT,
+        params: results.length === 1 ? results[0]!.params : {},
+        ...(facts.length > 0 ? { facts } : {}),
+      };
+    }
+    console.info("ask: a reply was replaced by the lookups' own text", { reason: verdict.reason });
+  }
+
+  if (results.length === 1) return results[0]!;
+  if (results.length > 1) {
+    return { text: results.map((r) => r.text).join("\n\n"), links, source: `From: ${unique(results.map((r) => stripFrom(r.source))).join("; ")}`, intent: results[0]!.intent, params: {} };
+  }
+  const topics = descriptors.map((d) => d.name.replace(/_/g, " ")).join(", ");
+  return {
+    text: `I can look up: ${topics}. I can't move money, approve, pause or change settings from here; those are done on their own pages. What would you like to know?`,
+    links: [],
+    source: "From: the conversation (nothing was looked up)",
+    intent: CONVERSATION_INTENT,
     params: {},
   };
 }

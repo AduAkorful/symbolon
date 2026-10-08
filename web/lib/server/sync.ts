@@ -28,6 +28,10 @@ export type SyncState =
   | { ok: true; catchingUp: true; behind: bigint | null }
   | { ok: false; reason: string };
 
+/** How the most recent sync in this process ended: what a page says when it did not wait for one itself */
+let last: SyncState | null = null;
+export const lastSyncState = (): SyncState | null => last;
+
 function start(db: Database, client: PublicClient, cfg: ChainSettings, contracts?: SymbolonContracts): Promise<SyncReport> {
   if (!running) {
     let run: Promise<SyncReport> | undefined;
@@ -61,19 +65,32 @@ export async function ensureFresh(
   cfg: ChainSettings,
   opts: { deadlineMs?: number; force?: boolean } = {},
 ): Promise<SyncState> {
+  const remember = (state: SyncState) => (last = state);
   if (!opts.force && behind === 0n) {
     const [cursor] = await db.select().from(syncCursors).where(and(eq(syncCursors.key, keyFor(cfg)), eq(syncCursors.chainId, cfg.chainId))).limit(1);
-    if (cursor && Date.now() - cursor.updatedAt.getTime() < FRESH_FOR_MS) return { ok: true, catchingUp: false };
+    if (cursor && Date.now() - cursor.updatedAt.getTime() < FRESH_FOR_MS) return remember({ ok: true, catchingUp: false });
   }
   const pending = start(db, client, cfg);
-  pending.catch((error) => console.error("ledger sync failed", error));
+  pending.catch((error) => {
+    console.error("ledger sync failed", error);
+    remember({ ok: false, reason: error instanceof Error ? error.message : "The ledger could not be synced." });
+  });
   try {
     const result = await Promise.race([pending, sleep(opts.deadlineMs ?? PAGE_SYNC_DEADLINE_MS)]);
-    if (result === "late") return { ok: true, catchingUp: true, behind: null };
-    return result.head > result.to ? { ok: true, catchingUp: true, behind: result.head - result.to } : { ok: true, catchingUp: false };
+    if (result === "late") return remember({ ok: true, catchingUp: true, behind: null });
+    return remember(result.head > result.to ? { ok: true, catchingUp: true, behind: result.head - result.to } : { ok: true, catchingUp: false });
   } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message : "The ledger could not be synced." };
+    return remember({ ok: false, reason: error instanceof Error ? error.message : "The ledger could not be synced." });
   }
+}
+
+/**
+ * For pages (plan 05zd F4): bring the ledger copy forward after the response has gone out, so the page never waits on Arc for it.
+ * The page draws from the database and from how the last sync ended (`lastSyncState`); the next view, or the scheduled sync, sees
+ * what this found.
+ */
+export async function refreshLedgerAfterResponse(db: Database, client: PublicClient, cfg: ChainSettings): Promise<void> {
+  await ensureFresh(db, client, cfg, { deadlineMs: 60_000 });
 }
 
 /**

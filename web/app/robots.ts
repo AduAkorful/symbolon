@@ -14,7 +14,6 @@ export default function robots(): MetadataRoute.Robots {
           "/receipt/",
           "/invite/",
           "/join/",
-          "/notifications",
           "/profile",
           "/api/",
         ],

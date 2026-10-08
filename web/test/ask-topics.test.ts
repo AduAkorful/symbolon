@@ -58,11 +58,11 @@ describe("Ask topics (plan 05y Part C)", () => {
     ctx = { db, businessId: biz, client: {} as never, deployment, now: NOW, userId: owner };
   });
 
-  it("registers all seventeen intents with distinct, strict-safe descriptors", () => {
+  it("registers all eighteen intents with distinct, strict-safe descriptors", () => {
     const names = listIntentDescriptors().map((d) => d.name);
     expect(new Set(names).size).toBe(names.length);
     expect(names).toEqual(expect.arrayContaining(["vendor_summary", "open_offers", "budget_remaining", "treasury_moves", "open_orders", "pending_changes", "policy_summary", "screening_status"]));
-    expect(names).toHaveLength(17);
+    expect(names).toHaveLength(18);
   });
 
   describe("vendor resolution", () => {

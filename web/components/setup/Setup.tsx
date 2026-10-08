@@ -358,7 +358,7 @@ function Fund({ business, props, standing, run, busy, discover }: { business: { 
           {balance?.ok ? `$${fmt(balance.usdc, balance.decimals)}` : balance ? "—" : "…"}
         </p>
         <p className="mt-2 text-xs text-graphite">
-          {balance?.ok ? `Read from Arc at block ${balance.block}.` : balance ? "Can’t confirm the balance right now." : "Reading the balance from Arc…"}
+          {balance?.ok ? "Checked with Arc just now." : balance ? "Can’t confirm the balance right now." : "Reading the balance from Arc…"}
           {balance && !balance.ok ? (
             <button onClick={() => void read()} className="ml-2 underline decoration-rule underline-offset-4">
               Try again

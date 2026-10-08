@@ -93,7 +93,7 @@ export function TreasuryView({
           <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm text-graphite">
             <span>Vault</span>
             <Address value={state.vault} explorer={explorer} copy className="text-ink" />
-            <span>· read at block {state.block}</span>
+            <span>· live from Arc</span>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">

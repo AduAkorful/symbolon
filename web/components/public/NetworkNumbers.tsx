@@ -43,7 +43,7 @@ export function NetworkNumbers() {
         {stats.state === "ready" ? (
           <>
             <p className="mt-2 max-w-[62ch] text-sm text-graphite">
-              Counted from Arc’s own events, nothing from our accounts. Network: {where}. Read through block {stats.readThrough}.
+              Counted from Arc’s own events, nothing from our accounts. Network: {where}.
             </p>
             <ProtocolNumbers stats={stats} />
           </>

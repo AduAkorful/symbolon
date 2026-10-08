@@ -73,7 +73,6 @@ export interface TodaySummary {
   paymentsAmountFormatted: string;
   scheduledCount: number;
   decisionsCount: number;
-  asOfBlock?: string;
   asOfTime: Date;
 }
 
@@ -360,20 +359,11 @@ export async function loadToday(
       ),
     );
 
-  let asOfBlock: string | undefined;
-  try {
-    const b = await _client.getBlockNumber();
-    asOfBlock = b.toString();
-  } catch {
-    // client may fail or be stubbed without block
-  }
-
   return {
     paymentsCount,
     paymentsAmountFormatted: formatAmount(paymentsTotal, 6),
     scheduledCount: dueTodayRows.length,
     decisionsCount: decisionsTodayRows.length,
-    asOfBlock,
     asOfTime: now,
   };
 }

@@ -26,7 +26,7 @@ const tokens = JSON.parse(readFileSync(arg("tokens", join(here, "tokens.json")),
 const harness = readFileSync(join(here, "harness.js"), "utf8");
 mkdirSync(join(OUT, "shots"), { recursive: true });
 
-const OWNER = ["/business", "/business/inbox", "/business/approvals", "/business/vendors", "/business/orders", "/business/treasury", "/business/steward", "/business/policy", "/business/activity", "/business/accounting", "/business/compliance", "/business/team", "/business/settings", "/business/settings/releases", "/business/ask", "/notifications", "/profile"];
+const OWNER = ["/business", "/business/inbox", "/business/approvals", "/business/vendors", "/business/orders", "/business/treasury", "/business/steward", "/business/policy", "/business/activity", "/business/accounting", "/business/compliance", "/business/team", "/business/settings", "/business/settings/releases", "/business/ask", "/profile"];
 const VENDOR = ["/vendor", "/vendor/invoices", "/vendor/new", "/vendor/upload", "/vendor/series", "/vendor/settings", "/vendor/verify", "/vendor/clients"];
 const PUBLIC = ["/", "/status", "/verify", "/signin"];
 const MISC = [

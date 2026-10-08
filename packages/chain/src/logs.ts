@@ -22,7 +22,8 @@ export interface ScanResult<TLog> {
   scannedTo: bigint;
 }
 
-const DEFAULT_CHUNK = 10_000n;
+// Arc's public endpoints answer log queries of about 5,000 blocks at most (10,000 is refused by most), so start there
+const DEFAULT_CHUNK = 5_000n;
 const DEFAULT_MIN_CHUNK = 100n;
 const RATE_LIMIT_RETRIES = 4;
 

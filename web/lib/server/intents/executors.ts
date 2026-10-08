@@ -276,7 +276,7 @@ export const cashPositionIntent: IntentHandler = {
       return {
         text,
         links: [["Treasury dashboard", "/business/treasury"]],
-        source: `From: Vault and Reserve balances at block ${treasury.block}`,
+        source: `From: Vault and Reserve balances just now`,
         intent: "cash_position",
       };
     } catch (e) {
@@ -372,7 +372,7 @@ export const reserveStatusIntent: IntentHandler = {
         return {
           text: "The USYC treasury reserve is currently disabled for this Vault. The reserve policy is disabled; see Treasury for confirmed balances.",
           links: [["Enable Reserve in Treasury", "/business/treasury"]],
-          source: `From: Vault reserve policy at block ${treasury.block}`,
+          source: `From: Vault reserve policy just now`,
           intent: "reserve_status",
         };
       }
@@ -385,7 +385,7 @@ export const reserveStatusIntent: IntentHandler = {
       return {
         text,
         links: [["Treasury Reserve Details", "/business/treasury"]],
-        source: `From: USYC Teller & Oracle round at block ${treasury.block}`,
+        source: `From: USYC Teller & Oracle round just now`,
         intent: "reserve_status",
       };
     } catch (e) {

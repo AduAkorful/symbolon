@@ -304,7 +304,7 @@ export function StewardClient({
             <dt className="text-graphite">Standing on Arc</dt>
             <dd>
               <StatusPill tone={standingTone}>{standingLabel(standing.kind)}</StatusPill>
-              {standing.block ? <span className="ml-3 text-graphite">read at block {standing.block}</span> : null}
+              {standing.block ? <span className="ml-3 text-graphite">checked with Arc just now</span> : null}
               {standing.reason ? <p className="mt-2 text-warn">{standing.reason}</p> : null}
             </dd>
           </div>

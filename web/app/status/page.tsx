@@ -33,7 +33,7 @@ export default async function StatusPage() {
         </h1>
         <p data-reveal className="mt-3 text-graphite">
           {status.ok
-            ? `Release ${config.deployment.releaseVersion}. Read at block ${status.block}, ${status.readAt.toISOString().slice(11, 19)} UTC.`
+            ? `Release ${config.deployment.releaseVersion}. Read from the chain at ${status.readAt.toISOString().slice(11, 19)} UTC.`
             : `${failed.length} of ${status.checks.length} checks failed. Nothing on this page should be trusted until they pass.`}
         </p>
 

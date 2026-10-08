@@ -20,7 +20,7 @@ export function StewardSwitch(props: {
         <span className={`font-medium ${paused ? "text-red" : "text-ink"}`}>{paused ? "Paused" : "Active"}</span>
         <span className="ml-2 text-graphite">
           {paused ? "It can’t pay anything until you resume it. " : "It can act within the Vault’s rules. "}
-          Read from Arc at block {props.block}.
+          Checked with Arc just now.
         </span>
       </p>
       <div className="mt-2">
