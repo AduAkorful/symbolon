@@ -167,6 +167,8 @@ interface ISymbolonVault {
     event ReservePolicySet(ReservePolicy policy);
     event ReserveSubscribed(address indexed caller, uint256 assets, uint256 shares, bytes32 decisionHash);
     event ReserveRedeemed(address indexed caller, uint256 shares, uint256 assets, bytes32 decisionHash);
+    /// @notice USDC arrived as Arc's native coin; `value` is in the native coin's 18 decimals, not the token's 6
+    event NativeReceived(address indexed from, uint256 value);
 
     error VaultPaused();
     error NotPayer();
@@ -182,6 +184,7 @@ interface ISymbolonVault {
     error ScreeningStale(address seal, uint64 screenedAt);
     error PurchaseOrderRequired();
     error PurchaseOrderNotOpen(bytes32 poRef);
+    error PurchaseOrderExists(bytes32 poRef);
     error PurchaseOrderWrongVendor(bytes32 poRef);
     error PurchaseOrderNotReleased(bytes32 poRef, uint64 releaseAfter);
     error PurchaseOrderExceeded(bytes32 poRef, uint256 remaining);

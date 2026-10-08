@@ -184,13 +184,16 @@ export async function syncVault(
   client: PublicClient,
   deployment: Deployment,
   vault: `0x${string}`,
-  opts: { fromBlock?: bigint; toBlock?: bigint } = {},
+  opts: { fromBlock?: bigint; toBlock?: bigint; maxBlocks?: bigint } = {},
 ): Promise<SyncReport> {
   const key = `vault:${deployment.chainId}:${vault.toLowerCase()}`;
   const [cursor] = await db.select().from(syncCursors).where(eq(syncCursors.key, key));
   const from = cursor ? cursor.block + 1n : (opts.fromBlock ?? deployment.startBlock);
-  const to = opts.toBlock ?? (await client.getBlockNumber());
-  if (from > to) return { from, to, head: to, events: 0, invoicesUpdated: 0 };
+  const head = opts.toBlock ?? (await client.getBlockNumber());
+  // `maxBlocks` bounds one call; the cursor is saved at the end of the window, so a Vault far behind catches up over several
+  // calls instead of one long scan that, if Arc's public network rate-limits it, saves nothing and starts over
+  const to = opts.maxBlocks !== undefined && from + opts.maxBlocks - 1n < head ? from + opts.maxBlocks - 1n : head;
+  if (from > to) return { from, to, head, events: 0, invoicesUpdated: 0 };
 
   const { logs, scannedTo } = await scanLogs(client, { address: vault, events: VAULT_EVENTS, fromBlock: from, toBlock: to, concurrency: SYNC_CONCURRENCY });
   await db.transaction(async (tx) => {
@@ -200,5 +203,5 @@ export async function syncVault(
       .values({ key, chainId: deployment.chainId, block: scannedTo })
       .onConflictDoUpdate({ target: syncCursors.key, set: { block: scannedTo, updatedAt: sql`now()` } });
   });
-  return { from, to: scannedTo, head: to, events: logs.length, invoicesUpdated: 0 };
+  return { from, to: scannedTo, head, events: logs.length, invoicesUpdated: 0 };
 }

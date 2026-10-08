@@ -14,6 +14,7 @@ import { Callout } from "@/components/ui/Callout";
 import { InlineError } from "@/components/ui/States";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { SectionTitle } from "@/components/ui/Type";
+import { refreshAfterChain } from "@/lib/client/refresh";
 
 interface Props {
   businessId: string;
@@ -89,7 +90,7 @@ export function VendorRequestsSection({
       const recData = await recRes.json();
       if (!recRes.ok) throw new Error(recData.error || "Failed to record confirmation");
 
-      router.refresh();
+      refreshAfterChain(router);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -138,7 +139,7 @@ export function VendorRequestsSection({
       const recData = await recRes.json();
       if (!recRes.ok) throw new Error(recData.error || "Failed to record cancel");
 
-      router.refresh();
+      refreshAfterChain(router);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -159,7 +160,7 @@ export function VendorRequestsSection({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to reject request");
-      router.refresh();
+      refreshAfterChain(router);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

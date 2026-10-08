@@ -21,6 +21,9 @@ export const MIN_STEWARD_FEE_BALANCE = 10_000_000_000_000_000n;
 
 /** Lease timeout: 5 minutes */
 export const STEWARD_RUN_LEASE_MS = 5 * 60 * 1000;
+/** One run reads at most this much of a Vault's history, for at most this long (a few Arc log requests) */
+const RUN_VAULT_WINDOW_BLOCKS = 20_000n;
+const RUN_VAULT_SYNC_DEADLINE_MS = 8_000;
 
 let circleClient: ReturnType<typeof createCircleClient> | undefined;
 
@@ -227,8 +230,19 @@ export async function runForBusiness(
 
     // Chain sync
     await ensureFresh(db, client, cfg);
-    const vaultBlock = await ensureVaultBlock(db, client, cfg.deployment, businessId, vault);
-    await syncVault(db, client, cfg.deployment, vault, { fromBlock: vaultBlock });
+    // The Vault's events only feed the Activity history; a pass decides from live reads. So here the copy moves forward by one
+    // bounded window and a failure never fails the run (found 2026-10-08: a Vault far behind made every run scan to the head,
+    // Arc's public network rate-limited it, nothing was saved, and every later run failed the same way). The scheduled sync
+    // carries the rest.
+    try {
+      const vaultBlock = await ensureVaultBlock(db, client, cfg.deployment, businessId, vault);
+      await Promise.race([
+        syncVault(db, client, cfg.deployment, vault, { fromBlock: vaultBlock, maxBlocks: RUN_VAULT_WINDOW_BLOCKS }),
+        new Promise<void>((resolve) => setTimeout(resolve, RUN_VAULT_SYNC_DEADLINE_MS)),
+      ]);
+    } catch (syncErr) {
+      console.warn("Vault history sync failed; the pass goes on from live reads:", syncErr);
+    }
 
     // Execute runSteward
     const env = await buildStewardEnv(db, client, cfg, b);

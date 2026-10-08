@@ -127,6 +127,13 @@ contract SymbolonVault is
         }
     }
 
+    /// @notice Accepts USDC sent as Arc's native coin, the same balance the ERC-20 shows, so a wallet's Send screen works
+    /// @dev Open to anyone and while paused, like an ERC-20 transfer. It writes nothing and calls nothing; every payment
+    /// rule reads the balance through the token, which already includes native value
+    receive() external payable {
+        emit NativeReceived(msg.sender, msg.value);
+    }
+
     // ---------------------------------------------------------------------------------------------------------------
     // Payments
     // ---------------------------------------------------------------------------------------------------------------
@@ -314,6 +321,8 @@ contract SymbolonVault is
     {
         if (poRef == bytes32(0) || seal == address(0)) revert ZeroAddress();
         if (!_s().budgets[budgetId].exists) revert UnknownBudget(budgetId);
+        // a reference is used once, open or closed: re-opening would silently reset `remaining`
+        if (_s().purchaseOrders[poRef].seal != address(0)) revert PurchaseOrderExists(poRef);
         _s().purchaseOrders[poRef] =
             PurchaseOrder({open: true, seal: seal, releaseAfter: releaseAfter, budget: budgetId, remaining: amount});
         emit PurchaseOrderOpened(poRef, seal, budgetId, amount, releaseAfter);

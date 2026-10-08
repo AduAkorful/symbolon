@@ -9,6 +9,7 @@ import { InlineError } from "@/components/ui/States";
 import { ensureChain, findWalletFor, wrongWalletMessage, type SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { signTypedData } from "@/components/vendor/seal-signer";
+import { refreshAfterChain } from "@/lib/client/refresh";
 
 interface Props {
   fingerprint: string;
@@ -78,7 +79,7 @@ export function CancelInvoiceAction({ fingerprint, invoiceNumber, signer }: Prop
       if (!recRes.ok) throw new Error(recData.error || "Failed to record cancellation");
 
       setOpen(false);
-      router.refresh();
+      refreshAfterChain(router);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

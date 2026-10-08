@@ -3,7 +3,7 @@ import type { PublicClient } from "viem";
 import { arcTestnet, getDeployment, type SymbolonContracts } from "@symbolon/chain";
 import { createTestDb, invoices, syncCursors, type Database } from "@symbolon/db";
 import { eq } from "drizzle-orm";
-import { syncLedger } from "../src/index.js";
+import { syncLedger, syncVault } from "../src/index.js";
 
 const deployment = getDeployment(arcTestnet.id);
 const key = `ledger:${deployment.chainId}:${deployment.contracts.invoiceLedger.toLowerCase()}`;
@@ -80,6 +80,34 @@ describe("ledger sync in bounded windows (A3)", () => {
     await knownOldInvoice(db);
     const { client } = chainAt(head);
     expect((await syncLedger(db, client, contracts, deployment)).to).toBe(head);
+    await db.$client.close();
+  });
+});
+
+describe("Vault event sync in bounded windows", () => {
+  const vault = "0x00000000000000000000000000000000000000d1" as const;
+  const vaultKey = `vault:${deployment.chainId}:${vault}`;
+
+  it("reads one window from where it starts, saves the cursor there, and continues from it next time", async () => {
+    const db = await createTestDb();
+    const head = deployment.startBlock + 1_000_000n;
+    const { client, ranges } = chainAt(head);
+    const first = await syncVault(db, client, deployment, vault, { fromBlock: deployment.startBlock, maxBlocks: 100_000n });
+    expect(first).toMatchObject({ from: deployment.startBlock, to: deployment.startBlock + 99_999n, head });
+    expect(Math.max(...ranges.map((r) => Number(r[1])))).toBe(Number(first.to));
+    const [cursor] = await db.select().from(syncCursors).where(eq(syncCursors.key, vaultKey));
+    expect(cursor!.block).toBe(first.to);
+    const second = await syncVault(db, client, deployment, vault, { maxBlocks: 100_000n });
+    expect(second.from).toBe(first.to + 1n);
+    await db.$client.close();
+  });
+
+  it("without a window still reads up to the head", async () => {
+    const db = await createTestDb();
+    const head = deployment.startBlock + 30_000n;
+    const { client } = chainAt(head);
+    const run = await syncVault(db, client, deployment, vault, { fromBlock: deployment.startBlock });
+    expect(run).toMatchObject({ to: head, head });
     await db.$client.close();
   });
 });

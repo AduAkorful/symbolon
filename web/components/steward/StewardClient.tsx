@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Overlay } from "@/components/Overlay";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,8 @@ import { Money } from "@/components/ui/Money";
 import { EmptyState } from "@/components/ui/States";
 import { StatusPill, type Tone } from "@/components/ui/StatusPill";
 import { plainRunError } from "@/lib/run-error";
+import { refreshAfterChain } from "@/lib/client/refresh";
+import { settleFee, type FeeView } from "@/components/steward/fee-settle";
 import { Eyebrow, Lead, PageTitle, SectionTitle } from "@/components/ui/Type";
 
 const modes = [
@@ -133,6 +135,9 @@ export function StewardClient({
 }: StewardClientProps) {
   const router = useRouter();
   const discover = useWalletProviders();
+  // the fee balance is kept here, not read once from the page: after a top-up the chain needs a moment (plan 05zi)
+  const [feeNow, setFeeNow] = useState(fee);
+  const [feeNote, setFeeNote] = useState<string | null>(null);
 
   const isOwner = business.role === "owner";
   const isApprover = business.role === "approver";
@@ -168,7 +173,7 @@ export function StewardClient({
         throw new Error(res.error ?? "Anchoring failed.");
       }
       setAnchorMessage(`Anchored ${res.count ?? "batch"} decisions onchain.`);
-      router.refresh();
+      refreshAfterChain(router);
     } catch (err) {
       setAnchorError(err instanceof Error ? err.message : "Anchoring failed.");
     } finally {
@@ -235,6 +240,11 @@ export function StewardClient({
       const res = await postJson<{ ok: boolean; run: RunView }>(`/api/business/${business.id}/steward`, {
         action: "run",
       });
+      if (res.run.status === "failed") {
+        setRunError(plainRunError(res.run.error));
+        router.refresh();
+        return;
+      }
       setRunMessage(
         res.run.status === "done"
           ? "Run completed successfully."
@@ -267,6 +277,9 @@ export function StewardClient({
         txHash,
       });
       setFundingOpen(false);
+      setFeeNote("Sent. Waiting for Arc to show it…");
+      const arrived = await settleFee({ before: feeNow.raw, read: readFee, show: setFeeNow });
+      setFeeNote(arrived === "changed" ? "Arrived." : "Sent. Arc hasn't shown it yet; it will appear here when it does.");
       router.refresh();
     } catch (err) {
       setFundingError(wasRejected(err) ? "Request rejected in wallet." : err instanceof Error ? err.message : "Failed to fund fees.");
@@ -275,7 +288,24 @@ export function StewardClient({
     }
   }
 
-  const lowFees = fee.raw !== null && BigInt(fee.raw) < 10_000_000_000_000_000n;
+  const readFee = async (): Promise<FeeView | null> => {
+    try {
+      const res = await fetch(`/api/business/${business.id}/steward`, { cache: "no-store" });
+      if (!res.ok) return null;
+      const body = (await res.json()) as { fee?: FeeView };
+      return body.fee ?? null;
+    } catch {
+      return null;
+    }
+  };
+  // while the page is open, read it again now and then so a top-up from another tab or a Steward spend shows up
+  useEffect(() => {
+    const id = setInterval(() => void readFee().then((f) => f && f.raw !== null && setFeeNow(f)), 30_000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [business.id]);
+
+  const lowFees = feeNow.raw !== null && BigInt(feeNow.raw) < 10_000_000_000_000_000n;
   const standingTone: Tone = standing.kind === "active" ? "ok" : standing.kind === "paused" ? "danger" : "warn";
 
   return (
@@ -313,7 +343,8 @@ export function StewardClient({
             <dt className="text-graphite">Fee balance</dt>
             <dd className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
               <span>
-                <Money className="font-medium text-ink">{fee.formatted}</Money>
+                <Money className="font-medium text-ink">{feeNow.formatted}</Money>
+                {feeNote ? <span className="ml-3 text-graphite" role="status">{feeNote}</span> : null}
                 {lowFees ? <span className="ml-3 text-warn">Low: 0.01 USDC is the least that keeps it running</span> : null}
               </span>
               {isOwner ? (

@@ -49,7 +49,7 @@ abstract contract VaultTest is SymbolonTest {
 
         address[] memory tokens = new address[](1);
         tokens[0] = address(usdc);
-        vault = SymbolonVault(factory.createVault(owner, steward, _policy(), tokens, 6, false));
+        vault = SymbolonVault(payable(factory.createVault(owner, steward, _policy(), tokens, 6, false)));
         usdc.mint(address(vault), VAULT_FUNDS);
 
         // roles are loosening changes, so they queue and are repeated after the delay

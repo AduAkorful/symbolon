@@ -78,6 +78,11 @@ async function fixture() {
 
 describe("Activity service and formatters (05s Part C)", () => {
   describe("describeEvent pure formatter (K12)", () => {
+    it("reads a native-coin deposit in 18 decimals, not the token's 6", () => {
+      const from = "0x74B4134C8d527a8D8AE8cb9503ab2043bCfC0ffd";
+      expect(describeEvent("NativeReceived", { from, value: 45_000_000_000_000_000_000n }).what).toBe(`Received $45.00 from ${from}`);
+      expect(describeEvent("NativeReceived", { from, value: 1_500_000_000_000_000n }).what).toContain("0.0015");
+    });
     it("formats Paid event", () => {
       const desc = describeEvent("Paid", { fingerprint: hash(1), paid: 1985000000n }, undefined, "USDC");
       expect(desc.what).toContain("Paid $1,985.00 for invoice");

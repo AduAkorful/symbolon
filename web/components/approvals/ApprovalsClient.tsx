@@ -22,6 +22,7 @@ import type { businessOffers } from "@/lib/server/offers";
 import { BusinessOffers } from "@/components/inbox/BusinessOffers";
 import { formatDay, showMoney } from "@/lib/format";
 import { Eyebrow, Lead, PageTitle, SectionTitle, SmallTitle } from "@/components/ui/Type";
+import { refreshAfterChain } from "@/lib/client/refresh";
 
 interface Props {
   businessId: string;
@@ -82,7 +83,7 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
 
       setLastTxHash(hash);
       setPayNowItem(null);
-      router.refresh();
+      refreshAfterChain(router);
     } catch (err: any) {
       setActionError(err.message || "Failed to process payment.");
     } finally {
@@ -129,7 +130,7 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
       }
 
       setSignItem(null);
-      router.refresh();
+      refreshAfterChain(router);
     } catch (err: any) {
       setActionError(err.message || "Failed to sign approval.");
     } finally {
@@ -162,7 +163,7 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
 
       setRejectItem(null);
       setRejectionReason("");
-      router.refresh();
+      refreshAfterChain(router);
     } catch (err: any) {
       setActionError(err.message || "Failed to reject invoice.");
     } finally {

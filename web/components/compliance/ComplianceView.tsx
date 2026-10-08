@@ -17,6 +17,7 @@ import { DetailList } from "@/components/ui/DetailList";
 import { EmptyState } from "@/components/ui/States";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { Lead, PageTitle, SectionTitle } from "@/components/ui/Type";
+import { refreshAfterChain } from "@/lib/client/refresh";
 
 export function ComplianceView({
   model,
@@ -48,7 +49,7 @@ export function ComplianceView({
         { action: "screen", seal },
       );
       setNotice(`Screened: risk level is ${res.screening.risk === 0 ? "Low" : res.screening.risk === 1 ? "Medium" : res.screening.risk === 2 ? "High" : "Blocked"}. You can now record it to the Vault.`);
-      router.refresh();
+      refreshAfterChain(router);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Screening request failed.");
     } finally {
@@ -74,7 +75,7 @@ export function ComplianceView({
       });
 
       setNotice(`Recorded on Vault: ${txHash.slice(0, 10)}…`);
-      router.refresh();
+      refreshAfterChain(router);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Recording to Vault failed.");
     } finally {

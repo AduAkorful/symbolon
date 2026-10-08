@@ -346,7 +346,7 @@ contract ReserveTest is VaultTest {
         VaultFactory oldFactory = new VaultFactory(address(release1));
         address[] memory tokens = new address[](1);
         tokens[0] = address(usdc);
-        SymbolonVault old = SymbolonVault(oldFactory.createVault(owner, steward, _policy(), tokens, 6, false));
+        SymbolonVault old = SymbolonVault(payable(oldFactory.createVault(owner, steward, _policy(), tokens, 6, false)));
         usdc.mint(address(old), VAULT_FUNDS);
         VaultLens.ReserveStatus memory before = lens.reserveStatus(address(old));
         assertEq(before.usycTeller, address(0), "release 1 has no reserve");

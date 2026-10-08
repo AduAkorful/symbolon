@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { controlClass, Field } from "@/components/ui/Field";
 import { InlineError, InlineLoading } from "@/components/ui/States";
 import { checksum } from "@/lib/format";
+import { refreshAfterChain } from "@/lib/client/refresh";
 
 type Option = { address: string; domain: number; source: string };
 type ChoiceResult = { options: Option[]; defaults: { monthlyCap: string | null; requirePo: boolean; requireDelivery: boolean } };
@@ -58,7 +59,7 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
   async function confirm(hash = txHash) {
     if (!hash) return;
     setBusy(true); setError("");
-    try { await postJson(path, { action: "record", txHash: hash, seal }); router.refresh(); }
+    try { await postJson(path, { action: "record", txHash: hash, seal }); refreshAfterChain(router); }
     catch (e) { setError(e instanceof Error ? e.message : "The receipt isn't confirmed yet. Try again."); }
     finally { setBusy(false); }
   }

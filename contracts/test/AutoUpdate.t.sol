@@ -85,7 +85,7 @@ contract AutoUpdateTest is VaultTest {
     function test_createVault_canOptInAtCreation() public {
         address[] memory tokens = new address[](1);
         tokens[0] = address(usdc);
-        SymbolonVault fresh = SymbolonVault(factory.createVault(owner, steward, _policy(), tokens, 6, true));
+        SymbolonVault fresh = SymbolonVault(payable(factory.createVault(owner, steward, _policy(), tokens, 6, true)));
         assertTrue(lens.autoUpdate(address(fresh)));
     }
 
@@ -112,7 +112,7 @@ contract AutoUpdateTest is VaultTest {
         vault.applyRelease(address(v2));
 
         assertEq(_implementationOf(address(vault)), address(v2));
-        assertEq(SymbolonVaultV2(address(vault)).version(), 2);
+        assertEq(SymbolonVaultV2(payable(address(vault))).version(), 2);
         assertEq(vault.owner(), owner);
         assertEq(lens.getPayee(address(vault), seal).paidCount, 1);
         assertTrue(lens.autoUpdate(address(vault)));

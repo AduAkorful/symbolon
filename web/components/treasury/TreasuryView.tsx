@@ -130,7 +130,7 @@ export function TreasuryView({
   return (
     <div className="pb-24">
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
-        <div className="min-w-0">
+        <div className="min-w-[min(100%,32rem)]">
           <PageTitle>Treasury</PageTitle>
           <div className="mt-3 text-sm text-graphite">
             <p>Vault · live from Arc</p>

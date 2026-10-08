@@ -39,7 +39,7 @@ contract VaultUpgradeTest is VaultTest {
         vault.upgradeToAndCall(address(v2), "");
 
         assertEq(_implementationOf(address(vault)), address(v2));
-        assertEq(SymbolonVaultV2(address(vault)).version(), 2);
+        assertEq(SymbolonVaultV2(payable(address(vault))).version(), 2);
         assertEq(vault.owner(), owner);
         assertEq(lens.steward(address(vault)), steward);
         assertEq(lens.screener(address(vault)), screener);

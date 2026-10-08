@@ -56,7 +56,7 @@ contract SymbolonVaultTest is VaultTest {
     function test_pay_twoVaultsCannotBothPayOneInvoice() public {
         address[] memory tokens = new address[](1);
         tokens[0] = address(usdc);
-        SymbolonVault other = SymbolonVault(factory.createVault(owner, steward, _policy(), tokens, 6, false));
+        SymbolonVault other = SymbolonVault(payable(factory.createVault(owner, steward, _policy(), tokens, 6, false)));
         usdc.mint(address(other), VAULT_FUNDS);
         vm.prank(owner);
         other.addPayee(seal, payout, ARC_DOMAIN, _terms());

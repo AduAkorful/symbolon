@@ -107,4 +107,20 @@ describe("API Error Contract & Information Leakage Guard (L7)", () => {
     const json = await response.json();
     expect(json).toEqual({ error: "That request didn't come from this app." });
   });
+
+  it("says Arc's network is busy, in our own words, when that is all that failed", async () => {
+    const viemLike = Object.assign(new Error("An unknown RPC error occurred.\n\nDetails: rate limit: every RPC endpoint able to answer is busy or resting\nVersion: viem@2.56.9"), {
+      details: "rate limit: every RPC endpoint able to answer is busy or resting",
+      cause: new Error("rate limit: every RPC endpoint able to answer is busy or resting"),
+    });
+    const response = await routeWith(async () => { throw viemLike; })(mockRequest(), {});
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "Arc's public network is busy right now. Try again in a moment." });
+  });
+
+  it("still gives the generic answer for any other failure, and never the error's own text", async () => {
+    const response = await routeWith(async () => { throw new Error("connect ECONNREFUSED postgresql://postgres:pw@db:5432/x"); })(mockRequest(), {});
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "Something went wrong on our side. Try again." });
+  });
 });

@@ -50,7 +50,7 @@ contract Smoke is Script {
         vm.startBroadcast(key);
         vault = factory.createVault(owner, address(0), policy, tokens, DECIMALS, false);
         // the vendor in this smoke test is the deployer's own Seal, paid to a fresh label-derived address
-        SymbolonVault(vault)
+        SymbolonVault(payable(vault))
             .addPayee(
                 owner,
                 _smokePayout(),

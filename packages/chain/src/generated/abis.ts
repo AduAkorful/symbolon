@@ -1143,6 +1143,10 @@ export const symbolonVaultAbi = [
     "stateMutability": "nonpayable"
   },
   {
+    "type": "receive",
+    "stateMutability": "payable"
+  },
+  {
     "type": "function",
     "name": "OPERATING_BUDGET",
     "inputs": [],
@@ -2476,6 +2480,25 @@ export const symbolonVaultAbi = [
   },
   {
     "type": "event",
+    "name": "NativeReceived",
+    "inputs": [
+      {
+        "name": "from",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "value",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "OwnershipTransferStarted",
     "inputs": [
       {
@@ -3488,6 +3511,17 @@ export const symbolonVaultAbi = [
         "name": "remaining",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "PurchaseOrderExists",
+    "inputs": [
+      {
+        "name": "poRef",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ]
   },

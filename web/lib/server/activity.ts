@@ -109,6 +109,11 @@ export function describeEvent(eventName: string, args: Record<string, unknown>, 
       return { what: `Anchored decisions Merkle root onchain (${args.count ?? ""} decisions)` };
     case "ScreeningSet":
       return { what: `Recorded compliance screening onchain for ${String(args.seal || "").slice(0, 10)}…` };
+    case "NativeReceived": {
+      // sent as Arc's native coin, which is USDC in 18 decimals (the token's own amounts are 6)
+      const value = args.value === undefined ? null : BigInt(String(args.value));
+      return { what: value === null ? "Received USDC from a wallet" : `Received ${showMoney(formatAmount(value, 18), "USDC")} from ${String(args.from || "a wallet")}`, tone: "seal" };
+    }
     case "ReserveSubscribed":
       return { what: `Moved idle cash into USYC reserve` };
     case "ReserveRedeemed":

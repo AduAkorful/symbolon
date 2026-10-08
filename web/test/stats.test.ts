@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PublicClient } from "viem";
-import { getDeployment } from "@symbolon/chain";
+import { getDeployment, releases } from "@symbolon/chain";
 import { protocolStreams } from "@symbolon/core";
 import { chainEvents, createTestDb, syncCursors } from "@symbolon/db";
 
@@ -141,8 +141,11 @@ describe("protocol stats (plan 05zc §2)", () => {
   it("reads the ledger and every release's factory, including the older one that made the first Vault", () => {
     expect(streams.filter((x) => x.kind === "ledger").map((x) => x.address.toLowerCase())).toEqual([ledger.toLowerCase()]);
     const factories = streams.filter((x) => x.kind === "factory");
-    expect(factories).toHaveLength(2);
-    expect(new Set(factories.map((x) => x.key)).size).toBe(2);
+    // one stream per published release's factory on this chain: a new release adds a stream, this test needs no edit
+    const published = Object.values(releases).filter((r) => r.chainId === deployment.chainId);
+    expect(published.length).toBeGreaterThanOrEqual(3);
+    expect(factories).toHaveLength(published.length);
+    expect(new Set(factories.map((x) => x.key)).size).toBe(published.length);
     // each stream starts at its own contract's block, never genesis
     expect(streams.every((x) => x.startBlock > 0n)).toBe(true);
   });
