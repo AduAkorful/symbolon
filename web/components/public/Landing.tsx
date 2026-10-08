@@ -1,6 +1,6 @@
 "use client";
 
-import { ProtocolStatsStrip } from "@/components/public/ProtocolStatsStrip";
+import { NetworkNumbers } from "@/components/public/NetworkNumbers";
 import { CONTAINER } from "@/components/shell/container";
 import Link from "next/link";
 import { useLayoutEffect, useRef } from "react";
@@ -119,7 +119,7 @@ export function Landing() {
           </div>
         </section>
 
-        <ProtocolStatsStrip />
+        <NetworkNumbers />
         <section className="border-y border-rule bg-paper-raised/50" aria-label="Use cases">
           <div className={`${CONTAINER} grid gap-10 py-16 md:grid-cols-3`}>
             {([

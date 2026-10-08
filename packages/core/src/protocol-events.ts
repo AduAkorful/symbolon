@@ -10,8 +10,12 @@ const VAULT_CREATED = [getAbiItem({ abi: vaultFactoryAbi, name: "VaultCreated" }
 
 /** Log requests in flight at once; public RPCs rate-limit log queries (see sync.ts) */
 const CONCURRENCY = 2;
-/** Blocks one run reads per stream: the cursor makes the next run continue, so a long history fills in over a few scheduled calls */
-const WINDOW_BLOCKS = 100_000n;
+/**
+ * Blocks one run reads per stream: the cursor makes the next run continue, so a long history fills in over a few calls. Arc's RPCs
+ * answer log queries of about 5,000 blocks at most, so this is a few dozen requests per stream; about 30 seconds at the speed the
+ * public RPC allows.
+ */
+const WINDOW_BLOCKS = 250_000n;
 
 export const protocolCursorKey = (chainId: number, address: string) => `stats:${chainId}:${address.toLowerCase()}`;
 

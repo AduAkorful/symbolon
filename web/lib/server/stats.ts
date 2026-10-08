@@ -30,6 +30,8 @@ export interface ProtocolStats {
   /** Lowest block every stream has been read through; null before anything is read */
   readThrough: string | null;
   head: string | null;
+  /** How much of the history has been read, 0–100, while it is being collected; null when unknown */
+  progressPercent: number | null;
   /** Null until the mirror has caught up with the chain, so no partial number is ever shown */
   numbers: ProtocolNumbers | null;
   state: "ready" | "collecting" | "unconfirmed";
@@ -54,9 +56,21 @@ export async function loadProtocolStats(db: Database, client: PublicClient | und
     head = null;
   }
   const base = { network, readThrough: readThrough?.toString() ?? null, head: head?.toString() ?? null };
-  if (readThrough === null) return { ...base, numbers: null, state: "collecting" };
-  if (head === null) return { ...base, numbers: null, state: "unconfirmed" };
-  if (head - readThrough > COLLECTED_WITHIN_BLOCKS) return { ...base, numbers: null, state: "collecting" };
+  // each stream starts at its own contract's block; the history is as far along as its slowest stream
+  const progressPercent = (() => {
+    if (head === null) return null;
+    let low = 100;
+    for (const stream of streams) {
+      const read = cursors.find((c) => c.key === stream.key)?.block ?? stream.startBlock - 1n;
+      const total = head - stream.startBlock + 1n;
+      const done = read - stream.startBlock + 1n;
+      low = Math.min(low, total <= 0n ? 100 : Math.max(0, Math.min(100, Number((done * 100n) / total))));
+    }
+    return low;
+  })();
+  if (readThrough === null) return { ...base, progressPercent, numbers: null, state: "collecting" };
+  if (head === null) return { ...base, progressPercent, numbers: null, state: "unconfirmed" };
+  if (head - readThrough > COLLECTED_WITHIN_BLOCKS) return { ...base, progressPercent, numbers: null, state: "collecting" };
 
   const ledger = deployment.contracts.invoiceLedger.toLowerCase();
   const factories = streams.filter((s) => s.kind === "factory").map((s) => s.address.toLowerCase());
@@ -102,6 +116,7 @@ export async function loadProtocolStats(db: Database, client: PublicClient | und
 
   return {
     ...base,
+    progressPercent: 100,
     state: "ready",
     numbers: {
       vaultsCreated: vaults?.n ?? 0,

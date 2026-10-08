@@ -105,4 +105,23 @@ describe("protocol stats (plan 05zc §2)", () => {
     // each stream starts at its own contract's block, never genesis
     expect(streams.every((x) => x.startBlock > 0n)).toBe(true);
   });
+
+  it("says how far along the collection is, by the slowest stream, while it has no numbers to show", async () => {
+    const ledgerStream = streams.find((x) => x.kind === "ledger")!;
+    const total = HEAD - ledgerStream.startBlock + 1n;
+    // every stream read to the same fraction of its own span
+    for (const x of streams) {
+      const span = HEAD - x.startBlock + 1n;
+      await db.insert(syncCursors).values({ key: x.key, chainId: deployment.chainId, block: x.startBlock - 1n + span / 4n });
+    }
+    expect(total > 0n).toBe(true);
+    const stats = await loadProtocolStats(db, at(HEAD), deployment);
+    expect(stats).toMatchObject({ state: "collecting", numbers: null });
+    // rounded down, never up: the figure never claims more than has been read
+    expect(stats.progressPercent).toBeGreaterThanOrEqual(24);
+    expect(stats.progressPercent).toBeLessThanOrEqual(25);
+
+    await readThrough(HEAD);
+    expect((await loadProtocolStats(db, at(HEAD), deployment)).progressPercent).toBe(100);
+  });
 });

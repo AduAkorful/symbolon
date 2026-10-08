@@ -14,9 +14,6 @@ export function PublicHeader() {
         <Link href="/verify" className="hidden min-h-10 items-center text-graphite hover:text-ink sm:inline-flex">
           Verify an invoice
         </Link>
-        <Link href="/stats" className="hidden min-h-10 items-center text-graphite hover:text-ink md:inline-flex">
-          Numbers
-        </Link>
         <Link href="/status" className="hidden min-h-10 items-center text-graphite hover:text-ink md:inline-flex">
           Status
         </Link>

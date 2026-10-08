@@ -9,7 +9,7 @@ function groupedAmount(amount: string): string {
   return `${WHOLE.format(BigInt(whole!))}${fraction ? `.${fraction}` : ""}`;
 }
 
-/** The numbers, each with what it counts; used by the /stats page. Renders nothing it cannot prove. */
+/** The numbers, each with what it counts; used on the landing page. Renders nothing it cannot prove. */
 export function ProtocolNumbers({ stats }: { stats: ProtocolStats }) {
   const n = stats.numbers;
   if (!n) return null;

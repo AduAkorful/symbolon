@@ -28,9 +28,10 @@ mkdirSync(join(OUT, "shots"), { recursive: true });
 
 const OWNER = ["/business", "/business/inbox", "/business/approvals", "/business/vendors", "/business/orders", "/business/treasury", "/business/steward", "/business/policy", "/business/activity", "/business/accounting", "/business/compliance", "/business/team", "/business/settings", "/business/settings/releases", "/business/ask", "/notifications", "/profile"];
 const VENDOR = ["/vendor", "/vendor/invoices", "/vendor/new", "/vendor/upload", "/vendor/series", "/vendor/settings", "/vendor/verify", "/vendor/clients"];
-const PUBLIC = ["/", "/status", "/stats", "/verify", "/signin"];
+const PUBLIC = ["/", "/status", "/verify", "/signin"];
 const MISC = [
   { who: null, path: `/invoice/${tokens.vendorFingerprint}` },
+  { who: null, path: `/receipt/0x${"00".repeat(32)}`, expect: 404 },
   { who: null, path: "/join/not-a-real-token", expect: 404 },
   { who: null, path: "/invite/not-a-real-token", expect: 404 },
   { who: null, path: "/this-page-does-not-exist", expect: 404 },

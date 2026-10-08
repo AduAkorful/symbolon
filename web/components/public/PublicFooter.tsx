@@ -14,9 +14,6 @@ export function PublicFooter() {
           <Link href="/verify" className="inline-flex min-h-10 items-center hover:text-ink">
             Verify
           </Link>
-          <Link href="/stats" className="inline-flex min-h-10 items-center hover:text-ink">
-            Numbers
-          </Link>
           <Link href="/status" className="inline-flex min-h-10 items-center hover:text-ink">
             Status
           </Link>

@@ -6,6 +6,9 @@ import { getConfig } from "@/lib/server/config";
 import { refuseUnlessScheduler } from "@/lib/server/cron-auth";
 import { getDb } from "@/lib/server/db";
 
+// one window of network history (about 30 s) after the ledger sync
+export const maxDuration = 120;
+
 async function run(request: Request) {
   const refused = refuseUnlessScheduler(request, "Ledger syncing");
   if (refused) return refused;
@@ -13,7 +16,7 @@ async function run(request: Request) {
   const client = getClient();
   const db = await getDb();
   const report = await syncLedger(db, client, symbolonContracts(client, cfg.deployment), cfg.deployment);
-  // the network history behind /stats fills in a window at a time; a failure there is reported, and never hides the ledger result
+  // the network history behind the landing page numbers fills in a window at a time; a failure there is reported, and never hides the ledger result
   const protocol = await syncProtocolEvents(db, client, cfg.deployment).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }));
   return new NextResponse(JSON.stringify({ ...report, protocol }, (_key: string, value: unknown) => typeof value === "bigint" ? value.toString() : value), { headers: { "content-type": "application/json" } });
 }

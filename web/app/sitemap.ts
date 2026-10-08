@@ -16,12 +16,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.8,
     },
     {
-      url: `${baseUrl}/stats`,
-      lastModified: new Date(),
-      changeFrequency: "daily",
-      priority: 0.5,
-    },
-    {
       url: `${baseUrl}/status`,
       lastModified: new Date(),
       changeFrequency: "daily",

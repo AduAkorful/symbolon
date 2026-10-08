@@ -44,7 +44,7 @@ describe("screens use the shared formatters (plan 05za)", () => {
   });
 
   it("has one <main> per page: the shell's (B7)", () => {
-    const standalone = /app\/page\.tsx|app\/signin|app\/status|app\/stats|app\/setup|app\/join|app\/invite|app\/invoice|app\/receipt|app\/verify|app\/vendor\/onboarding|components\/vendor\/Onboarding|components\/setup\/Setup|components\/receipt\/ReceiptView|components\/public|components\/landing|components\/signin|not-found|error\.tsx|global-error|NoAccess|components\/shell\/Shell/;
+    const standalone = /app\/page\.tsx|app\/signin|app\/status|app\/setup|app\/join|app\/invite|app\/invoice|app\/receipt|app\/verify|app\/vendor\/onboarding|components\/vendor\/Onboarding|components\/setup\/Setup|components\/receipt\/ReceiptView|components\/public|components\/landing|components\/signin|not-found|error\.tsx|global-error|NoAccess|components\/shell\/Shell/;
     expect(offenders(/<main[\s>]/, (f) => standalone.test(f))).toEqual([]);
   });
 
