@@ -8,7 +8,8 @@ import { getDb } from "./db";
 import { AuthError } from "./errors";
 import { executeIntent, listIntentDescriptors } from "./intents/registry";
 import { checkReply } from "./ask-check";
-import { CONVERSATION_INTENT, sanitizeConversation, sanitizeHistory } from "./intents/history";
+import { recentTurns, saveExchange } from "./ask-store";
+import { CONVERSATION_INTENT, sanitizeHistory } from "./intents/history";
 import type { AskedAnswer, IntentContext } from "./intents/types";
 import type { IntentDescriptor, PlanResult, RouteTurn, StewardModel } from "@symbolon/steward";
 import { rateLimit } from "./rate";
@@ -20,8 +21,6 @@ export interface AskInput {
   question?: string;
   intent?: string;
   params?: Record<string, unknown>;
-  /** The earlier turns of this conversation, as the browser sent them; checked before use (plan 05y B2) */
-  history?: unknown;
   db?: Database;
 }
 
@@ -32,6 +31,14 @@ export interface AskInput {
 export async function askSteward(input: AskInput): Promise<AskedAnswer> {
   const db = input.db ?? (await getDb());
   await requireMember(db, input.userId, input.businessId);
+  const answer = await answerQuestion(input, db);
+  // keep the exchange (plan 05zf); a failure to keep it never withholds the answer, it is said instead
+  const label = (input.question?.trim() || input.intent?.replace(/_/g, " ") || "").slice(0, 300);
+  const kept = await saveExchange(db, { businessId: input.businessId, userId: input.userId, question: label, answer });
+  return kept ? answer : { ...answer, saved: false };
+}
+
+async function answerQuestion(input: AskInput, db: Database): Promise<AskedAnswer> {
 
   // Rate limiting (in-memory courtesy limit: 30 requests per minute per user)
   rateLimit(`ask:${input.userId}`, 30, 60_000, undefined, "Too many questions. Please slow down and try again in a minute.");
@@ -81,9 +88,9 @@ export async function askSteward(input: AskInput): Promise<AskedAnswer> {
   }
 
   const descriptors = listIntentDescriptors();
-  if (model.plan && model.phrase) return converse({ ctx, model: model as ConversingModel, question, history: sanitizeConversation(input.history, descriptors), descriptors });
+  if (model.plan && model.phrase) return converse({ ctx, model: model as ConversingModel, question, history: await recentTurns(db, input.businessId, input.userId), descriptors });
 
-  const routeRes = await model.route(question, descriptors, sanitizeHistory(input.history, descriptors));
+  const routeRes = await model.route(question, descriptors, sanitizeHistory(await recentTurns(db, input.businessId, input.userId), descriptors));
 
   if ("params" in routeRes) {
     return executeIntent(ctx, routeRes.intent, routeRes.params);

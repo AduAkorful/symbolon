@@ -26,6 +26,8 @@ export type AskedAnswer = IntentAnswer & {
   params: Record<string, unknown>;
   /** A conversational reply (plan 05ze): what the lookups behind it said, shown under "Show the numbers" */
   facts?: { text: string; source: string }[];
+  /** False when the exchange could not be kept (plan 05zf): the answer is still shown, with a note */
+  saved?: false;
 };
 
 export interface IntentHandler {

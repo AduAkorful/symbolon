@@ -13,6 +13,7 @@ import { arcTestnet, getDeployment } from "@symbolon/chain";
 import { businesses, createTestDb, invoices, members, users } from "@symbolon/db";
 import { OpenRouterStewardModel } from "@symbolon/steward";
 import { askSteward } from "@/lib/server/ask";
+import { archiveThread } from "@/lib/server/ask-store";
 import { checkReply } from "@/lib/server/ask-check";
 
 const key = process.env.OPENROUTER_API_KEY?.trim();
@@ -38,17 +39,16 @@ describe.skipIf(!live)("Ask as a conversation with the real model (plan 05ze)", 
     let phrased = 0;
     let total = 0;
     for (const script of scripts) {
-      const log: { question: string; intent: string; params: Record<string, unknown>; reply: string }[] = [];
+      await archiveThread(db, b!.id, u!.id);
       out(`\n── ${script.name}`);
       for (const q of script.turns) {
-        const res = await askSteward({ db, businessId: b!.id, userId: u!.id, question: q, history: log.slice(-6) });
+        const res = await askSteward({ db, businessId: b!.id, userId: u!.id, question: q });
         const own = res.facts !== undefined || (res.intent === "conversation" && !res.text.startsWith("I can look up") && !res.text.startsWith("I couldn't reach"));
         total++;
         if (own) phrased++;
         out(`  you: ${q}\n  ${own ? "model" : "lookup"}: ${res.text.replace(/\n/g, " ⏎ ")}  [${res.intent}]`);
         // whatever was shown must itself hold up
         if (own) expect(checkReply(res.text, { facts: (res.facts ?? []).flatMap((f) => [f.text, f.source]), question: q }).ok).toBe(true);
-        log.push({ question: q, intent: res.intent, params: res.params, reply: res.text });
       }
     }
     out(`\nmodel wording shown on ${phrased} of ${total} turns`);

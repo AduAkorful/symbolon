@@ -632,6 +632,33 @@ export const notifications = pgTable(
   ],
 );
 
+/**
+ * What a person asked the Steward and what they were shown (plan 05zf). Private to its author: every read and delete is scoped
+ * to user and business in the query itself. Rows are never edited; "New conversation" deletes them and the sync cron removes
+ * those older than 30 days.
+ */
+export const askMessages = pgTable(
+  "ask_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id").notNull().references(() => businesses.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    question: text("question").notNull(),
+    reply: text("reply").notNull(),
+    intent: text("intent").notNull(),
+    params: jsonb("params").$type<Record<string, unknown>>().notNull(),
+    /** What the lookups behind a conversational reply said: shown under "Show the numbers" */
+    facts: jsonb("facts").$type<{ text: string; source: string }[]>(),
+    /** Where the answer says it came from */
+    source: text("source").notNull(),
+    links: jsonb("links").$type<[string, string][]>().notNull(),
+    /** Null while the message is in the person's current thread; "New conversation" gives the whole thread one id and moves it aside (plan 05zf amendment) */
+    conversationId: uuid("conversation_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("ask_messages_thread").on(t.businessId, t.userId, t.conversationId, t.createdAt)],
+);
+
 export const queuedChangeStatus = pgEnum("queued_change_status", ["queued", "applied", "cancelled"]);
 
 /** Queued loosening changes delayed by the Vault (spec §9, plan 05t Q1) */

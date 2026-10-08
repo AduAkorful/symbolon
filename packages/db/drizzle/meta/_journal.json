@@ -141,6 +141,20 @@
       "when": 1790842211401,
       "tag": "0019_parched_norman_osborn",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791472886648,
+      "tag": "0020_lean_yellow_claw",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791474654092,
+      "tag": "0021_icy_whistler",
+      "breakpoints": true
     }
   ]
 }
