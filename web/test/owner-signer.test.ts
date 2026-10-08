@@ -83,6 +83,24 @@ describe("browser wallet signing", () => {
     await expect(sendCall({ kind: "none", reason: "Not available." }, { to: "0x1", data: "0x" }, async () => [])).rejects.toThrow("Not available.");
   });
 
+  it("says which account the wallet is using when it isn't the account's wallet, so the person can switch to the right one", async () => {
+    const wrong = "0x00000000000000000000000000000000000000ab";
+    const w = wallet({ accounts: [wrong] });
+    const e = (await sendWithWallet([w.p], plan, { to: "0x1111111111111111111111111111111111111111", data: "0x" }).catch((x: unknown) => x)) as Error;
+    expect(e.message).toContain(ME); // the wallet the account was made with
+    expect(e.message.toLowerCase()).toContain(wrong); // the one the wallet is using now, in full
+    expect(e.message).not.toContain("…");
+    expect(e.message).toMatch(/switch it to/);
+    expect(w.calls.some((c) => c.method === "eth_sendTransaction")).toBe(false);
+  });
+
+  it("says no wallet is connected, and how to fix it, when the browser holds none even though the person is signed in", async () => {
+    const e = (await sendWithWallet([], plan, { to: "0x1111111111111111111111111111111111111111", data: "0x" }).catch((x: unknown) => x)) as Error;
+    expect(e.message).toContain(ME);
+    expect(e.message).toMatch(/No wallet is connected in this browser/);
+    expect(e.message).toMatch(/Sign out and sign in again/);
+  });
+
   it("sends nothing from a wallet with no USDC for fees, and says where to send some", async () => {
     const w = wallet({ chainId: chain.chainIdHex, balance: "0x0" });
     const e = await sendWithWallet([w.p], plan, { to: "0x1111111111111111111111111111111111111111", data: "0x" }).catch((x: unknown) => x);
@@ -102,6 +120,8 @@ describe("browser wallet signing", () => {
 
   it("names the account when this sign-in does not control it", async () => {
     const other = wallet({ accounts: ["0x0000000000000000000000000000000000000009"] });
-    await expect(sendWithWallet([other.p], plan, { to: "0x1111111111111111111111111111111111111111", data: "0x" })).rejects.toThrow(wrongWalletMessage(ME));
+    await expect(sendWithWallet([other.p], plan, { to: "0x1111111111111111111111111111111111111111", data: "0x" })).rejects.toThrow(wrongWalletMessage(ME, ["0x0000000000000000000000000000000000000009"]));
+    // a wallet that reports no account at all gets the plain wording
+    expect(wrongWalletMessage(ME)).toMatch(/No wallet is connected in this browser.*Sign out and sign in again/);
   });
 });

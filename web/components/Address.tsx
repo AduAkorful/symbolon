@@ -1,15 +1,17 @@
 import { CopyButton } from "@/components/CopyButton";
 import { checksum, shortAddress } from "@/lib/format";
 
-// Below this width of its own container, a `full` address is drawn shortened instead of broken across lines. A checksummed
-// address in 14 px mono is about 360 px, and the arrow and Copy beside it need another 70.
-const FULL_FITS = "@[28rem]";
+// Below 28rem of its own container, a `full` address is drawn shortened instead of broken across lines (a checksummed address in
+// 14 px mono is about 360 px, and the arrow and Copy beside it need another 70). The two classes below are written out in full on
+// purpose: Tailwind finds class names by reading the source, so a name assembled from a variable is never generated and the
+// full address silently never showed (found 2026-10-08).
 
 /**
  * An address as people should see it: checksummed, never lowercase and never split across lines (plan 05zb S6). In a list
  * it is always the short form. With `full` it is the whole address when its container is wide enough and the short form
  * when it is not (a container query, so it adapts to the cell it is in, not to the window), and the explorer arrow and Copy
- * stay on the same row. The whole address is always in the tooltip and the accessible name. `full` makes it a block, so it
+ * stay on the same row. The wrapper asks for 28rem (or its parent's width when that is less), because in a shrink-to-fit parent or a
+ * table cell its width would otherwise come from the short form and the full address could never appear. The whole address is always in the tooltip and the accessible name. `full` makes it a block, so it
  * sits on a line of its own: put the label before it, not in the same sentence.
  */
 export function Address({
@@ -29,8 +31,8 @@ export function Address({
   const short = shortAddress(value);
   const text = full ? (
     <span title={whole} className={`min-w-0 font-mono ${className}`}>
-      <span className={`${FULL_FITS}:hidden`}>{short}</span>
-      <span className={`hidden ${FULL_FITS}:inline`}>{whole}</span>
+      <span className="@[28rem]:hidden">{short}</span>
+      <span className="hidden @[28rem]:inline">{whole}</span>
     </span>
   ) : (
     <span title={whole} className={`font-mono ${className}`}>
@@ -48,7 +50,7 @@ export function Address({
   const copyButton = copy ? <CopyButton value={whole} label={`Copy ${whole}`} /> : null;
   if (full) {
     return (
-      <span className="@container block w-full min-w-0 max-w-full">
+      <span className="@container block w-full min-w-[min(100%,28rem)] max-w-full">
         <span className="flex min-w-0 flex-nowrap items-baseline">
           {body}
           {copyButton}

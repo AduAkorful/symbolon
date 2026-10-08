@@ -5,7 +5,8 @@ import { listClients } from "@/lib/server/vendor";
 import { requireVendorPage } from "@/lib/server/vendor-page";
 import { EmptyState } from "@/components/ui/States";
 import { Lead, PageTitle } from "@/components/ui/Type";
-import { shortAddress, shortenAddressesIn } from "@/lib/format";
+import { Address } from "@/components/Address";
+import { shortenAddressesIn } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,8 @@ export default async function VendorClients() {
             {clients.map((c) => (
               <li key={c.id} className="py-4">
                 <p className="font-medium text-ink">{shortenAddressesIn(c.name)}</p>
-                <p className="mt-0.5 break-words text-sm text-graphite">{[c.vault ? shortAddress(c.vault) : null, c.email].filter(Boolean).join(" · ")}</p>
+                {c.vault ? <div className="mt-0.5 text-sm text-graphite"><Address value={c.vault} full copy /></div> : null}
+                {c.email ? <p className="mt-0.5 break-words text-sm text-graphite">{c.email}</p> : null}
               </li>
             ))}
           </ul>

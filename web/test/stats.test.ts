@@ -60,8 +60,49 @@ describe("protocol stats (plan 05zc §2)", () => {
       sealsPaid: 4,
       payingVaults: 2, // vault1, vault2: the plain wallet is not a Vault
       firstSettlement: "2026-10-01T10:00:00.000Z",
+      latest: expect.any(Array),
+      locked: null, // this test's fake client cannot read balances
     });
     expect(stats.readThrough).toBe((HEAD - 10n).toString());
+  });
+
+  it("lists the latest settlements newest first, at most five, each with its own transaction, keeping tokens apart (plan 05zg)", async () => {
+    for (let i = 1; i <= 7; i++) await settled({ seal: i, payer: addr(0x200 + i), token: deployment.tokens.usdc, paid: String(i * 1_000_000) });
+    await settled({ seal: 50, payer: addr(0x250), token: addr(0x777), paid: "5" }); // a token the app has no name for, the newest
+    await readThrough(HEAD - 10n);
+    const { latest, invoicesSettled } = (await loadProtocolStats(db, at(HEAD), deployment)).numbers!;
+    expect(invoicesSettled).toBe(8);
+    expect(latest).toHaveLength(5);
+    expect(latest[0]).toMatchObject({ token: null, amount: null, seal: addr(50) }); // listed, never given an amount
+    expect(latest[1]).toMatchObject({ token: "USDC", amount: "7", seal: addr(7) });
+    expect(latest[4]).toMatchObject({ token: "USDC", amount: "4" });
+    expect(latest.map((l) => l.txHash)).toEqual([...new Set(latest.map((l) => l.txHash))]);
+    expect(latest[1]!.at).toBe("2026-10-01T10:00:00.000Z");
+  });
+
+  it("sums what every Vault holds per token from live reads, and gives nothing if any read fails (plan 05zg, value locked)", async () => {
+    const [v1, v2] = [addr(0x101), addr(0x102)];
+    await vaultCreated(factoryA!, v1);
+    await vaultCreated(factoryB!, v2);
+    await vaultCreated(factoryB!, v2); // the same Vault twice is one Vault
+    await readThrough(HEAD - 10n);
+    const balances: Record<string, Record<string, bigint>> = {
+      [deployment.tokens.usdc.toLowerCase()]: { [v1]: 1_500_000n, [v2]: 2_500_000n },
+      [deployment.tokens.eurc.toLowerCase()]: { [v1]: 750_000n, [v2]: 0n },
+    };
+    const client = (fail: boolean) => ({
+      getBlockNumber: async () => HEAD,
+      multicall: async ({ contracts }: { contracts: { address: string; args: [string] }[] }) =>
+        contracts.map((c, i) => (fail && i === 2 ? { status: "failure", error: new Error("x") } : { status: "success", result: balances[c.address.toLowerCase()]![c.args[0].toLowerCase()]! })),
+    }) as unknown as PublicClient;
+    const ok = (await loadProtocolStats(db, client(false), deployment)).numbers!;
+    expect(ok.locked).toEqual({ vaults: 2, tokens: [{ token: "USDC", amount: "4" }, { token: "EURC", amount: "0.75" }] });
+    expect((await loadProtocolStats(db, client(true), deployment)).numbers!.locked).toBeNull();
+  });
+
+  it("names the explorer from the registry, for the links", async () => {
+    await readThrough(HEAD - 10n);
+    expect((await loadProtocolStats(db, at(HEAD), deployment)).explorer).toBe("https://explorer.testnet.arc.io");
   });
 
   it("ignores events from other contracts and other chains", async () => {

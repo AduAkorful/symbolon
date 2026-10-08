@@ -151,9 +151,9 @@ export function ChangePayoutAddressSection({ currentPayout, sealAddress, signer 
             <p className="font-medium text-ink">Businesses that will be told</p>
             <ul className="mt-2 space-y-1.5">
               {prepared.businesses.map((b) => (
-                <li key={b.id} className="flex justify-between gap-4 text-graphite">
-                  <span className="min-w-0 truncate">{b.name}</span>
-                  <Address value={b.vault} />
+                <li key={b.id} className="min-w-0 text-graphite">
+                  <span className="block break-words">{b.name}</span>
+                  <Address value={b.vault} full className="text-sm" />
                 </li>
               ))}
             </ul>

@@ -8,7 +8,7 @@ import { sendWithWallet, type SignerPlan } from "@/components/setup/owner-signer
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { postJson } from "@/lib/client/api";
 import type { TeamMemberView, TeamViewData } from "@/lib/server/team";
-import { formatDay, shortAddress } from "@/lib/format";
+import { checksum, formatDay } from "@/lib/format";
 import { Address } from "@/components/Address";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/Callout";
@@ -176,7 +176,7 @@ export function TeamView({
     }
   }
 
-  const nameOf = (m: TeamMemberView) => m.displayName || m.email || (m.wallet ? shortAddress(m.wallet) : "Member");
+  const nameOf = (m: TeamMemberView) => m.displayName || m.email || (m.wallet ? checksum(m.wallet) : "Member");
   const onchainLabel = (m: TeamMemberView) =>
     m.onchainRole === "owner" ? { text: "Vault owner", tone: "neutral" as const }
     : m.onchainRole === "approver_all" ? { text: "Approver, all budgets", tone: "ok" as const }
@@ -281,7 +281,7 @@ export function TeamView({
                 <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
                   <div className="min-w-0">
                     <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span className="font-medium text-ink">{nameOf(m)}</span>
+                      <span className="break-all font-medium text-ink">{nameOf(m)}</span>
                       <StatusPill tone="neutral" className="capitalize">{m.appRole}</StatusPill>
                     </p>
                     {m.displayName && m.email ? <p className="mt-0.5 text-sm text-graphite">{m.email}</p> : null}

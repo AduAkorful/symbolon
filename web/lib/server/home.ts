@@ -17,6 +17,7 @@ import {
 import { decodeSealedInvoice, verifySealedInvoice } from "@symbolon/seal";
 import { forecast, runwayDays, tokenShortfalls } from "@symbolon/steward";
 
+import { plainRunError } from "../run-error";
 import { requireMember, type Role } from "./access";
 import type { ChainSettings } from "./business";
 import { summarizeDecision } from "./decision-text";
@@ -267,7 +268,7 @@ export async function loadNeedsYou(
     .limit(1);
 
   if (lastRun && lastRun.status === "failed") {
-    problems.push(`Last Steward pass failed: ${lastRun.error ?? "unknown error"}`);
+    problems.push(`Last Steward pass failed: ${plainRunError(lastRun.error)}`);
   }
 
   return {

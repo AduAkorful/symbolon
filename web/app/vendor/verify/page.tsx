@@ -27,7 +27,7 @@ export default async function VendorVerificationPage() {
                 <p className="font-medium text-ink">{r.businessName}</p>
                 <div className="mt-1 flex flex-wrap items-baseline gap-x-3 text-sm text-graphite">
                   <span>Vault</span>
-                  {r.vault ? <Address value={r.vault} /> : "not available"}
+                  {r.vault ? <Address value={r.vault} full copy /> : "not available"}
                 </div>
                 <p className="mt-4 font-display text-5xl tracking-[0.25em] text-ink" aria-label={`Verification code ${r.code}`}>{r.code}</p>
                 <p className="mt-2 text-sm text-graphite">Expires {formatDateTime(r.expiresAt)}</p>

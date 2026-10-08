@@ -1,4 +1,5 @@
 import "server-only";
+import { plainRunError } from "../run-error";
 
 export interface NotificationDescriberInput {
   kind: string;
@@ -39,7 +40,7 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
     }
 
     case "steward_run_failed": {
-      const reason = typeof body.reason === "string" ? truncate(body.reason) : "A Steward cycle encountered an issue or fee shortfall.";
+      const reason = typeof body.reason === "string" ? truncate(plainRunError(body.reason)) : "A Steward cycle encountered an issue or fee shortfall.";
       return {
         title: "Steward cycle alert",
         body: reason,

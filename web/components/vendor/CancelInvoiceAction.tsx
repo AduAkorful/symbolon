@@ -52,8 +52,9 @@ export function CancelInvoiceAction({ fingerprint, invoiceNumber, signer }: Prop
       // 4. Send ledger transaction
       if (signer.kind === "none") throw new Error(signer.reason);
       const wallets = await discover();
-      const provider = await findWalletFor(signer.address, wallets);
-      if (!provider) throw new Error(wrongWalletMessage(signer.address));
+      const seen: string[] = [];
+      const provider = await findWalletFor(signer.address, wallets, seen);
+      if (!provider) throw new Error(wrongWalletMessage(signer.address, seen));
       await ensureChain(provider, signer.chain);
 
       const txHash = (await provider.request({

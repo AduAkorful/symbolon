@@ -5,8 +5,9 @@ import { ensureChain, findWalletFor, wrongWalletMessage, type SignerPlan } from 
 
 export async function signTypedData(plan: SignerPlan, typedDataJsonString: string, discover: () => Promise<Eip1193[]>): Promise<string> {
   if (plan.kind === "none") throw new Error(plan.reason);
-  const p = await findWalletFor(plan.address, await discover());
-  if (!p) throw new Error(wrongWalletMessage(plan.address));
+  const seen: string[] = [];
+  const p = await findWalletFor(plan.address, await discover(), seen);
+  if (!p) throw new Error(wrongWalletMessage(plan.address, seen));
   await ensureChain(p, plan.chain);
   const signature = (await p.request({ method: "eth_signTypedData_v4", params: [plan.address, typedDataJsonString] })) as string;
   if (!/^0x(?:[0-9a-fA-F]{2})+$/.test(signature)) throw new Error("The wallet didn't return a signature.");

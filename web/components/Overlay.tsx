@@ -20,11 +20,12 @@ export interface OverlayProps {
 /**
  * The footer of a dialog: the buttons, cancel first and the main action last (on a phone the main action comes first, full
  * width, because it is nearest the thumb). Put it as the last child of the dialog's content; inside a `<form>` its submit
- * button submits that form.
+ * button submits that form. It sticks at `-bottom-6`, not `bottom-0`: the dialog's body pads 24 px below its content and a sticky
+ * edge is measured from the padded content box, so `bottom-0` pushed the footer up into the text above it.
  */
 function OverlayFooter({ children }: { children: ReactNode }) {
   return (
-    <div className="sticky bottom-0 -mx-6 -mb-6 mt-6 flex flex-col-reverse gap-3 border-t border-rule bg-paper-raised px-6 py-4 sm:flex-row sm:justify-end [&>*]:sm:min-w-28 max-sm:[&>*]:w-full">
+    <div className="sticky -bottom-6 -mx-6 -mb-6 mt-6 flex flex-col-reverse gap-3 border-t border-rule bg-paper-raised px-6 py-4 sm:flex-row sm:justify-end [&>*]:sm:min-w-28 max-sm:[&>*]:w-full">
       {children}
     </div>
   );
@@ -127,7 +128,7 @@ export function Overlay({ title, description, onClose, dismissible = true, size 
         tabIndex={-1}
         className={`flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-rule bg-paper-raised shadow-2xl outline-none md:max-h-[88dvh] md:rounded-2xl ${size === "lg" ? "max-w-2xl" : "max-w-lg"}`}
       >
-        <div className="flex items-start justify-between gap-4 px-6 pb-3 pt-6">
+        <div className="flex items-start justify-between gap-4 px-6 pb-4 pt-6">
           <div className="min-w-0">
             <SectionTitle id={titleId}>{title}</SectionTitle>
             {description ? <p className="mt-1.5 text-sm text-graphite">{description}</p> : null}

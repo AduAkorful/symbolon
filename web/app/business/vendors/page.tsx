@@ -60,7 +60,7 @@ export default async function BusinessVendorsPage() {
                       <Link href={"/business/vendors/" + v.seal} className="break-words font-medium text-ink underline decoration-rule underline-offset-4 hover:decoration-ink">{shortenAddressesIn(v.name)}</Link>
                       {v.handle ? <span className="text-sm text-graphite">@{v.handle}</span> : null}
                     </p>
-                    <div className="mt-1 text-sm text-graphite"><Address value={v.seal} /></div>
+                    <div className="mt-1 text-sm text-graphite"><Address value={v.seal} full copy /></div>
                     <p className="mt-3 flex flex-wrap items-center gap-2">
                       <StatusPill tone={verificationTone(verification)}>{trustLabel(verification)}</StatusPill>
                       {v.verification?.method ? <span className="text-sm text-graphite">via {methodLabel(v.verification.method)}</span> : null}

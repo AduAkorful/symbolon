@@ -160,6 +160,20 @@ describe("screens use the shared UI pieces (plan 05zb)", () => {
     }
   });
 
+  it("the sign-in backdrop is decoration: hidden from assistive tech, takes no pointer events, off in print, still under reduced motion (plan 05zh)", () => {
+    const backdrop = readFileSync(join(root, "components/signin/SealBackdrop.tsx"), "utf8");
+    expect(backdrop).toContain('aria-hidden="true"');
+    expect(backdrop).toContain("pointer-events-none");
+    expect(backdrop).toContain("print:hidden");
+    const css = readFileSync(join(root, "app/globals.css"), "utf8");
+    const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce) {\n  .seal-left"));
+    expect(reduced).toMatch(/\.seal-glint\s*\{\s*animation:\s*none/);
+    // the picker's links and forms work without the animation: it only wraps them
+    const stage = readFileSync(join(root, "components/signin/SealStage.tsx"), "utf8");
+    expect(stage).toMatch(/prefers-reduced-motion: reduce/);
+    expect(stage).toMatch(/metaKey/);
+  });
+
   it("never makes a page wait for the ledger sync or a log scan: it runs after the response (plan 05zd F4)", () => {
     expect(offenders(/await\s+(?:ensureFresh|syncToHead|syncLedger|syncProtocolEvents|scanLogs)\(/)).toEqual([]);
   });

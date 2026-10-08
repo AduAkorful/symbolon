@@ -1,4 +1,5 @@
 import type { Eip1193 } from "@/components/signin/wallet";
+import { checksum } from "@/lib/format";
 
 // Plan 05h, H4. Whatever the person signs with, the rest of the wizard sees one thing: send this call, get a transaction hash.
 
@@ -26,11 +27,15 @@ const UNKNOWN_CHAIN = 4902;
 
 const code = (e: unknown) => (typeof e === "object" && e !== null ? (e as { code?: number }).code : undefined);
 
-/** Picks, among the wallets in the browser, the one that holds the signed-in address */
-export async function findWalletFor(address: string, providers: Eip1193[]): Promise<Eip1193 | null> {
+/**
+ * Picks, among the wallets in the browser, the one that holds the signed-in address. `seen`, when given, collects the accounts
+ * the wallets reported, so a refusal can say which account the wallet is actually using.
+ */
+export async function findWalletFor(address: string, providers: Eip1193[], seen?: string[]): Promise<Eip1193 | null> {
   for (const p of providers) {
     try {
       const accounts = (await p.request({ method: "eth_requestAccounts" })) as string[];
+      seen?.push(...accounts);
       if (accounts.some((a) => a.toLowerCase() === address.toLowerCase())) return p;
     } catch (e) {
       if (code(e) === REJECTED) throw e;
@@ -56,8 +61,9 @@ export async function ensureChain(p: Eip1193, chain: ChainParams): Promise<void>
 
 /** Sends one call from the signed-in wallet and returns the hash. Nothing is sent from any other account or network. */
 export async function sendWithWallet(providers: Eip1193[], plan: Extract<SignerPlan, { kind: "wallet" }>, call: Call): Promise<string> {
-  const p = await findWalletFor(plan.address, providers);
-  if (!p) throw new Error(wrongWalletMessage(plan.address));
+  const seen: string[] = [];
+  const p = await findWalletFor(plan.address, providers, seen);
+  if (!p) throw new Error(wrongWalletMessage(plan.address, seen));
   await ensureChain(p, plan.chain);
   await requireFees(p, plan.address);
   const params: Record<string, string> = { from: plan.address, to: call.to, data: call.data };
@@ -67,9 +73,21 @@ export async function sendWithWallet(providers: Eip1193[], plan: Extract<SignerP
   return hash;
 }
 
-/** Said when this sign-in doesn't control the wallet the account was made with (plan 05k, P4) */
-export const wrongWalletMessage = (address: string) =>
-  `This sign-in doesn't control the wallet on your Symbolon account (${address}). Sign in the way you did when you made the account.`;
+/**
+ * Said when this sign-in doesn't control the wallet the account was made with (plan 05k, P4). An account has one wallet, set when
+ * it was made and the Vault's owner; it is not replaced by whichever wallet is connected. Two causes look alike to the person:
+ * the wallet is connected but using another account (say which), or no wallet is connected in this browser at all. The second
+ * happens when our own session (a cookie) outlives Privy's wallet connection in the browser, so the person is still "signed in"
+ * and no wallet can sign.
+ */
+export const wrongWalletMessage = (address: string, seen: string[] = []) => {
+  const using = [...new Set(seen.map((a) => a.toLowerCase()))];
+  const lead = `This sign-in doesn't control the wallet on your Symbolon account (${address}).`;
+  if (using.length === 0) {
+    return `${lead} No wallet is connected in this browser right now, which happens when the browser has forgotten the connection. Sign out and sign in again with that wallet.`;
+  }
+  return `${lead} Your wallet is using ${using.map(checksum).join(", ")}; switch it to ${address} and try again.`;
+};
 
 /** Arc's fee token is USDC, so a wallet with none can't send anything. Say so before a wallet window opens (plan 05k, P6). */
 export class NeedsFeesError extends Error {

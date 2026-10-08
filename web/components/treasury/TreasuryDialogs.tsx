@@ -147,7 +147,7 @@ export function FundModal({
   }
 
   return (
-    <Overlay title="Add funds to the Vault" description="Sends tokens from your connected wallet to the Vault." onClose={onClose}>
+    <Overlay title="Add funds to the Vault" description="Sends tokens from your connected wallet to the Vault. Use this button rather than your wallet’s own Send screen: sending USDC that way to the Vault’s address fails on Arc." onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
         {err ? <InlineError>{err}</InlineError> : null}
 

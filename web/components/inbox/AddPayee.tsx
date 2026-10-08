@@ -10,7 +10,7 @@ import { Overlay } from "@/components/Overlay";
 import { Button } from "@/components/ui/button";
 import { controlClass, Field } from "@/components/ui/Field";
 import { InlineError, InlineLoading } from "@/components/ui/States";
-import { shortAddress } from "@/lib/format";
+import { checksum } from "@/lib/format";
 
 type Option = { address: string; domain: number; source: string };
 type ChoiceResult = { options: Option[]; defaults: { monthlyCap: string | null; requirePo: boolean; requireDelivery: boolean } };
@@ -82,7 +82,7 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
               <Field label="Payout address signed by this vendor">
                 {(a) => (
                   <select {...a} value={selected} onChange={(e) => setSelected(e.target.value)} className={`${controlClass} min-w-0`}>
-                    {options.map((o) => <option key={`${o.address}:${o.domain}`} value={`${o.address}:${o.domain}`}>{shortAddress(o.address)} · domain {o.domain} · {o.source}</option>)}
+                    {options.map((o) => <option key={`${o.address}:${o.domain}`} value={`${o.address}:${o.domain}`}>{checksum(o.address)} · domain {o.domain} · {o.source}</option>)}
                   </select>
                 )}
               </Field>

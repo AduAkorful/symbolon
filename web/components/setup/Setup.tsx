@@ -335,7 +335,7 @@ function Fund({ business, props, standing, run, busy, discover }: { business: { 
           </p>
         )}
         <div className="mt-8 border-t border-rule pt-4 text-sm">
-          <p className="text-graphite">Or send USDC to the Vault’s address on Arc from anywhere that can:</p>
+          <p className="text-graphite">The Vault’s address on Arc. Add funds with the button above, not from your wallet’s own Send screen: on Arc, USDC is also the network’s native coin, and the Vault only accepts it sent as a token, so a plain send to this address fails (you lose only the network fee).</p>
           <p className="mt-2"><Address value={business.vault} full /></p>
           <div className="mt-2 flex flex-wrap gap-x-4">
             <button

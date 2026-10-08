@@ -125,7 +125,7 @@ export function ComplianceView({
                         </p>
                         <div className="mt-2 flex flex-wrap items-baseline gap-x-3 text-sm">
                           <span className="text-graphite">Payout</span>
-                          {row.payoutAddress ? <AddressView value={row.payoutAddress} copy /> : <span className="text-graphite">{row.status === "unavailable" ? "Can’t confirm" : "Not set yet"}</span>}
+                          {row.payoutAddress ? <AddressView value={row.payoutAddress} full copy /> : <span className="text-graphite">{row.status === "unavailable" ? "Can’t confirm" : "Not set yet"}</span>}
                         </div>
                         {row.hasAddressMismatch ? <p className="mt-2"><StatusPill tone="danger">Payout changed since it was screened</StatusPill></p> : null}
                       </div>

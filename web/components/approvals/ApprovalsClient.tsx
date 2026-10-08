@@ -297,7 +297,7 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
               { label: "Vendor", value: payNowItem.vendor.name },
               { label: "Invoice", value: payNowItem.invoiceNumber },
               { label: "Amount", value: <Money>{showMoney(payNowItem.amountFormatted, payNowItem.token)}</Money> },
-              { label: "Paid by", value: data.userWallet ? <Address value={data.userWallet} /> : "Your connected wallet" },
+              { label: "Paid by", value: data.userWallet ? <Address value={data.userWallet} full /> : "Your connected wallet" },
             ]}
           />
 
@@ -322,7 +322,7 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
               { label: "Vendor", value: signItem.vendor.name },
               { label: "Amount to settle", value: <Money>{showMoney(signItem.amountFormatted, signItem.token)}</Money> },
               { label: "Good for", value: "24 hours from signing" },
-              { label: "Signed by", value: data.userWallet ? <Address value={data.userWallet} /> : "Your connected wallet" },
+              { label: "Signed by", value: data.userWallet ? <Address value={data.userWallet} full /> : "Your connected wallet" },
             ]}
           />
 

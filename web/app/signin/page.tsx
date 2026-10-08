@@ -4,6 +4,7 @@ import { openBusiness } from "@/app/actions";
 import { Avatar } from "@/components/Avatar";
 import { Wordmark } from "@/components/Marks";
 import { PrivyBoundary } from "@/components/providers/PrivyBoundary";
+import { SealStage } from "@/components/signin/SealStage";
 import { SignInForm } from "@/components/signin/SignInForm";
 import { safeNext } from "@/lib/next-path";
 import { getConfig } from "@/lib/server/config";
@@ -21,7 +22,7 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<{
   const session = await getSession();
 
   return (
-    <div className="min-h-screen">
+    <SealStage>
       <header className={`${CONTAINER} flex items-center justify-between pt-7`}>
         <Link href="/" aria-label="Symbolon home">
           <Wordmark />
@@ -30,7 +31,7 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<{
           {config.testnet ? "Arc testnet" : "Arc mainnet"}
         </span>
       </header>
-      <main className="mx-auto max-w-md px-6 pb-24 pt-20">
+      <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 pb-24 pt-12">
         {session ? (
           <Where session={session} next={next} />
         ) : (
@@ -46,7 +47,7 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<{
           )
         )}
       </main>
-    </div>
+    </SealStage>
   );
 }
 
@@ -70,7 +71,7 @@ async function Where({ session, next }: { session: NonNullable<Awaited<ReturnTyp
         <ul className="mt-8 space-y-3">
           {spaces.seal ? (
             <li>
-              <Link href="/vendor" className="flex items-center gap-4 rounded-doc border border-rule p-4 hover:border-ink">
+              <Link href="/vendor" data-pick className="flex items-center gap-4 rounded-doc border border-rule p-4 hover:border-ink">
                 <Avatar name={spaces.seal.displayName} size={36} />
                 <span>
                   <span className="block font-medium">{spaces.seal.displayName}</span>
@@ -83,7 +84,7 @@ async function Where({ session, next }: { session: NonNullable<Awaited<ReturnTyp
             <li key={b.id}>
               <form action={openBusiness}>
                 <input type="hidden" name="id" value={b.id} />
-                <button className="flex w-full items-center gap-4 rounded-doc border border-rule p-4 text-left hover:border-ink">
+                <button data-pick className="flex w-full items-center gap-4 rounded-doc border border-rule p-4 text-left hover:border-ink">
                   <Avatar name={b.name} size={36} />
                   <span>
                     <span className="block font-medium">{b.name}</span>

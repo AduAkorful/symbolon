@@ -64,8 +64,9 @@ export function VendorRequestsSection({
       // 2. Send transaction with owner wallet
       if (signer.kind === "none") throw new Error(signer.reason);
       const wallets = await discover();
-      const provider = await findWalletFor(signer.address, wallets);
-      if (!provider) throw new Error(wrongWalletMessage(signer.address));
+      const seen: string[] = [];
+      const provider = await findWalletFor(signer.address, wallets, seen);
+      if (!provider) throw new Error(wrongWalletMessage(signer.address, seen));
       await ensureChain(provider, signer.chain);
 
       const txHash = (await provider.request({
@@ -113,8 +114,9 @@ export function VendorRequestsSection({
 
       if (signer.kind === "none") throw new Error(signer.reason);
       const wallets = await discover();
-      const provider = await findWalletFor(signer.address, wallets);
-      if (!provider) throw new Error(wrongWalletMessage(signer.address));
+      const seen: string[] = [];
+      const provider = await findWalletFor(signer.address, wallets, seen);
+      if (!provider) throw new Error(wrongWalletMessage(signer.address, seen));
       await ensureChain(provider, signer.chain);
 
       const txHash = (await provider.request({
@@ -182,7 +184,8 @@ export function VendorRequestsSection({
           className="mt-4"
           actions={isOwner && requests[0] ? <Button variant="danger" size="sm" disabled={busy} onClick={() => handleCancelPending(requests[0]!.id)}>Cancel the change in the Vault</Button> : undefined}
         >
-          <p className="flex flex-wrap items-baseline gap-x-2">Payout is changing to <Address value={pendingPayout!} /></p>
+          <p>Payout is changing to</p>
+          <Address value={pendingPayout!} full copy className="text-ink" />
           <p className="mt-1 text-graphite">Takes effect {formatDateTime(new Date(pendingActiveAt! * 1000))}</p>
         </Callout>
       ) : null}

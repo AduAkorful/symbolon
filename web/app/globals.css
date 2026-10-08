@@ -118,6 +118,48 @@ body {
   animation: banner-in var(--dur-quick) var(--ease-arrive) both;
 }
 
+/* The sign-in backdrop (plan 05zh): the Seal's cut. The halves sit a little apart, slide in once, and close when something is chosen;
+   a light travels down the seam while idle. Nothing here moves the halves except arriving and closing. */
+.seal-backdrop {
+  /* clear around the content, so the seam arrives above and below it and never runs through the text */
+  -webkit-mask-image: radial-gradient(ellipse 420px 300px at 50% 50%, transparent 40%, #000 100%);
+  mask-image: radial-gradient(ellipse 420px 300px at 50% 50%, transparent 40%, #000 100%);
+}
+.seal-half {
+  transition: transform 480ms var(--ease-arrive), opacity 480ms var(--ease-arrive);
+}
+.seal-left { transform: translateX(-16px); animation: seal-in-left 1.4s var(--ease-arrive) backwards; }
+.seal-right { transform: translateX(16px); animation: seal-in-right 1.4s var(--ease-arrive) backwards; }
+.seal-seam {
+  stroke-dasharray: 1;
+  stroke-opacity: 0.4;
+  animation: seal-draw 1.8s var(--ease-arrive) both;
+  transition: stroke-opacity 480ms var(--ease-arrive);
+}
+.seal-glint {
+  stroke-dasharray: 0.07 1;
+  stroke-dashoffset: 0.07;
+  stroke-opacity: 0;
+  animation: seal-travel 9s linear 2.4s infinite;
+}
+[data-sealing] .seal-left,
+[data-sealing] .seal-right { transform: translateX(0); }
+[data-sealing] .seal-seam { stroke-opacity: 0.9; }
+[data-sealing] .seal-glint { animation: none; stroke-opacity: 0; }
+@keyframes seal-in-left { from { transform: translateX(-90px); opacity: 0; } }
+@keyframes seal-in-right { from { transform: translateX(90px); opacity: 0; } }
+@keyframes seal-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes seal-travel {
+  0% { stroke-dashoffset: 0.07; stroke-opacity: 0; }
+  8% { stroke-opacity: 0.5; }
+  45% { stroke-dashoffset: -1; stroke-opacity: 0.5; }
+  55%, 100% { stroke-dashoffset: -1; stroke-opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .seal-left, .seal-right, .seal-seam { animation: none; }
+  .seal-glint { animation: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

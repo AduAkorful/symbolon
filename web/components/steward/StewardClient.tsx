@@ -17,6 +17,7 @@ import { Address } from "@/components/Address";
 import { Money } from "@/components/ui/Money";
 import { EmptyState } from "@/components/ui/States";
 import { StatusPill, type Tone } from "@/components/ui/StatusPill";
+import { plainRunError } from "@/lib/run-error";
 import { Eyebrow, Lead, PageTitle, SectionTitle } from "@/components/ui/Type";
 
 const modes = [
@@ -394,7 +395,7 @@ export function StewardClient({
             {lastRun.status === "stalled" ? (
               <p className="mt-3 text-warn">This run began more than five minutes ago and never reported back. Running again replaces it.</p>
             ) : null}
-            {lastRun.error ? <p className="mt-3 text-red">Reason: {lastRun.error}</p> : null}
+            {lastRun.error ? <p className="mt-3 text-red">Reason: {plainRunError(lastRun.error)}</p> : null}
 
             {lastRun.summary && typeof lastRun.summary === "object" ? (
               <dl className="mt-4 flex flex-wrap gap-x-8 gap-y-2">

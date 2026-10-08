@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { SignerPlan } from "@/components/setup/owner-signer";
 import { BufferModal, ConvertModal, EarlyPayModal, FundModal, RedeemModal, ReservePolicyModal, SubscribeModal, WithdrawModal } from "./TreasuryDialogs";
 import { ForecastChart, type ForecastEvent, type ForecastDate } from "./ForecastChart";
@@ -15,6 +15,10 @@ import { EmptyState } from "@/components/ui/States";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { PageTitle, SectionTitle, SmallTitle } from "@/components/ui/Type";
 import { formatDay, showMoney } from "@/lib/format";
+import { holdingsKey, isNotOlder, settleUntilChanged } from "./settle";
+
+/** While the page is open it re-reads the treasury this often, so a deposit from elsewhere shows without a reload */
+const QUIET_REFRESH_MS = 30_000;
 
 interface TreasuryViewProps {
   businessId: string;
@@ -47,21 +51,59 @@ export function TreasuryView({
   >(null);
 
 
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const settling = useRef(false);
+
+  /** The treasury as Arc shows it now, or null when it couldn't be read this time */
+  const readState = useCallback(async (): Promise<TreasuryState | null> => {
+    try {
+      const res = await fetch(`/api/business/${businessId}/treasury`, { cache: "no-store" });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.ok && data.state ? (data.state as TreasuryState) : null;
+    } catch {
+      return null;
+    }
+  }, [businessId]);
+
   async function refresh() {
     setLoading(true);
     setError(null);
+    const next = await readState();
+    if (next === null) setError("Couldn't read the treasury from Arc just now. Try again in a moment.");
+    else if (isNotOlder(next, stateRef.current)) setState(next);
+    setLoading(false);
+  }
+
+  /** After money moved: say it was sent, keep reading until the balances differ, and only then say it arrived */
+  async function settleAfter(sent: string, arrived: string) {
+    const before = holdingsKey(stateRef.current);
+    settling.current = true;
+    setNotice(sent);
     try {
-      const res = await fetch(`/api/business/${businessId}/treasury`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.ok && data.state) setState(data.state);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed refreshing treasury");
+      const result = await settleUntilChanged({ before, read: readState, show: setState, current: () => stateRef.current });
+      setNotice(result === "changed" ? arrived : "It hasn't shown on Arc yet. This page keeps checking on its own.");
     } finally {
-      setLoading(false);
+      settling.current = false;
     }
   }
+
+  // Quiet refresh while the page is open and visible, and when the tab comes back to the front
+  useEffect(() => {
+    const tick = async () => {
+      if (document.hidden || settling.current || activeModal !== null) return;
+      const next = await readState();
+      if (next && isNotOlder(next, stateRef.current)) setState(next);
+    };
+    const id = setInterval(() => void tick(), QUIET_REFRESH_MS);
+    const onVisible = () => { if (!document.hidden) void tick(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [activeModal, readState]);
 
   const operatingUsdc = state.balances.usdc ? parseFloat(state.balances.usdc.amount) : 0;
 
@@ -90,10 +132,9 @@ export function TreasuryView({
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
         <div className="min-w-0">
           <PageTitle>Treasury</PageTitle>
-          <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm text-graphite">
-            <span>Vault</span>
-            <Address value={state.vault} explorer={explorer} copy className="text-ink" />
-            <span>· live from Arc</span>
+          <div className="mt-3 text-sm text-graphite">
+            <p>Vault · live from Arc</p>
+            <Address value={state.vault} full explorer={explorer} copy className="text-ink" />
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -345,8 +386,7 @@ export function TreasuryView({
           onClose={() => setActiveModal(null)}
           onSuccess={(txHash) => {
             setActiveModal(null);
-            setNotice(`Withdrawal complete. Transaction: ${txHash}`);
-            refresh();
+            void settleAfter(`Withdrawal sent. Waiting for Arc to confirm it. Transaction: ${txHash}`, `Withdrawal complete. Transaction: ${txHash}`);
           }}
         />
       )}
@@ -359,8 +399,7 @@ export function TreasuryView({
           onClose={() => setActiveModal(null)}
           onSuccess={() => {
             setActiveModal(null);
-            setNotice("Funds transferred to Vault.");
-            refresh();
+            void settleAfter("Sent to the Vault. Waiting for Arc to confirm it.", "The funds have arrived in the Vault.");
           }}
         />
       )}
@@ -374,8 +413,7 @@ export function TreasuryView({
           onClose={() => setActiveModal(null)}
           onSuccess={(txHash) => {
             setActiveModal(null);
-            setNotice(`Conversion complete. EURC transferred to Vault. Transaction: ${txHash}`);
-            refresh();
+            void settleAfter(`Conversion sent. Waiting for Arc to confirm it. Transaction: ${txHash}`, `Conversion complete. The EURC has arrived in the Vault. Transaction: ${txHash}`);
           }}
         />
       )}
@@ -388,8 +426,7 @@ export function TreasuryView({
           onClose={() => setActiveModal(null)}
           onSuccess={(txHash) => {
             setActiveModal(null);
-            setNotice(`USYC subscription complete. Transaction: ${txHash}`);
-            refresh();
+            void settleAfter(`USYC subscription sent. Waiting for Arc to confirm it. Transaction: ${txHash}`, `USYC subscription complete. Transaction: ${txHash}`);
           }}
         />
       )}
@@ -402,8 +439,7 @@ export function TreasuryView({
           onClose={() => setActiveModal(null)}
           onSuccess={(txHash) => {
             setActiveModal(null);
-            setNotice(`USYC redemption complete. Transaction: ${txHash}`);
-            refresh();
+            void settleAfter(`USYC redemption sent. Waiting for Arc to confirm it. Transaction: ${txHash}`, `USYC redemption complete. Transaction: ${txHash}`);
           }}
         />
       )}

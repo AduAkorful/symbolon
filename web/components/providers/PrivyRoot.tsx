@@ -4,6 +4,7 @@ import { PrivyProvider } from "@privy-io/react-auth";
 import { defineChain } from "viem";
 import type { ReactNode } from "react";
 import type { ChainParams } from "@/components/setup/owner-signer";
+import { ConnectWalletProvider } from "@/components/wallet/ConnectWalletContext";
 
 /**
  * Privy for this page (plan 05k, P5, P8). The chain comes from the deployment registry through the server (never viem's built-in
@@ -28,7 +29,7 @@ export function PrivyRoot({ appId, chain, children }: { appId: string; chain: Ch
         supportedChains: [arc],
       }}
     >
-      {children}
+      <ConnectWalletProvider>{children}</ConnectWalletProvider>
     </PrivyProvider>
   );
 }
