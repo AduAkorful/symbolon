@@ -2,6 +2,9 @@
 
 import { useLogin, usePrivy } from "@privy-io/react-auth";
 import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/Callout";
+import { InlineError } from "@/components/ui/States";
 import { postJson } from "@/lib/client/api";
 
 /**
@@ -44,16 +47,25 @@ export function PrivySignIn({ onDone }: { onDone: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, authenticated]);
 
+  // Privy's script can fail to load (offline, a blocker, a wrong domain); say so instead of leaving "Loading…" up for good
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (ready) { setSlow(false); return; }
+    const t = setTimeout(() => setSlow(true), 10_000);
+    return () => clearTimeout(t);
+  }, [ready]);
+
   return (
-    <div>
-      <button type="button" disabled={!ready || busy} onClick={() => login()} className="w-full rounded-doc border border-rule py-3 hover:border-ink disabled:opacity-50">
-        {busy ? "Signing you in…" : ready ? "Continue" : "Loading…"}
-      </button>
-      {problem ? (
-        <p role="alert" className="mt-3 text-sm text-red">
-          {problem}
-        </p>
+    <div className="space-y-4">
+      <Button className="w-full" size="md" disabled={!ready} busy={busy} onClick={() => login()}>
+        {busy ? "Signing you in…" : ready ? "Continue" : "Getting ready…"}
+      </Button>
+      {slow && !ready ? (
+        <Callout tone="warn" title="Sign-in is taking too long to load" actions={<Button variant="secondary" size="sm" onClick={() => window.location.reload()}>Reload the page</Button>}>
+          The sign-in window comes from Privy. Check your connection, and that nothing (a content blocker, a firewall) is blocking it, then reload.
+        </Callout>
       ) : null}
+      {problem ? <InlineError>{problem}</InlineError> : null}
     </div>
   );
 }

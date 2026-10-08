@@ -9,6 +9,8 @@ import { safeNext } from "@/lib/next-path";
 import { getConfig } from "@/lib/server/config";
 import { getSession } from "@/lib/server/http";
 import { loadSpaces } from "@/lib/server/space";
+import { CONTAINER } from "@/components/shell/container";
+import { PageTitle } from "@/components/ui/Type";
 
 export const dynamic = "force-dynamic";
 
@@ -20,11 +22,11 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<{
 
   return (
     <div className="min-h-screen">
-      <header className="mx-auto flex max-w-[980px] items-center justify-between px-6 pt-7">
+      <header className={`${CONTAINER} flex items-center justify-between pt-7`}>
         <Link href="/" aria-label="Symbolon home">
           <Wordmark />
         </Link>
-        <span className="rounded-full border border-rule px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-graphite">
+        <span className="rounded-full border border-rule px-2.5 py-1 font-mono text-xs uppercase tracking-[0.14em] text-graphite">
           {config.testnet ? "Arc testnet" : "Arc mainnet"}
         </span>
       </header>
@@ -38,7 +40,7 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<{
             </PrivyBoundary>
           ) : (
             <div>
-              <h1 className="font-display text-5xl leading-none">Sign in</h1>
+              <PageTitle>Sign in</PageTitle>
               <p role="alert" className="mt-3 text-graphite">Sign-in isn’t set up on this server yet, so nobody can sign in. The server needs its Privy settings.</p>
             </div>
           )
@@ -55,7 +57,7 @@ async function Where({ session, next }: { session: NonNullable<Awaited<ReturnTyp
   const empty = !spaces.seal && spaces.businesses.length === 0;
   return (
     <div>
-      <h1 className="font-display text-5xl leading-none">Where to?</h1>
+      <PageTitle>Where to?</PageTitle>
       {empty ? (
         <p className="mt-6 text-graphite">
           You’re signed in, but you don’t belong to a Seal or a business yet.{" "}

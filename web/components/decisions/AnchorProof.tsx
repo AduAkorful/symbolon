@@ -1,6 +1,7 @@
 import { TxLink } from "@/components/TxLink";
 import type { DecisionAnchorInfo } from "@/lib/server/anchoring";
 import { formatDateTime } from "@/lib/format";
+import { Eyebrow } from "@/components/ui/Type";
 
 interface Props {
   anchor: DecisionAnchorInfo;
@@ -13,9 +14,9 @@ export function AnchorProof({ anchor, explorerUrl }: Props) {
       <div className="rounded-doc border border-rule-soft bg-paper-raised p-5 text-sm">
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-graphite" />
-          <span className="font-mono text-xs uppercase tracking-wider text-graphite">
+          <Eyebrow as="span">
             Anchoring status: {anchor.status === "unconfirmed" ? "Unconfirmed" : "Pending"}
-          </span>
+          </Eyebrow>
         </div>
         <p className="mt-2 text-graphite text-xs">
           {anchor.reason ?? "Not anchored onchain yet. Pending decision hashes are batched into a Merkle root and anchored to the Vault by the Steward."}
@@ -79,7 +80,7 @@ export function AnchorProof({ anchor, explorerUrl }: Props) {
           <summary className="cursor-pointer hover:text-ink select-none font-medium">
             Show Merkle audit proof ({anchor.proof.length} sibling hashes)
           </summary>
-          <div className="mt-2 space-y-1 rounded bg-paper p-3 font-mono text-[11px] overflow-x-auto">
+          <div className="mt-2 space-y-1 rounded bg-paper p-3 font-mono text-xs overflow-x-auto">
             {anchor.proof.map((sibling, i) => (
               <div key={i} className="text-graphite">
                 [{i}]: {sibling}

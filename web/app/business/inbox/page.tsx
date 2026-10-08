@@ -10,12 +10,22 @@ import { ensureFresh } from "@/lib/server/sync";
 import { filterInbox, listInbox, type InboxFilter } from "@/lib/server/inbox";
 import { businessStatus, statusToneClass, trustName, unsignedLabel } from "@/lib/business-status";
 import { formatDay, showMoney } from "@/lib/format";
+import { buttonClass } from "@/components/ui/button";
+import { Callout } from "@/components/ui/Callout";
+import { chipClass } from "@/components/ui/chip";
+import { Money } from "@/components/ui/Money";
+import { EmptyState } from "@/components/ui/States";
+import { StatusPill } from "@/components/ui/StatusPill";
+import { pillTone } from "@/lib/status-tone";
+import { Lead, PageTitle } from "@/components/ui/Type";
 
 export const dynamic = "force-dynamic";
 
+const PAGE_SIZE = 25;
+
 const filters: [InboxFilter, string][] = [["all", "All"], ["verified", "Verified"], ["new", "New vendor"], ["unsigned", "Unsigned"], ["blocked", "Blocked"]];
 
-export default async function InboxPage({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
+export default async function InboxPage({ searchParams }: { searchParams: Promise<{ filter?: string; page?: string }> }) {
   const session = await requirePageSession("/business/inbox");
   const where = await loadSpaces(session);
   const business = where.business;
@@ -23,49 +33,94 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const cfg = getConfig();
   const db = await getDb();
   const sync = await ensureFresh(db, getClient(), cfg);
-  const requested = (await searchParams).filter as InboxFilter | undefined;
+  const query = await searchParams;
+  const requested = query.filter as InboxFilter | undefined;
   const filter = requested && filters.some(([value]) => value === requested) ? requested : "all";
   const everything = await listInbox(db, getClient(), cfg, session.user, business.id, "all");
-  const items = filterInbox(everything, filter);
+  const matching = filterInbox(everything, filter);
+  const pages = Math.max(1, Math.ceil(matching.length / PAGE_SIZE));
+  const page = Math.min(pages, Math.max(1, Number.parseInt(query.page ?? "1", 10) || 1));
+  const items = matching.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const pageHref = (n: number) => {
+    const params = new URLSearchParams();
+    if (filter !== "all") params.set("filter", filter);
+    if (n > 1) params.set("page", String(n));
+    const q = params.toString();
+    return `/business/inbox${q ? `?${q}` : ""}`;
+  };
   return (
     <Shell where={where} current={{ kind: "business", id: business.id }}>
-      <div className="max-w-[1080px]">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div><h1 className="font-display text-5xl">Inbox</h1><p className="mt-2 max-w-[62ch] text-graphite">Invoices and bills addressed to {business.name}. Trust comes from the Seal, your records and the Vault—not from the upload.</p></div>
-          <Link href="/business" className="text-sm underline decoration-rule underline-offset-4">Business home</Link>
+      <div>
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+          <div className="min-w-0">
+            <PageTitle>Inbox</PageTitle>
+            <Lead className="mt-3">Invoices and bills addressed to {business.name}. Trust comes from the vendor’s Seal, your records and the Vault, not from the upload.</Lead>
+          </div>
+          <InboxActions businessId={business.id} />
         </div>
         {!sync.ok || sync.catchingUp ? (
-          <p className={`mt-5 text-xs ${sync.ok ? "text-graphite" : "text-red"}`} role="status">
+          <Callout tone={sync.ok ? "neutral" : "warn"} className="mt-5">
             {sync.ok
               ? "Payment records from Arc are still being collected. Statuses below are read from Arc directly; the history fills in over the next minutes."
               : `Payment records from Arc can't be updated right now (${sync.reason}). Statuses below are read from Arc directly.`}
-          </p>
+          </Callout>
         ) : null}
-        <InboxActions businessId={business.id} />
-        <nav aria-label="Inbox filters" className="mt-8 flex flex-wrap gap-2 border-b border-rule pb-3">
-          {filters.map(([value, label]) => <Link key={value} href={`/business/inbox${value === "all" ? "" : `?filter=${value}`}`} aria-current={filter === value ? "page" : undefined} className={`rounded-full border px-3 py-1 text-sm ${filter === value ? "border-ink bg-ink text-paper" : "border-rule"}`}>{label} <span className="tabular-nums opacity-70">{filterInbox(everything, value).length}</span></Link>)}
+        <nav aria-label="Inbox filters" className="mt-8 flex flex-wrap gap-2">
+          {filters.map(([value, label]) => (
+            <Link
+              key={value}
+              href={`/business/inbox${value === "all" ? "" : `?filter=${value}`}`}
+              aria-current={filter === value ? "page" : undefined}
+              className={chipClass(filter === value)}
+            >
+              {label}
+              <span className={filter === value ? "text-paper/70" : "text-graphite"}>{filterInbox(everything, value).length}</span>
+            </Link>
+          ))}
         </nav>
-        <div className="mt-4 divide-y divide-rule border-t border-ink">
-          {items.length ? items.map((item) => {
-            const state = item.kind === "unsigned" ? unsignedLabel(item.assessment?.verdict, item.status) : businessStatus(item.status, { source: item.holdSource, kind: item.holdKind });
-            const trust = item.kind === "invoice" && item.trust ? trustName(item.trust) : null;
-            return (
-              <Link key={`${item.kind}:${item.id}`} href={item.kind === "invoice" ? `/business/inbox/${item.fingerprint}` : `/business/inbox/unsigned/${item.id}`} className="grid gap-2 py-4 hover:bg-paper-raised md:grid-cols-[1fr_auto_auto] md:items-center md:gap-6">
-                <span>
-                  <span className="font-medium">{item.vendor}</span>
-                  <span className="ml-3 font-mono text-xs text-graphite">{item.invoiceNumber ?? "Unsigned bill"}</span>
-                  <span className="block text-sm">
-                    <span className={statusToneClass[state.tone]}>{state.label}</span>
-                    {state.note ? <span className="text-graphite"> · {state.note}</span> : null}
-                  </span>
-                  {trust ? <span className={`block text-xs ${statusToneClass[trust.tone]}`}>{trust.label}</span> : null}
-                </span>
-                <span className="text-right font-mono text-sm tabular-nums">{item.kind === "invoice" ? (item.amount ? showMoney(item.amount, item.token ?? "") : "Can't read") : "No amount"}</span>
-                <span className="text-right text-sm text-graphite">{item.dueDate ? `Due ${formatDay(item.dueDate)}` : `Received ${formatDay(item.createdAt)}`}</span>
-              </Link>
-            );
-          }) : <p className="py-10 text-sm text-graphite">Nothing in this view yet.</p>}
-        </div>
+        {items.length ? (
+          <ul className="mt-5 divide-y divide-rule-soft border-y border-rule">
+            {items.map((item) => {
+              const state = item.kind === "unsigned" ? unsignedLabel(item.assessment?.verdict, item.status) : businessStatus(item.status, { source: item.holdSource, kind: item.holdKind });
+              const trust = item.kind === "invoice" && item.trust ? trustName(item.trust) : null;
+              return (
+                <li key={`${item.kind}:${item.id}`}>
+                  <Link
+                    href={item.kind === "invoice" ? `/business/inbox/${item.fingerprint}` : `/business/inbox/unsigned/${item.id}`}
+                    className="grid gap-x-6 gap-y-1 px-1 py-4 transition-colors hover:bg-paper-raised md:grid-cols-[minmax(0,1fr)_auto_9.5rem] md:items-center"
+                  >
+                    <span className="min-w-0">
+                      <span className="flex flex-wrap items-baseline gap-x-3">
+                        <span className="truncate font-medium text-ink">{item.vendor}</span>
+                        <span className="text-sm text-graphite">{item.invoiceNumber ?? "Unsigned bill"}</span>
+                      </span>
+                      <span className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <StatusPill tone={pillTone[state.tone]}>{state.label}</StatusPill>
+                        {state.note ? <span className="text-sm text-graphite">{state.note}</span> : null}
+                        {trust && trust.tone !== "seal" ? <span className={`text-sm ${statusToneClass[trust.tone]}`}>{trust.label}</span> : null}
+                      </span>
+                    </span>
+                    <Money className="font-medium text-ink md:text-right">{item.kind === "invoice" ? (item.amount ? showMoney(item.amount, item.token ?? "") : "Can’t read") : "No amount"}</Money>
+                    <span className="whitespace-nowrap text-sm text-graphite md:text-right">{item.dueDate ? `Due ${formatDay(item.dueDate)}` : `Received ${formatDay(item.createdAt)}`}</span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <EmptyState title="Nothing in this view" className="mt-5">{filter === "all" ? "Invoices that vendors send you, and bills you upload, appear here." : "No invoices match this filter."}</EmptyState>
+        )}
+        {pages > 1 ? (
+          <nav aria-label="Inbox pages" className="mt-5 flex items-center justify-between gap-4 text-sm text-graphite">
+            <span>
+              Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, matching.length)} of {matching.length}
+            </span>
+            <span className="flex gap-2">
+              {page > 1 ? <Link href={pageHref(page - 1)} className={buttonClass({ variant: "secondary", size: "sm" })}>Previous</Link> : null}
+              {page < pages ? <Link href={pageHref(page + 1)} className={buttonClass({ variant: "secondary", size: "sm" })}>Next</Link> : null}
+            </span>
+          </nav>
+        ) : null}
       </div>
     </Shell>
   );

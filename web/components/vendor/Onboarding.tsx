@@ -8,9 +8,11 @@ import { Wordmark } from "@/components/Marks";
 import { postJson } from "@/lib/client/api";
 import { D, E, registerMotion } from "@/lib/motion";
 import { Address } from "@/components/Address";
+import { PageTitle } from "@/components/ui/Type";
+import { controlClass } from "@/components/ui/Field";
 
 const steps = ["Your Seal", "Getting paid"] as const;
-const input = "mt-1 w-full rounded-doc border border-rule bg-paper px-3 py-2.5 focus:border-ink focus:outline-none";
+const input = controlClass;
 const primary = "rounded-doc bg-ink px-5 py-3 font-medium text-paper disabled:opacity-40";
 
 /** Vendor sign-up (V1): the Seal is your own wallet; pick a handle and the name on your invoices, then where new invoices pay out. Plan 05i. */
@@ -106,7 +108,7 @@ export function Onboarding({ wallet, next = "/vendor" }: { wallet: string | null
         <div ref={panel} key={i} className="mt-14 max-w-xl">
           {i === 0 ? (
             <form onSubmit={register}>
-              <h1 className="font-display text-5xl leading-none">Invoice for free. Get paid in seconds.</h1>
+              <PageTitle>Invoice for free. Get paid in seconds.</PageTitle>
               <p className="mt-3 text-graphite">
                 Your Seal is your wallet’s signature on every invoice you send. Anyone can check that an invoice is really yours, and that nobody changed it.
               </p>
@@ -145,7 +147,7 @@ export function Onboarding({ wallet, next = "/vendor" }: { wallet: string | null
             </form>
           ) : (
             <form onSubmit={finish}>
-              <h1 className="font-display text-5xl leading-none">Where should you be paid?</h1>
+              <PageTitle>Where should you be paid?</PageTitle>
               <p className="mt-3 text-graphite">New invoices pay out on Arc to your wallet unless you say otherwise. You can change this later; every invoice shows the address it was signed with.</p>
               <label className="mt-8 block text-sm">
                 Payout address on Arc, if not your wallet

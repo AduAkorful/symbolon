@@ -16,6 +16,8 @@ const OPERATING_BUDGET: Hex = `0x${"00".repeat(32)}`;
 export interface TeamMemberView {
   userId: string;
   email: string | null;
+  /** The name the person gave themselves, when they did (a label only) */
+  displayName: string | null;
   wallet: string | null;
   appRole: Role;
   budgets: string[];
@@ -74,6 +76,7 @@ export async function listTeamMembers(
       budgets: members.budgets,
       createdAt: members.createdAt,
       email: users.email,
+      displayName: users.displayName,
       wallet: users.wallet,
     })
     .from(members)
@@ -177,6 +180,7 @@ export async function listTeamMembers(
       return {
         userId: m.userId,
         email: m.email,
+        displayName: m.displayName,
         wallet: m.wallet,
         appRole: m.role,
         budgets: m.budgets ?? [],

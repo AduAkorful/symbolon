@@ -143,12 +143,11 @@ export async function listApprovals(
   const vault = getAddress(biz.vault);
   const contracts = symbolonContracts(client, cfg.deployment);
   let vaultOwner: Address | null = null;
-  try {
-    const state = await contracts.lens.read.getVaultState([vault]);
-    vaultOwner = state.owner;
-  } catch {
-    // Lens read best effort
-  }
+  // One block for the whole list, read alongside the owner: each card then reads the Vault at that block instead of fetching its own
+  const [ownerRead, blockRead] = await Promise.allSettled([contracts.lens.read.getVaultState([vault]), client.getBlock()]);
+  if (ownerRead.status === "fulfilled") vaultOwner = ownerRead.value.owner;
+  // Lens read best effort
+  const at = blockRead.status === "fulfilled" ? { number: blockRead.value.number, timestamp: blockRead.value.timestamp } : undefined;
 
   const isVaultOwner = userWallet && vaultOwner && userWallet.toLowerCase() === vaultOwner.toLowerCase();
 
@@ -192,7 +191,8 @@ export async function listApprovals(
       .limit(1);
 
     const decRecord = (latestDec?.record as Record<string, unknown>) ?? {};
-    const summary = summarizeDecision(decRecord);
+    // with no decision on file there is nothing to summarise; say so instead of describing an empty record
+    const summary: ReturnType<typeof summarizeDecision> = latestDec ? summarizeDecision(decRecord) : { sentence: "The Steward hasn’t recorded a recommendation for this invoice yet." };
     const ruleNeededHuman = String(decRecord.rule ?? "Approval required");
     const requiredLevel: "owner" | "approver" = ruleNeededHuman.toLowerCase().includes("owner") ? "owner" : "approver";
 
@@ -202,7 +202,7 @@ export async function listApprovals(
     let ledger: any;
     try {
       if (inv) {
-        facts = await withDeadline(readVaultFacts(contracts, client, vault, inv, row.fingerprint as Hex), CHAIN_READ_DEADLINE_MS, "Reading the Vault");
+        facts = await withDeadline(readVaultFacts(contracts, client, vault, inv, row.fingerprint as Hex, at), CHAIN_READ_DEADLINE_MS, "Reading the Vault");
         match = matchInvoice(inv, facts.payee?.terms, facts.purchaseOrder, facts.deliveryConfirmed, facts.now);
       }
     } catch {

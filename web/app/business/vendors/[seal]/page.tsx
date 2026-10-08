@@ -17,15 +17,16 @@ import { signerPlanFor } from "@/lib/server/signer-plan";
 import { vendorDetail } from "@/lib/server/vendors";
 import { listBudgets } from "@/lib/server/budgets";
 import { PayeeTermsEditor } from "@/components/vendors/PayeeTermsEditor";
-import { formatDay, formatDateTime, usd } from "@/lib/format";
+import { formatDay, formatDateTime, shortenAddressesIn, usd } from "@/lib/format";
 import { Address } from "@/components/Address";
+import { Eyebrow, PageTitle, SectionTitle } from "@/components/ui/Type";
 
 export const dynamic = "force-dynamic";
 
 const trustLabel = (status: string) => status === "pending_verification" ? "Sealed, new vendor" : status === "verified" ? "Verified" : status === "blocked" ? "Blocked" : status === "invited" ? "Invited" : status === "retired" ? "Retired" : status;
 const verificationLabel = (status: string) => status === "open" ? "Callback code in progress" : status === "awaiting_second" ? "Awaiting second confirmation" : status === "verified" ? "Verified" : status === "cancelled" ? "Cancelled" : status === "expired" ? "Expired" : status;
 const methodLabel = (method: string) => method === "code" ? "trusted callback code" : method === "invitation" ? "business invitation" : method;
-const when = (date: Date) => new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(date);
+const when = (date: Date) => formatDateTime(date);
 const activeLabel = (activeAt: string) => {
   if (activeAt === "0" || BigInt(activeAt) <= BigInt(Math.floor(Date.now() / 1000))) return "Active now";
   const seconds = Number(activeAt);
@@ -59,16 +60,16 @@ export default async function BusinessVendorDetailPage({ params }: { params: Pro
   const budgetsData = await listBudgets(db, getClient(), config.deployment, session.user, business.id).catch(() => null);
 
   return <Shell where={where} current={{ kind: "business", id: business.id }}>
-    <article className="max-w-[900px]">
+    <article>
       <Link href="/business/vendors" className="text-sm underline decoration-rule underline-offset-4">← Vendors</Link>
-      <p className="mt-8 font-mono text-xs uppercase tracking-[0.14em] text-graphite">{business.name} · Vendor record</p>
-      <h1 className="mt-2 break-words font-display text-4xl">{vendor.name}</h1>
+      <Eyebrow className="mt-8">{business.name} · Vendor record</Eyebrow>
+      <PageTitle className="mt-2 break-words">{shortenAddressesIn(vendor.name)}</PageTitle>
       {vendor.handle ? <p className="mt-1 text-sm text-graphite">@{vendor.handle}</p> : null}
-      <p className="mt-3 text-xs text-graphite"><Address value={vendor.seal} full /></p>
+      <div className="mt-3 text-sm text-graphite"><Address value={vendor.seal} full copy /></div>
 
       <section className="mt-8 grid gap-6 border-y border-rule py-6 md:grid-cols-2">
         <div>
-          <h2 className="font-display text-2xl">Verification</h2>
+          <SectionTitle>Verification</SectionTitle>
           <p className="mt-2 text-sm">Relationship status: <span className="text-ink">{trustLabel(vendor.status)}</span></p>
           {vendor.verificationHistory.length ? <ol className="mt-4 space-y-4">
             {vendor.verificationHistory.map((record) => <li key={record.id} className="border-l-2 border-seal pl-3">
@@ -94,12 +95,12 @@ export default async function BusinessVendorDetailPage({ params }: { params: Pro
         </div>
 
         <div>
-          <h2 className="font-display text-2xl">Vault payee activation</h2>
+          <SectionTitle>Vault payee activation</SectionTitle>
           <p className="mt-1 text-xs text-graphite">Activation is not a promise that an invoice will pass the Vault’s payment, policy, matching, and screening checks.</p>
           {!vendor.canBePaid.confirmed ? <p className="mt-2 text-sm text-red">Can't confirm the Vault record right now.</p> : vendor.canBePaid.exists ? <>
             <p className="mt-2 text-sm">{activeLabel(vendor.canBePaid.activeAt)}</p>
             <dl className="mt-4 space-y-3 text-sm">
-              <div><dt className="text-graphite">Payout address · domain {vendor.canBePaid.payoutDomain}</dt><dd className="mt-1 break-all font-mono text-xs">{vendor.canBePaid.payout}</dd></div>
+              <div><dt className="text-graphite">Payout address · domain {vendor.canBePaid.payoutDomain}</dt><dd className="mt-1"><Address value={vendor.canBePaid.payout} full copy /></dd></div>
               <div><dt className="text-graphite">Monthly cap</dt><dd className="break-all">{usd(BigInt(vendor.canBePaid.terms.monthlyCap))} a month</dd></div>
               <div><dt className="text-graphite">Paid invoices</dt><dd>{vendor.canBePaid.paidCount}</dd></div>
               <div><dt className="text-graphite">Matching requirements</dt><dd>PO {vendor.canBePaid.terms.requirePo ? "required" : "not required"} · delivery {vendor.canBePaid.terms.requireDelivery ? "required" : "not required"}</dd></div>
@@ -128,7 +129,7 @@ export default async function BusinessVendorDetailPage({ params }: { params: Pro
       </section>
 
       <section className="mt-8">
-        <h2 className="font-display text-2xl">Invoices on file</h2>
+        <SectionTitle>Invoices on file</SectionTitle>
         {vendor.invoices.length ? <ul className="mt-3 divide-y divide-rule border-y border-rule">
           {vendor.invoices.map((invoice) => <li key={invoice.fingerprint} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
             <Link className="underline decoration-rule underline-offset-4" href={"/business/inbox/" + invoice.fingerprint}>{invoice.invoiceNumber}</Link>
@@ -161,7 +162,7 @@ export default async function BusinessVendorDetailPage({ params }: { params: Pro
       />
 
       <section className="mt-8 border-t border-rule pt-6">
-        <h2 className="font-display text-2xl">Relationship controls</h2>
+        <SectionTitle>Relationship controls</SectionTitle>
         {business.role === "owner" || business.role === "approver" ? <div className="mt-3"><ManageVendorBlock businessId={business.id} seal={vendor.seal} blocked={isBlocked} canUnblock={business.role === "owner"} /></div> : <p className="mt-3 text-sm text-graphite">An owner or approver manages the blocked state.</p>}
       </section>
     </article>

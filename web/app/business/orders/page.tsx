@@ -44,7 +44,7 @@ export default async function OrdersPage() {
 
   return (
     <Shell where={where} current={{ kind: "business", id: business.id }}>
-      <OrdersClient businessId={business.id} initial={serialised} vendors={vendors} />
+      <OrdersClient businessId={business.id} initial={serialised} vendors={vendors} explorer={cfg.deployment.explorer} />
     </Shell>
   );
 }

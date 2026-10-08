@@ -4,6 +4,8 @@ export interface ReleaseInfo {
   chainId: number;
   version: number;
   implementation: `0x${string}`;
+  factory: `0x${string}`;
+  startBlock: number;
   notesHash: `0x${string}`;
   notes: string;
 }
@@ -13,6 +15,8 @@ export const releases = {
     "chainId": 5042002,
     "version": 1,
     "implementation": "0x02bCb1288338d47e31342737772D0b32bBA3842A",
+    "factory": "0xFC4dAd9E8F090BefB4ADaDEdFDec0BC822269a04",
+    "startBlock": 64060463,
     "notesHash": "0xc3446a0b10279f3ab60cfb7cf1d7bafd400fcd03ba15f026f9ea91e8a0e8a909",
     "notes": "# SymbolonVault release 1\n\nThe first Vault implementation (plans 01, 01a, 01b).\n\n- One Vault per business behind an ERC-1967 proxy (UUPS). Upgrades belong to the Vault's owner: scheduled, then\n  applied after the Vault's loosening delay. Auto-update is off unless the owner opts in.\n- Pays Seal-signed invoices through the immutable `InvoiceLedger` only when payee, payout, purchase order, delivery,\n  budgets, caps, screening and approvals all hold. Loosening changes are delayed; tightening is immediate.\n- The Steward can pay within those rules and nothing else: it cannot withdraw, change policy, payees or its own role.\n- State lives in ERC-7201 storage (`symbolon.storage.SymbolonVault`); reads go through `VaultLens` via `extsload`.\n"
   },
@@ -20,6 +24,8 @@ export const releases = {
     "chainId": 5042002,
     "version": 2,
     "implementation": "0xA6aA3c4DB43f36b061939feF1f822E14bF06BcF8",
+    "factory": "0x62b80C53058704c5429bFcF7A89991C689c8D0a6",
+    "startBlock": 64070665,
     "notesHash": "0x13aa885b211d3b20ec6d0020340bf0d830c664e6a104dc0dbb04ba72fa1cb775",
     "notes": "# SymbolonVault release 2\n\nAdds an optional USYC reserve (plan 04). Everything in release 1 is unchanged.\n\n- USYC is available only to eligible businesses Circle has onboarded and allowlisted (Circle: not U.S. Persons under\n  Regulation S; KYC/AML; wallet allowlisting). The Vault itself is the allowlisted address and holds the USYC; nothing\n  is pooled across businesses.\n- Off by default. The owner sets a reserve policy: on/off, the largest share of the Vault that may sit in USYC, and\n  the USDC that must always stay available. Switching it on, raising the share or lowering the floor waits the\n  Vault's loosening delay, and switching it on requires Circle's allowlisting to already be in place.\n- The Steward or owner can move cash into USYC and back, always with the Vault as the receiver, a minimum-out bound\n  measured by the Vault's own balances, and the policy re-checked after every subscription. The owner can always\n  redeem back to cash, even while paused or with the reserve switched off.\n- USYC can never be used to pay an invoice.\n- Reserve logic lives in the external `ReserveLogic` library (runs as the Vault); reads are in `VaultLens`\n  (`getReservePolicy`, `reserveStatus`).\n- Storage is append-only: one new field (`reserve`) after all release-1 state. Upgrading from release 1 keeps every\n  payee, budget, policy and balance; the reserve starts off.\n"
   }

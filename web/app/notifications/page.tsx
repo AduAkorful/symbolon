@@ -4,7 +4,6 @@ import { getDb } from "@/lib/server/db";
 import { requirePageSession } from "@/lib/server/http";
 import { listNotifications } from "@/lib/server/notifications";
 import { loadSpaces } from "@/lib/server/space";
-import { PageContainer } from "@/components/PageContainer";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +20,7 @@ export default async function NotificationsPage() {
 
   return (
     <Shell where={where} current={current} unreadCount={unreadCount}>
-      <PageContainer width="narrow">
-        <NotificationList initialItems={items} initialUnreadCount={unreadCount} />
-      </PageContainer>
+      <NotificationList initialItems={items} initialUnreadCount={unreadCount} />
     </Shell>
   );
 }

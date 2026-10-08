@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import type { Address } from "viem";
 
 import { TxLink } from "@/components/TxLink";
@@ -11,6 +10,13 @@ import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { postJson } from "@/lib/client/api";
 import type { ComplianceViewModel, CounterpartyScreeningRow } from "@/lib/server/compliance";
 import { formatDay } from "@/lib/format";
+import { Address as AddressView } from "@/components/Address";
+import { Button, buttonClass, LinkButton } from "@/components/ui/button";
+import { Callout } from "@/components/ui/Callout";
+import { DetailList } from "@/components/ui/DetailList";
+import { EmptyState } from "@/components/ui/States";
+import { StatusPill } from "@/components/ui/StatusPill";
+import { Lead, PageTitle, SectionTitle } from "@/components/ui/Type";
 
 export function ComplianceView({
   model,
@@ -28,7 +34,6 @@ export function ComplianceView({
   const [recordBusyId, setRecordBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
 
   const { businessId, counterparties, tiers, canScreen, canWrite, vault } = model;
   const apiPath = `/api/business/${businessId}/compliance`;
@@ -77,217 +82,94 @@ export function ComplianceView({
     }
   }
 
-  function copyText(text: string, id: string) {
-    navigator.clipboard.writeText(text);
-    setCopied(id);
-    setTimeout(() => setCopied(null), 2000);
-  }
-
   return (
-    <div className="max-w-[1200px] space-y-10">
-      <header className="space-y-2">
-        <h1 className="font-display text-4xl">Compliance</h1>
-        <p className="max-w-[70ch] text-sm text-graphite">
-          Every counterparty payout address is screened against Circle’s Compliance Engine and recorded on the Vault.
-          A failed check is never treated as clean.
-        </p>
+    <div className="space-y-10">
+      <header>
+        <PageTitle>Compliance</PageTitle>
+        <Lead className="mt-3">
+          Every counterparty’s payout address is screened with Circle’s Compliance Engine and the result is recorded in the Vault. A check that fails is never treated as clean.
+        </Lead>
       </header>
 
-      {error ? (
-        <div role="alert" className="rounded border border-red/40 bg-red-wash/40 p-4 text-xs text-red">
-          {error}
-        </div>
-      ) : null}
-
-      {notice ? (
-        <div role="status" className="rounded border border-rule bg-paper-raised p-4 text-xs text-ink">
-          {notice}
-        </div>
-      ) : null}
+      {error ? <Callout tone="danger">{error}</Callout> : null}
+      {notice ? <Callout tone="info" onDismiss={() => setNotice(null)}>{notice}</Callout> : null}
 
       {!vault ? (
-        <div className="rounded border border-rule p-8 text-center">
-          <p className="text-sm text-graphite">This business has no Vault set up yet.</p>
-          <Link href="/business" className="mt-3 inline-block rounded bg-ink px-4 py-2 text-xs font-medium text-paper">
-            Go to setup
-          </Link>
-        </div>
+        <EmptyState title="This business has no Vault yet" action={<LinkButton href="/business" size="sm">Go to setup</LinkButton>}>
+          Screening results are recorded in the Vault, so create it first.
+        </EmptyState>
       ) : (
-        <div className="grid gap-10 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-          <section aria-labelledby="counterparties-heading" className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 id="counterparties-heading" className="font-display text-2xl">
-                Counterparties
-              </h2>
-              <span className="font-mono text-xs text-graphite">
-                {counterparties.length} counterpart{counterparties.length === 1 ? "y" : "ies"}
-              </span>
+        <div className="grid gap-10 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+          <section aria-labelledby="counterparties-heading" className="min-w-0 space-y-4">
+            <div className="flex items-baseline justify-between gap-4">
+              <SectionTitle id="counterparties-heading">Counterparties</SectionTitle>
+              <span className="text-sm text-graphite">{counterparties.length} {counterparties.length === 1 ? "counterparty" : "counterparties"}</span>
             </div>
 
             {counterparties.length === 0 ? (
-              <div className="rounded border border-rule p-8 text-center text-sm text-graphite">
-                No payees registered on this Vault yet.{" "}
-                <Link href="/business/vendors" className="underline underline-offset-4">
-                  Add a vendor as a payee first.
-                </Link>
-              </div>
+              <EmptyState title="No payees in this Vault yet" action={<LinkButton href="/business/vendors" variant="secondary" size="sm">Open vendors</LinkButton>}>
+                Add a vendor as a payee first; then it can be screened here.
+              </EmptyState>
             ) : (
-              <div className="overflow-x-auto rounded border border-rule bg-paper-raised">
-                <table className="w-full min-w-[620px] text-left text-xs">
-                  <thead className="border-b border-rule bg-paper text-[11px] uppercase tracking-wider text-graphite">
-                    <tr>
-                      <th className="py-3 pl-4 pr-3 font-medium">Counterparty</th>
-                      <th className="py-3 px-3 font-medium">Payout address</th>
-                      <th className="py-3 px-3 font-medium">Risk</th>
-                      <th className="py-3 px-3 font-medium">Status</th>
-                      <th className="py-3 px-3 font-medium">Screened</th>
-                      <th className="py-3 pl-3 pr-4 text-right font-medium">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-rule-soft">
-                    {counterparties.map((row) => {
-                      const isScreening = busySeal === row.seal;
-                      const isRecording = recordBusyId === row.latestScreeningId;
-                      const isHighOrBlocked = row.onchainRisk !== null && row.onchainRisk >= 2;
+              <ul className="divide-y divide-rule-soft border-y border-rule">
+                {counterparties.map((row) => {
+                  const isScreening = busySeal === row.seal;
+                  const isRecording = recordBusyId === row.latestScreeningId;
+                  const isHighOrBlocked = row.onchainRisk !== null && row.onchainRisk >= 2;
+                  return (
+                    <li key={row.seal} className="grid gap-x-6 gap-y-3 py-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                      <div className="min-w-0">
+                        <p className="font-medium text-ink">{row.name}</p>
+                        <p className="mt-1 text-sm text-graphite">
+                          Seal <TxLink href={`${explorer}/address/${row.seal}`} label="View the vendor's Seal on the Arc explorer">{row.seal.slice(0, 8)}…{row.seal.slice(-6)}</TxLink>
+                        </p>
+                        <div className="mt-2 flex flex-wrap items-baseline gap-x-3 text-sm">
+                          <span className="text-graphite">Payout</span>
+                          {row.payoutAddress ? <AddressView value={row.payoutAddress} copy /> : <span className="text-graphite">{row.status === "unavailable" ? "Can’t confirm" : "Not set yet"}</span>}
+                        </div>
+                        {row.hasAddressMismatch ? <p className="mt-2"><StatusPill tone="danger">Payout changed since it was screened</StatusPill></p> : null}
+                      </div>
 
-                      return (
-                        <tr key={row.seal} className="hover:bg-paper/40">
-                          <td className="py-3 pl-4 pr-3">
-                            <div className="font-medium text-ink">{row.name}</div>
-                            <div className="font-mono text-[10px] text-graphite">
-                              <TxLink href={`${explorer}/address/${row.seal}`} label="Vendor Seal">
-                                {row.seal.slice(0, 8)}…{row.seal.slice(-6)}
-                              </TxLink>
-                            </div>
-                          </td>
-
-                          <td className="py-3 px-3">
-                            <div className="flex items-center gap-1.5 font-mono text-[11px]">
-                              <span>
-                                {row.payoutAddress
-                                  ? `${row.payoutAddress.slice(0, 6)}…${row.payoutAddress.slice(-4)}`
-                                  : row.status === "unavailable"
-                                    ? "Can’t confirm"
-                                    : "Not set yet"}
-                              </span>
-                              {row.payoutAddress ? (
-                              <button
-                                type="button"
-                                onClick={() => copyText(row.payoutAddress!, row.seal)}
-                                title="Copy full payout address"
-                                className="text-[10px] text-graphite hover:text-ink"
-                              >
-                                {copied === row.seal ? "Copied" : "Copy"}
-                              </button>
-                              ) : null}
-                            </div>
-                            {row.hasAddressMismatch ? (
-                              <span className="mt-1 inline-block rounded bg-red-wash px-1.5 py-0.5 text-[9px] font-medium text-red">
-                                Payout changed since last screening
-                              </span>
+                      <div className="min-w-0 md:text-right">
+                        <p className="flex flex-wrap items-center gap-2 md:justify-end">
+                          <StatusPill tone={isHighOrBlocked ? "danger" : row.onchainRisk === 1 ? "warn" : row.onchainRisk === 0 ? "ok" : "neutral"}>{row.riskLabel}</StatusPill>
+                          <StatusPill tone={row.status === "due" ? "danger" : "neutral"}>{row.statusLabel}</StatusPill>
+                        </p>
+                        <p className="mt-2 text-sm text-graphite">Screened {row.screenedAt ? formatDay(new Date(row.screenedAt)) : "never"}</p>
+                        {canScreen || (canWrite && row.latestScreeningId) ? (
+                          <div className="mt-3 flex flex-wrap gap-2 md:justify-end">
+                            {canScreen ? (
+                              <Button variant="secondary" size="sm" disabled={isScreening || isRecording} busy={isScreening} onClick={() => handleScreen(row.seal)}>
+                                {isScreening ? "Screening…" : "Screen"}
+                              </Button>
                             ) : null}
-                          </td>
-
-                          <td className="py-3 px-3">
-                            <span
-                              className={`rounded px-1.5 py-0.5 font-medium ${
-                                isHighOrBlocked
-                                  ? "bg-red-wash text-red"
-                                  : row.onchainRisk === 1
-                                    ? "bg-paper text-ink border border-rule"
-                                    : "text-ink"
-                              }`}
-                            >
-                              {row.riskLabel}
-                            </span>
-                          </td>
-
-                          <td className="py-3 px-3 text-graphite">
-                            <span
-                              className={`inline-block rounded px-1.5 py-0.5 text-[10px] ${
-                                row.status === "due"
-                                  ? "text-red bg-red-wash"
-                                  : row.status === "never"
-                                    ? "text-graphite border border-rule-soft"
-                                    : "text-ink"
-                              }`}
-                            >
-                              {row.statusLabel}
-                            </span>
-                          </td>
-
-                          <td className="py-3 px-3 text-graphite">
-                            {row.screenedAt ? formatDay(new Date(row.screenedAt)) : "Never"}
-                          </td>
-
-                          <td className="py-3 pl-3 pr-4 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              {canScreen ? (
-                                <button
-                                  type="button"
-                                  disabled={isScreening || isRecording}
-                                  onClick={() => handleScreen(row.seal)}
-                                  className="rounded border border-rule bg-paper px-2.5 py-1 text-[11px] font-medium text-ink hover:border-ink disabled:opacity-50"
-                                >
-                                  {isScreening ? "Screening…" : "Screen"}
-                                </button>
-                              ) : null}
-
-                              {canWrite && row.latestScreeningId ? (
-                                <button
-                                  type="button"
-                                  disabled={isScreening || isRecording || signer.kind === "none"}
-                                  onClick={() => handleRecordWrite(row.latestScreeningId!)}
-                                  title="Write latest screening result to Vault"
-                                  className="rounded bg-ink px-2.5 py-1 text-[11px] font-medium text-paper hover:opacity-90 disabled:opacity-50"
-                                >
-                                  {isRecording ? "Recording…" : "Save onchain"}
-                                </button>
-                              ) : null}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                            {canWrite && row.latestScreeningId ? (
+                              <Button size="sm" disabled={isScreening || isRecording || signer.kind === "none"} busy={isRecording} title="Write the latest screening result to the Vault" onClick={() => handleRecordWrite(row.latestScreeningId!)}>
+                                {isRecording ? "Recording…" : "Save in the Vault"}
+                              </Button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </section>
 
-          <aside className="space-y-8">
+          <aside className="min-w-0 space-y-8">
             <section aria-labelledby="tiers-heading" className="space-y-3">
-              <h2 id="tiers-heading" className="font-display text-xl">
-                What each tier does
-              </h2>
-              <dl className="divide-y divide-rule-soft rounded border border-rule bg-paper-raised text-xs">
-                {tiers.map((t) => (
-                  <div key={t.tier} className="grid grid-cols-[6.5rem_1fr] p-3">
-                    <dt className={`font-medium ${t.tier === "High" || t.tier === "Blocked" ? "text-red" : "text-ink"}`}>
-                      {t.tier}
-                    </dt>
-                    <dd className="text-graphite">{t.action}</dd>
-                  </div>
-                ))}
-              </dl>
+              <SectionTitle id="tiers-heading">What each tier does</SectionTitle>
+              <DetailList items={tiers.map((t) => ({ label: <span className={t.tier === "High" || t.tier === "Blocked" ? "text-red" : "text-ink"}>{t.tier}</span>, value: <span className="font-normal text-graphite">{t.action}</span> }))} />
             </section>
 
             <section aria-labelledby="reports-heading" className="space-y-3">
-              <h2 id="reports-heading" className="font-display text-xl">
-                Compliance report
-              </h2>
-              <p className="text-xs text-graphite">
-                Export counterparty screening records with timestamps, rules, and decision hashes.
-              </p>
-              <div>
-                <a
-                  href={`/api/business/${businessId}/compliance?format=csv`}
-                  download={`compliance-report-${businessId}.csv`}
-                  className="inline-flex items-center gap-2 rounded border border-rule bg-paper px-3 py-2 text-xs font-medium text-ink hover:border-ink"
-                >
-                  Download CSV report
-                </a>
-              </div>
+              <SectionTitle id="reports-heading">Compliance report</SectionTitle>
+              <p className="text-sm text-graphite">Counterparty screening records with their times, rules and decision hashes.</p>
+              <a href={`/api/business/${businessId}/compliance?format=csv`} download={`compliance-report-${businessId}.csv`} className={buttonClass({ variant: "secondary" })}>
+                Download the CSV report
+              </a>
             </section>
           </aside>
         </div>

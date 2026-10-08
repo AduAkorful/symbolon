@@ -3,6 +3,7 @@ import { getClient } from "@/lib/server/chain";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
 import { readBody, requireSession, routeWith } from "@/lib/server/http";
+import { prepareReservePolicy } from "@/lib/server/reserve-policy";
 import { setBufferDays, setEarlyPay } from "@/lib/server/settings";
 import {
   loadTreasury,
@@ -73,6 +74,15 @@ export const POST = routeWith<Ctx>(async (request, ctx) => {
         body.tokenSymbol === "EURC" ? "EURC" : "USDC",
       );
       return NextResponse.json({ ok: true, ...res });
+    }
+
+    case "prepare-reserve-policy": {
+      const res = await prepareReservePolicy(db, client, config.deployment, session.user, businessId, {
+        enabled: body.enabled === true,
+        maxReservePercent: typeof body.maxReservePercent === "string" ? body.maxReservePercent : "",
+        minOperating: typeof body.minOperating === "string" ? body.minOperating : "",
+      });
+      return NextResponse.json(res);
     }
 
     case "prepare-subscribe": {

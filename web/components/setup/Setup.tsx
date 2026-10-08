@@ -11,6 +11,9 @@ import { D, E, registerMotion } from "@/lib/motion";
 import { sendCall, wasRejected, type SignerPlan } from "./owner-signer";
 import { showAmount } from "@/lib/format";
 import { Address } from "@/components/Address";
+import { buttonClass } from "@/components/ui/button";
+import { PageTitle } from "@/components/ui/Type";
+import { controlClass } from "@/components/ui/Field";
 
 /** What the chain says about the Steward of a Vault we know (plan 05h, H13): only "paused" (or "none", an older Vault with no Steward) lets the wizard on to Fund */
 export type Standing = "paused" | "active" | "unknown" | "mismatch" | "none";
@@ -26,8 +29,8 @@ export interface SetupProps {
 }
 
 const steps = ["Business", "Policy", "Vault", "Fund"] as const;
-const input = "mt-1 w-full rounded-doc border border-rule bg-paper px-3 py-2.5 focus:border-ink focus:outline-none";
-const primary = "rounded-doc bg-ink px-5 py-3 font-medium text-paper disabled:opacity-40";
+const input = controlClass;
+const primary = buttonClass();
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const fmt = (raw: string, decimals: number) => showAmount(formatUnits(BigInt(raw), decimals));
 const message = (e: unknown) => (wasRejected(e) ? "You closed the wallet's request, so nothing was sent." : e instanceof Error ? e.message : "Something went wrong.");
@@ -158,7 +161,7 @@ export function Setup(props: SetupProps) {
       <div ref={panel} key={i} className="mt-14">
         {i === 0 ? (
           <form onSubmit={createBusiness} className="max-w-xl">
-            <h1 className="font-display text-5xl leading-none">Set up your business</h1>
+            <PageTitle>Set up your business</PageTitle>
             <p className="mt-3 text-graphite">Your Steward pays sealed invoices from your Vault, within rules you set. You can start in shadow mode, where it only shows what it would do.</p>
             <label className="mt-8 block text-sm">
               Business name
@@ -172,7 +175,7 @@ export function Setup(props: SetupProps) {
 
         {i === 1 ? (
           <div>
-            <h1 className="font-display text-5xl leading-none">Start from a policy</h1>
+            <PageTitle>Start from a policy</PageTitle>
             <p className="mt-3 max-w-[60ch] text-graphite">
               Every rule is editable later. Tightening applies at once; loosening waits, so a stolen session can’t widen limits and pay out in the same minute. These are the rules your Vault is created with.
             </p>
@@ -197,7 +200,7 @@ export function Setup(props: SetupProps) {
 
         {i === 2 ? (
           <div className="max-w-2xl">
-            <h1 className="font-display text-5xl leading-none">Your Vault</h1>
+            <PageTitle>Your Vault</PageTitle>
             <p className="mt-3 text-graphite">A contract on Arc that holds your funds and enforces your rules. It’s yours: only its owner can change the rules, upgrade it or withdraw. It starts with the {chosen.name} policy and a Steward wallet made for it. The Steward starts paused: it can’t pay anything until you resume it.</p>
             {props.signer.kind === "none" ? (
               <p role="status" className="mt-8 rounded-doc border border-rule p-4 text-sm text-graphite">
@@ -241,7 +244,7 @@ export function Setup(props: SetupProps) {
                       Transaction hash
                       <input className={`${input} font-mono`} value={pasted} onChange={(e) => setPasted(e.target.value)} placeholder="0x…" required />
                     </label>
-                    <button disabled={busy !== null} className="rounded-doc border border-rule px-3.5 py-2.5 text-sm hover:border-ink">
+                    <button disabled={busy !== null} className={buttonClass({ variant: "secondary" })}>
                       Check it
                     </button>
                   </form>
@@ -314,7 +317,7 @@ function Fund({ business, props, standing, run, busy, discover }: { business: { 
   return (
     <div className="grid gap-12 lg:grid-cols-2">
       <div>
-        <h1 className="font-display text-5xl leading-none">Fund it</h1>
+        <PageTitle>Fund it</PageTitle>
         <p className="mt-3 text-graphite">Send USDC on Arc into the Vault. Network fees are paid in USDC too, so the wallet needs a little beyond what you put in.</p>
         {props.signer.kind !== "none" ? (
           <form onSubmit={deposit} className="mt-8">
@@ -413,7 +416,7 @@ function StewardStep({ standing, busy, onPause, onCheck, pauseTx, explorer }: { 
         <button disabled={busy !== null} onClick={onPause} className={primary}>
           {busy ?? "Pause the Steward (one signature)"}
         </button>
-        <button disabled={busy !== null} onClick={onCheck} className="rounded-doc border border-rule px-3.5 py-3 text-sm hover:border-ink">
+        <button disabled={busy !== null} onClick={onCheck} className={buttonClass({ variant: "secondary" })}>
           Check Arc again
         </button>
       </div>

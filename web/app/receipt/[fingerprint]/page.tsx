@@ -8,6 +8,7 @@ import { getClient } from "@/lib/server/chain";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
 import { loadReceipt } from "@/lib/server/receipt";
+import { PageTitle } from "@/components/ui/Type";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +38,7 @@ export default async function ReceiptPage({ params }: Props) {
   if (data.state === "unconfirmed") {
     return (
       <main className="mx-auto max-w-[760px] px-6 py-20 text-center">
-        <h1 className="font-display text-3xl">Receipt unconfirmed</h1>
+        <PageTitle>Receipt unconfirmed</PageTitle>
         <p className="mt-3 text-sm text-graphite">{data.reason}</p>
       </main>
     );

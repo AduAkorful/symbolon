@@ -1,10 +1,18 @@
 "use client";
 
-import { useState, useTransition, useId } from "react";
+import { useState, useTransition } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import { useWallets } from "@privy-io/react-auth";
 import { encodeFunctionData, type Hex } from "viem";
 import { Overlay } from "@/components/Overlay";
+import { Button, buttonClass } from "@/components/ui/button";
+import { controlClass, Field } from "@/components/ui/Field";
+import { DetailList } from "@/components/ui/DetailList";
+import { Money } from "@/components/ui/Money";
+import { EmptyState, InlineError } from "@/components/ui/States";
+import { StatusPill } from "@/components/ui/StatusPill";
+import { Lead, PageTitle } from "@/components/ui/Type";
+import { TxLink } from "@/components/TxLink";
 import { formatDay, usd } from "@/lib/format";
 
 // ─── Types mirrored from the server (BigInt fields as string) ────────────────
@@ -40,6 +48,8 @@ interface OrdersProps {
   businessId: string;
   initial: OrderView[];
   vendors: KnownVendor[];
+  /** The Arc explorer's address, from the deployment registry */
+  explorer: string;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -63,15 +73,17 @@ async function post(url: string, body: unknown) {
   return json;
 }
 
+// The columns of the list on a wide screen; on a phone each order is a card with the same facts
+const GRID = "md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.3fr)_6rem_8rem_8rem_5.5rem]";
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function OrdersClient({ businessId, initial, vendors }: OrdersProps) {
+export function OrdersClient({ businessId, initial, vendors, explorer }: OrdersProps) {
   const [orders, setOrders] = useState<OrderView[]>(initial);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [reloadError, setReloadError] = useState<string | null>(null);
   const { wallets } = useWallets();
-  const { user: privyUser } = usePrivy();
 
   // Reload orders after any mutation
   const reload = async () => {
@@ -86,61 +98,45 @@ export function OrdersClient({ businessId, initial, vendors }: OrdersProps) {
   };
 
   return (
-    <div id="orders-page" className="max-w-[1080px]">
-      {reloadError ? <p role="alert" className="mb-4 text-sm text-red">{reloadError}</p> : null}
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="font-display text-5xl">Orders</h1>
-          <p className="mt-2 max-w-[64ch] text-graphite">
-            What your business has ordered, from whom, and up to how much. An invoice matches its order and its
-            delivery before it can be paid.
-          </p>
+    <div id="orders-page">
+      {reloadError ? <InlineError className="mb-4">{reloadError}</InlineError> : null}
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+        <div className="min-w-0">
+          <PageTitle>Orders</PageTitle>
+          <Lead className="mt-3">What your business has ordered, from whom, and up to how much. An invoice has to match its order and its delivery before it can be paid.</Lead>
         </div>
-        <button
-          id="btn-new-order"
-          onClick={() => setCreating(true)}
-          className="rounded-doc bg-ink px-4 py-2.5 text-sm font-medium text-paper transition-opacity hover:opacity-80"
-        >
-          New order
-        </button>
+        <Button id="btn-new-order" onClick={() => setCreating(true)}>New order</Button>
       </div>
 
-      <div className="mt-8 overflow-x-auto">
-        <table className="w-full min-w-[800px] border-t border-ink text-[15px]">
-          <thead>
-            <tr className="text-left text-xs text-graphite">
-              <th className="py-3 pr-4 font-normal">Order</th>
-              <th className="py-3 pr-4 font-normal">Vendor</th>
-              <th className="py-3 pr-4 font-normal">Kind</th>
-              <th className="py-3 pr-4 text-right font-normal">Amount</th>
-              <th className="py-3 pr-4 text-right font-normal">Remaining</th>
-              <th className="py-3 font-normal">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {orders.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="py-12 text-center text-sm text-graphite">
-                  No orders yet. Create one when you want to let an invoice match against it.
-                </td>
-              </tr>
-            ) : (
-              orders.map((o) => (
-                <OrderRow
-                  key={o.poRef}
-                  order={o}
-                  open={expanded === o.poRef}
-                  onToggle={() => setExpanded(expanded === o.poRef ? null : o.poRef)}
-                  businessId={businessId}
-                  wallets={wallets}
-                  vendors={vendors}
-                  onMutate={reload}
-                />
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      {orders.length === 0 ? (
+        <EmptyState title="No orders yet" className="mt-8">Create one when you want an invoice to be matched against it.</EmptyState>
+      ) : (
+        <div className="mt-8 border-t border-ink">
+          <div className={`hidden gap-x-4 border-b border-rule py-3 text-sm text-graphite md:grid ${GRID}`} aria-hidden>
+            <span>Order</span>
+            <span>Vendor</span>
+            <span>Kind</span>
+            <span className="text-right">Amount</span>
+            <span className="text-right">Remaining</span>
+            <span>Status</span>
+          </div>
+          <ul>
+            {orders.map((o) => (
+              <OrderRow
+                key={o.poRef}
+                order={o}
+                open={expanded === o.poRef}
+                onToggle={() => setExpanded(expanded === o.poRef ? null : o.poRef)}
+                businessId={businessId}
+                wallets={wallets}
+                vendors={vendors}
+                explorer={explorer}
+                onMutate={reload}
+              />
+            ))}
+          </ul>
+        </div>
+      )}
 
       {creating ? (
         <NewOrderSheet businessId={businessId} wallets={wallets} vendors={vendors} onClose={() => setCreating(false)} onMutate={reload} />
@@ -158,6 +154,7 @@ function OrderRow({
   businessId,
   wallets,
   vendors,
+  explorer,
   onMutate,
 }: {
   order: OrderView;
@@ -166,42 +163,41 @@ function OrderRow({
   businessId: string;
   wallets: ReturnType<typeof useWallets>["wallets"];
   vendors: KnownVendor[];
+  explorer: string;
   onMutate: () => void;
 }) {
   const closed = Boolean(o.closedAt);
   const liveOpen = o.live.ok ? o.live.open : !closed;
   const remaining = o.live.ok && o.live.remaining ? formatRaw(o.live.remaining) : null;
-  const statusLabel = closed ? "Closed" : liveOpen ? "Open" : "—";
-  const statusStyle = closed ? "text-graphite" : liveOpen ? "text-seal" : "text-red";
+  const status = closed ? { label: "Closed", tone: "neutral" as const } : liveOpen ? { label: "Open", tone: "ok" as const } : { label: "Can’t confirm", tone: "warn" as const };
+  const detailId = `po-detail-${o.poRef.slice(2, 10)}`;
 
   return (
-    <>
-      <tr className="border-t border-rule">
-        <td className="pr-4">
-          <button
-            id={`toggle-${o.poRef.slice(2, 10)}`}
-            onClick={onToggle}
-            aria-expanded={open}
-            aria-controls={`po-detail-${o.poRef.slice(2, 10)}`}
-            className="py-4 font-mono text-sm hover:text-seal"
-          >
-            {open ? "▾" : "▸"} {o.poNumber}
-          </button>
-        </td>
-        <td className="pr-4 text-sm">{vendorName(vendors, o.seal)}</td>
-        <td className="pr-4 text-sm capitalize">{o.kind.replace("_", "-")}</td>
-        <td className="pr-4 text-right tabular-nums">{formatRaw(o.amount)}</td>
-        <td className="pr-4 text-right tabular-nums">{remaining ?? "—"}</td>
-        <td className={`text-sm ${statusStyle}`}>{statusLabel}</td>
-      </tr>
+    <li className="border-b border-rule-soft">
+      <button
+        id={`toggle-${o.poRef.slice(2, 10)}`}
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls={detailId}
+        className={`grid w-full gap-x-4 gap-y-1 py-4 text-left transition-colors hover:bg-paper-raised ${GRID} md:items-center`}
+      >
+        <span className="flex items-baseline gap-2 font-medium text-ink">
+          <span aria-hidden className="text-graphite">{open ? "▾" : "▸"}</span>
+          <span className="min-w-0 break-words">{o.poNumber}</span>
+        </span>
+        <span className="min-w-0 truncate pl-5 md:pl-0">{vendorName(vendors, o.seal)}</span>
+        <span className="pl-5 text-graphite capitalize md:pl-0">{o.kind.replace("_", "-")}</span>
+        <span className="pl-5 md:pl-0 md:text-right"><span className="text-graphite md:hidden">Amount </span><Money>{formatRaw(o.amount)}</Money></span>
+        <span className="pl-5 md:pl-0 md:text-right"><span className="text-graphite md:hidden">Remaining </span><Money>{remaining ?? "—"}</Money></span>
+        <span className="pl-5 md:pl-0"><StatusPill tone={status.tone}>{status.label}</StatusPill></span>
+      </button>
       {open ? (
-        <tr id={`po-detail-${o.poRef.slice(2, 10)}`}>
-          <td colSpan={6} className="bg-paper-raised/50 px-4">
-            <OrderDetail order={o} businessId={businessId} wallets={wallets} onMutate={onMutate} />
-          </td>
-        </tr>
+        <div id={detailId} className="bg-paper-raised/50 px-4">
+          <OrderDetail order={o} businessId={businessId} wallets={wallets} explorer={explorer} onMutate={onMutate} />
+        </div>
       ) : null}
-    </>
+    </li>
   );
 }
 
@@ -211,90 +207,43 @@ function OrderDetail({
   order: o,
   businessId,
   wallets,
+  explorer,
   onMutate,
 }: {
   order: OrderView;
   businessId: string;
   wallets: ReturnType<typeof useWallets>["wallets"];
+  explorer: string;
   onMutate: () => void;
 }) {
-  const [step, setStep] = useState<Step>("idle");
-  const [msg, setMsg] = useState<string | null>(null);
   const closed = Boolean(o.closedAt);
-
-  const sendTx = async (action: "prepare_close" | string, extra: Record<string, unknown> = {}) => {
-    setStep("signing");
-    setMsg(null);
-    try {
-      const wallet = wallets[0];
-      if (!wallet) throw new Error("No wallet connected.");
-      const prepared = await post(`/api/business/${businessId}/order`, { action, poRef: o.poRef, ...extra });
-      await wallet.switchChain(prepared.chainId);
-      const provider = await wallet.getEthereumProvider();
-      const txHash: Hex = await provider.request({
-        method: "eth_sendTransaction",
-        params: [{ to: prepared.to, data: prepared.data, from: wallet.address }],
-      });
-      setStep("recording");
-      await post(`/api/business/${businessId}/order`, { action: "record_close", txHash, poRef: o.poRef });
-      setStep("done");
-      setMsg("Order closed.");
-      onMutate();
-    } catch (e) {
-      setStep("error");
-      setMsg(e instanceof Error ? e.message : "Something went wrong.");
-    }
-  };
 
   return (
     <div className="grid gap-6 py-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-      <dl className="space-y-1.5 text-sm">
-        {[
-          ["Description", o.description ?? "—"],
-          ["Amount", formatRaw(o.amount)],
-          ["Invoiced", o.invoiceCount > 0 ? `${formatRaw(o.invoicedTotal)} across ${o.invoiceCount} invoice${o.invoiceCount === 1 ? "" : "s"}` : "No invoices yet"],
-          ["Paid", formatRaw(o.paidTotal)],
-          ["Release after", o.releaseAfter ? formatDay(o.releaseAfter, { year: "always" }) : "No release date"],
-          ["Opened", o.openTx ? <a key="tx" href={`https://explorer.arc.net/tx/${o.openTx}`} target="_blank" rel="noreferrer" className="underline decoration-rule underline-offset-4">{`tx ${o.openTx.slice(0, 10)}…`}</a> : "Not recorded"],
-        ].map(([k, v]) => (
-          <div key={String(k)} className="flex gap-3">
-            <dt className="w-28 shrink-0 text-graphite">{k}</dt>
-            <dd>{v}</dd>
-          </div>
-        ))}
-      </dl>
+      <DetailList
+        items={[
+          { label: "Description", value: o.description ?? "—" },
+          { label: "Amount", value: <Money>{formatRaw(o.amount)}</Money> },
+          { label: "Invoiced", value: o.invoiceCount > 0 ? `${formatRaw(o.invoicedTotal)} across ${o.invoiceCount} invoice${o.invoiceCount === 1 ? "" : "s"}` : "No invoices yet" },
+          { label: "Paid", value: <Money>{formatRaw(o.paidTotal)}</Money> },
+          { label: "Release after", value: o.releaseAfter ? formatDay(o.releaseAfter, { year: "always" }) : "No release date" },
+          { label: "Opened", value: o.openTx ? <TxLink href={`${explorer}/tx/${o.openTx}`} label="View the opening transaction on the Arc explorer">{o.openTx.slice(0, 10)}…</TxLink> : "Not recorded" },
+        ]}
+      />
       <div>
         {!closed ? (
-          <div className="mt-3 flex flex-wrap gap-2">
-            <CloseButton
-              businessId={businessId}
-              poRef={o.poRef}
-              poNumber={o.poNumber}
-              wallets={wallets}
-              onMutate={onMutate}
-            />
-          </div>
+          <CloseButton businessId={businessId} poRef={o.poRef} poNumber={o.poNumber} wallets={wallets} onMutate={onMutate} />
         ) : (
-          <p className="text-sm text-graphite">
+          <p className="text-graphite">
             Closed {o.closedAt ? formatDay(o.closedAt, { year: "always" }) : ""}
             {o.closedTx ? (
               <>
                 {" · "}
-                <a
-                  href={`https://explorer.arc.net/tx/${o.closedTx}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline decoration-rule underline-offset-4"
-                >
-                  tx {o.closedTx.slice(0, 10)}…
-                </a>
+                <TxLink href={`${explorer}/tx/${o.closedTx}`} label="View the closing transaction on the Arc explorer">{o.closedTx.slice(0, 10)}…</TxLink>
               </>
             ) : null}
           </p>
         )}
-        {msg ? (
-          <p className={`mt-3 text-sm ${step === "error" ? "text-red" : "text-seal"}`}>{msg}</p>
-        ) : null}
       </div>
     </div>
   );
@@ -354,7 +303,7 @@ function CloseButton({
           id={`btn-close-${poRef.slice(2, 10)}`}
           onClick={() => setConfirming(true)}
           disabled={step === "signing" || step === "recording"}
-          className="rounded-doc border border-rule px-3 py-1.5 text-xs hover:border-ink disabled:opacity-50"
+          className={buttonClass({ variant: "secondary", size: "sm" })}
         >
           Close order
         </button>
@@ -369,13 +318,13 @@ function CloseButton({
               id={`btn-close-confirm-${poRef.slice(2, 10)}`}
               onClick={() => startTransition(doClose)}
               disabled={step === "signing" || step === "recording"}
-              className="rounded-doc bg-ink px-3 py-2 text-sm text-paper disabled:opacity-50"
+              className={buttonClass()}
             >
               {step === "signing" ? "Waiting for wallet…" : step === "recording" ? "Recording…" : "Close the order"}
             </button>
             <button
               onClick={() => setConfirming(false)}
-              className="rounded-doc border border-rule px-3 py-2 text-sm"
+              className={buttonClass({ variant: "secondary" })}
             >
               Back
             </button>
@@ -402,7 +351,6 @@ function NewOrderSheet({
   onClose: () => void;
   onMutate: () => void;
 }) {
-  const headingId = useId();
   const [step, setStep] = useState<Step>("idle");
   const [msg, setMsg] = useState<string | null>(null);
   const [vendorWarning, setVendorWarning] = useState<string | null>(null);
@@ -457,123 +405,65 @@ function NewOrderSheet({
   };
 
   return (
-    <Overlay label={{ id: headingId }} onClose={onClose}>
-      <form onSubmit={handleSubmit} className="space-y-4 p-7">
-        <h2 id={headingId} className="font-display text-3xl">New order</h2>
-        <p className="text-sm text-graphite">
-          The vendor quotes this order number on their invoice; the Steward matches it. The Vault checks every rule
-          again before any payment leaves.
-        </p>
+    <Overlay
+      title="New order"
+      description="The vendor quotes the order number on their invoice and the Steward matches it. The Vault checks every rule again before any payment leaves."
+      onClose={onClose}
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Field label="Order number">
+          {(a) => (
+            <input {...a} required value={poNumber} onChange={(e) => setPoNumber(e.target.value)} placeholder="PO-2026-0044" maxLength={64} className={controlClass} />
+          )}
+        </Field>
 
-        <label className="block text-sm">
-          PO number
-          <input
-            id="input-po-number"
-            required
-            value={poNumber}
-            onChange={(e) => setPoNumber(e.target.value)}
-            placeholder="PO-2026-0044"
-            maxLength={64}
-            className="mt-1 w-full rounded-doc border border-rule bg-paper px-3 py-2"
-          />
-        </label>
-
-        <label className="block text-sm">
-          Vendor
-          <select
-            id="input-vendor"
-            value={pickedSeal}
-            onChange={(e) => setPickedSeal(e.target.value)}
-            className="mt-1 w-full rounded-doc border border-rule bg-paper px-3 py-2"
-          >
-            {vendors.map((v) => (
-              <option key={v.seal} value={v.seal}>{v.name}</option>
-            ))}
-            <option value="other">Another vendor…</option>
-          </select>
-        </label>
+        <Field label="Vendor">
+          {(a) => (
+            <select {...a} value={pickedSeal} onChange={(e) => setPickedSeal(e.target.value)} className={controlClass}>
+              {vendors.map((v) => (
+                <option key={v.seal} value={v.seal}>{v.name}</option>
+              ))}
+              <option value="other">Another vendor…</option>
+            </select>
+          )}
+        </Field>
 
         {pickedSeal === "other" ? (
-          <label className="block text-sm">
-            Their Seal address
-            <input
-              id="input-vendor-seal"
-              required
-              value={otherSeal}
-              onChange={(e) => setOtherSeal(e.target.value)}
-              placeholder="0x…"
-              className="mt-1 w-full rounded-doc border border-rule bg-paper px-3 py-2 font-mono text-xs"
-            />
-            <span className="mt-1 block text-xs text-graphite">
-              It's on their invoice and on their Symbolon profile.
-            </span>
-          </label>
+          <Field label="Their Seal address" hint="It is on their invoice and on their Symbolon profile.">
+            {(a) => (
+              <input {...a} required value={otherSeal} onChange={(e) => setOtherSeal(e.target.value)} placeholder="0x…" spellCheck={false} className={`${controlClass} font-mono`} />
+            )}
+          </Field>
         ) : null}
 
-        <label className="block text-sm">
-          Amount in dollars (for example 14000.00)
-          <input
-            id="input-amount"
-            required
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="14000.00"
-            inputMode="decimal"
-            className="mt-1 w-full rounded-doc border border-rule bg-paper px-3 py-2"
-          />
-        </label>
+        <Field label="Amount (USDC)">
+          {(a) => (
+            <input {...a} required value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="14000.00" inputMode="decimal" className={controlClass} />
+          )}
+        </Field>
 
-        <label className="block text-sm">
-          Description (optional)
-          <input
-            id="input-description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="4 workstations for the design team"
-            maxLength={500}
-            className="mt-1 w-full rounded-doc border border-rule bg-paper px-3 py-2"
-          />
-        </label>
+        <Field label="Description" optional>
+          {(a) => (
+            <input {...a} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="4 workstations for the design team" maxLength={500} className={controlClass} />
+          )}
+        </Field>
 
-        <label className="block text-sm">
-          Not before (optional — earliest date the Vault will pay against this order)
-          <input
-            id="input-release-date"
-            type="date"
-            value={releaseDate}
-            onChange={(e) => setReleaseDate(e.target.value)}
-            className="mt-1 w-full rounded-doc border border-rule bg-paper px-3 py-2"
-          />
-        </label>
+        <Field label="Not before" optional hint="The earliest date the Vault will pay against this order.">
+          {(a) => <input {...a} type="date" value={releaseDate} onChange={(e) => setReleaseDate(e.target.value)} className={controlClass} />}
+        </Field>
 
         {vendorWarning ? (
-          <p className="rounded-doc border border-amber-400/30 bg-amber-50/10 px-3 py-2 text-sm text-amber-600 dark:text-amber-400">
-            {vendorWarning}
-          </p>
+          <p className="rounded-doc border border-warn/40 bg-warn-wash px-3 py-2 text-warn">{vendorWarning}</p>
         ) : null}
 
-        {msg ? (
-          <p className={`text-sm ${step === "error" ? "text-red" : "text-seal"}`}>{msg}</p>
-        ) : null}
+        {msg ? (step === "error" ? <InlineError>{msg}</InlineError> : <p role="status" className="text-seal">{msg}</p>) : null}
 
-        <div className="flex gap-3">
-          <button
-            id="btn-open-order-submit"
-            type="submit"
-            disabled={step === "signing" || step === "recording"}
-            className="flex-1 rounded-doc bg-ink py-2.5 font-medium text-paper disabled:opacity-50"
-          >
+        <Overlay.Footer>
+          <Button id="btn-new-order-cancel" variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button id="btn-open-order-submit" type="submit" busy={step === "signing" || step === "recording"}>
             {step === "signing" ? "Waiting for wallet…" : step === "recording" ? "Recording…" : "Open the order"}
-          </button>
-          <button
-            type="button"
-            id="btn-new-order-cancel"
-            onClick={onClose}
-            className="rounded-doc border border-rule px-4 py-2.5"
-          >
-            Cancel
-          </button>
-        </div>
+          </Button>
+        </Overlay.Footer>
       </form>
     </Overlay>
   );

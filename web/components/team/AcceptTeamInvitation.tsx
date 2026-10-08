@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { postJson } from "@/lib/client/api";
+import { buttonClass } from "@/components/ui/button";
 
 export function AcceptTeamInvitation({ token }: { token: string }) {
   const [busy, setBusy] = useState(false);
@@ -32,12 +33,12 @@ export function AcceptTeamInvitation({ token }: { token: string }) {
       <button
         onClick={handleAccept}
         disabled={busy}
-        className="rounded-doc bg-ink px-6 py-3 text-sm font-medium text-paper hover:bg-ink/90 disabled:opacity-50 transition-colors"
+        className={buttonClass()}
       >
         {busy ? "Joining team..." : "Accept team invitation"}
       </button>
 
-      {error && <p className="mt-3 text-xs text-crimson">{error}</p>}
+      {error && <p className="mt-3 text-xs text-red">{error}</p>}
     </div>
   );
 }

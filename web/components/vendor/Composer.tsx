@@ -12,6 +12,10 @@ import { D, E, registerMotion, strike } from "@/lib/motion";
 import type { FromFile, Prefill } from "@/lib/server/upload";
 import { signInvoice } from "./seal-signer";
 import { Address } from "@/components/Address";
+import { buttonClass } from "@/components/ui/button";
+import { InlineError } from "@/components/ui/States";
+import { Eyebrow, PageTitle } from "@/components/ui/Type";
+import { controlClass } from "@/components/ui/Field";
 
 export interface ClientOption {
   id: string;
@@ -39,10 +43,10 @@ interface Prepared {
   fingerprint: string;
 }
 
-const box = "rounded-doc border border-rule bg-paper px-3 py-2 text-[15px] focus:border-ink focus:outline-none";
-const label = "block text-sm";
-const primary = "rounded-doc bg-ink px-5 py-3 font-medium text-paper disabled:opacity-40";
-const ghost = "rounded-doc border border-rule px-4 py-2.5 text-sm hover:border-ink disabled:opacity-40";
+const box = controlClass;
+const label = "block text-sm font-medium text-ink";
+const primary = buttonClass();
+const ghost = buttonClass({ variant: "secondary" });
 const NEW = "new";
 
 /** Write an invoice (V4), see the exact sealed text, sign it in your own wallet, and get its link (V6). Plan 05i. */
@@ -143,9 +147,9 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
       <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <InvoiceDoc document={prepared.document} fingerprint={prepared.fingerprint} handle={handle} />
         <section aria-labelledby="review" className="lg:pt-6">
-          <h1 id="review" className="font-display text-4xl leading-none">
+          <PageTitle id="review">
             Check it, then sign.
-          </h1>
+          </PageTitle>
           <p className="mt-3 max-w-[52ch] text-graphite">
             This is the exact text your wallet will be asked to sign. Signing seals it: a sealed invoice can’t be edited, and the fingerprint under it changes with any change to a word or a number.
           </p>
@@ -167,9 +171,7 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
             </button>
           </div>
           {problem ? (
-            <p role="alert" className="mt-4 max-w-[52ch] text-sm text-red">
-              {problem}
-            </p>
+            <InlineError className="mt-4 max-w-[52ch]">{problem}</InlineError>
           ) : null}
         </section>
       </div>
@@ -183,12 +185,12 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
           <InvoiceDoc document={prepared.document} fingerprint={sent.fingerprint} handle={handle} sealed />
         </div>
         <section aria-labelledby="sent" className="lg:pt-6">
-          <p className="font-mono text-xs uppercase tracking-[0.16em] text-seal">Sealed and saved</p>
-          <h1 id="sent" className="mt-2 font-display text-5xl leading-none">
+          <Eyebrow className="text-seal">Sealed and saved</Eyebrow>
+          <PageTitle id="sent" className="mt-2">
             Invoice {prepared.document.invoiceNumber} is sealed.
-          </h1>
+          </PageTitle>
           <p className="mt-3 max-w-[52ch] text-graphite">Send {prepared.document.payer.name} this link. Anyone with it can open the invoice and check that it is genuine.</p>
-          <p className="mt-5 break-all rounded-doc border border-rule bg-paper-raised p-3 font-mono text-xs">{link}</p>
+          <p className="mt-5 break-all rounded-doc border border-rule bg-paper-raised px-4 py-3 font-mono text-sm">{link}</p>
           <div className="mt-4 flex flex-wrap gap-3">
             <button
               onClick={() => void navigator.clipboard?.writeText(link).then(() => setCopied(true))}
@@ -210,9 +212,9 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
   }
 
   return (
-    <form onSubmit={review} className="max-w-2xl space-y-8">
+    <form onSubmit={review} className="max-w-4xl space-y-8">
       <div>
-        <h1 className="font-display text-5xl leading-none">New invoice</h1>
+        <PageTitle>New invoice</PageTitle>
         <p className="mt-3 text-graphite">
           {fromFile ? "Read from your file. Check every field: the file is a draft, not an invoice." : "Fill it in, check the sealed text, then sign it with your wallet."}
           {!fromFile ? (
@@ -229,7 +231,7 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
       {fromFile ? <FromFileNotes f={fromFile} /> : null}
 
       <fieldset className="space-y-3">
-        <legend className="text-sm text-graphite">Client</legend>
+        <legend className="mb-1.5 text-sm font-medium text-ink">Client</legend>
         <select className={`${box} w-full`} value={clientId} onChange={(e) => setClientId(e.target.value)} aria-label="Client">
           {clients.map((c) => (
             <option key={c.id} value={c.id}>
@@ -260,7 +262,7 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
               aria-label={newBy === "vault" ? "Vault address" : "Email"}
               required
             />
-            <p className="text-xs text-graphite">A business on Symbolon can share its Vault address with you. Symbolon doesn’t list businesses.</p>
+            <p className="text-sm text-graphite">A business on Symbolon can share its Vault address with you. Symbolon doesn’t list businesses.</p>
           </div>
         ) : chosen ? (
           <p className="break-all text-xs text-graphite">{chosen.vault ? <Address value={chosen.vault} full /> : chosen.email}</p>
@@ -284,23 +286,23 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
           </select>
         </label>
       </div>
-      <p className="-mt-4 text-xs text-graphite">Paid on Arc. {currency === "EURC" ? "EURC is paid on Arc only." : ""}</p>
+      <p className="-mt-4 text-sm text-graphite">Paid on Arc. {currency === "EURC" ? "EURC is paid on Arc only." : ""}</p>
 
       <fieldset className="space-y-3">
-        <legend className="text-sm text-graphite">Lines</legend>
+        <legend className="mb-1.5 text-sm font-medium text-ink">Lines</legend>
         {lines.map((l, i) => (
           <div key={l.id} className="grid gap-2 rounded-doc border border-rule p-3 sm:grid-cols-[1fr_5rem_7rem_auto]">
             <textarea className={`${box} sm:col-span-4`} rows={2} value={l.description} onChange={(e) => setLine(l.id, { description: e.target.value })} placeholder={`Line ${i + 1}: what you did`} aria-label={`Line ${i + 1} description`} required />
-            <label className="text-xs text-graphite sm:col-start-2 sm:row-start-2">
+            <label className="text-sm text-graphite sm:col-start-2 sm:row-start-2">
               Qty
               <input className={`${box} mt-1 w-full`} inputMode="decimal" value={l.quantity} onChange={(e) => setLine(l.id, { quantity: e.target.value })} required />
             </label>
-            <label className="text-xs text-graphite sm:col-start-3 sm:row-start-2">
+            <label className="text-sm text-graphite sm:col-start-3 sm:row-start-2">
               Unit price
               <input className={`${box} mt-1 w-full`} inputMode="decimal" value={l.unitPrice} onChange={(e) => setLine(l.id, { unitPrice: e.target.value })} placeholder="0.00" required />
             </label>
             {lines.length > 1 ? (
-              <button type="button" onClick={() => setLines((ls) => ls.filter((x) => x.id !== l.id))} className="self-end text-xs text-graphite underline decoration-rule underline-offset-4 sm:col-start-4 sm:row-start-2">
+              <button type="button" onClick={() => setLines((ls) => ls.filter((x) => x.id !== l.id))} className="min-h-9 self-end text-sm text-graphite underline decoration-rule underline-offset-4 sm:col-start-4 sm:row-start-2">
                 Remove
               </button>
             ) : null}
@@ -331,26 +333,26 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
         </label>
         {earlyOn ? (
           <div className="space-y-2 rounded-doc border border-rule p-4">
-            <p className="text-xs text-graphite">Each tier is a discount under 10% if paid within some days, and later tiers must be smaller. It only applies if the payer chooses it; you sign these terms.</p>
+            <p className="text-sm text-graphite">Each tier is a discount under 10% if paid within some days, and later tiers must be smaller. It only applies if the payer chooses it; you sign these terms.</p>
             {tiers.map((t, i) => (
               <div key={t.id} className="flex flex-wrap items-end gap-3">
-                <label className="text-xs text-graphite">
+                <label className="text-sm text-graphite">
                   Discount (%)
                   <input className={`${box} mt-1 block w-24`} inputMode="decimal" value={t.percent} onChange={(e) => setTier(t.id, { percent: e.target.value })} aria-label={`Tier ${i + 1} discount`} />
                 </label>
-                <label className="text-xs text-graphite">
+                <label className="text-sm text-graphite">
                   Paid within (days)
                   <input className={`${box} mt-1 block w-28`} inputMode="numeric" value={t.days} onChange={(e) => setTier(t.id, { days: e.target.value.replace(/\D/g, "") })} aria-label={`Tier ${i + 1} days`} />
                 </label>
                 {tiers.length > 1 ? (
-                  <button type="button" onClick={() => setTiers((ts) => ts.filter((x) => x.id !== t.id))} className="pb-2 text-xs text-graphite underline decoration-rule underline-offset-4">
+                  <button type="button" onClick={() => setTiers((ts) => ts.filter((x) => x.id !== t.id))} className="min-h-9 pb-2 text-sm text-graphite underline decoration-rule underline-offset-4">
                     Remove
                   </button>
                 ) : null}
               </div>
             ))}
             {tiers.length < 3 ? (
-              <button type="button" onClick={() => setTiers((ts) => [...ts, { id: nextId.current++, percent: "0.5", days: "14" }])} className="text-xs underline decoration-rule underline-offset-4">
+              <button type="button" onClick={() => setTiers((ts) => [...ts, { id: nextId.current++, percent: "0.5", days: "14" }])} className="min-h-9 text-sm underline decoration-rule underline-offset-4">
                 Add a tier
               </button>
             ) : null}
@@ -364,9 +366,7 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
       </label>
 
       {problem ? (
-        <p role="alert" className="text-sm text-red">
-          {problem}
-        </p>
+        <InlineError>{problem}</InlineError>
       ) : null}
       <button disabled={busy} className={primary}>
         {busy ? "Preparing…" : "Review the sealed text"}

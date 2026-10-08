@@ -59,7 +59,7 @@ export function BusinessNav({
         aria-expanded={open}
         aria-controls="business-nav-list"
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center justify-between border-t border-rule px-6 py-3 text-left text-[15px] md:hidden"
+        className="flex w-full items-center justify-between border-t border-rule min-h-11 px-6 py-3 text-left text-base lg:hidden"
       >
         <span>
           <span className="text-graphite">Menu · </span>
@@ -67,7 +67,7 @@ export function BusinessNav({
         </span>
         <span aria-hidden className="text-graphite">{open ? "▴" : "▾"}</span>
       </button>
-      <ul id="business-nav-list" className={`${open ? "flex" : "hidden"} flex-col gap-0.5 px-3 py-2 md:flex`}>
+      <ul id="business-nav-list" className={`${open ? "flex" : "hidden"} flex-col gap-0.5 px-3 py-2 lg:flex`}>
         {nav.map((item) => {
           const active = isActive(item.href);
           return (
@@ -75,7 +75,7 @@ export function BusinessNav({
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={`flex items-center justify-between rounded-sm px-3 py-2 text-[15px] transition-colors duration-[var(--dur-quick)] ${
+                className={`flex min-h-10 items-center justify-between rounded-doc px-3 py-2 text-sm transition-colors duration-[var(--dur-quick)] ${
                   active ? "bg-ink text-paper" : "text-ink/80 hover:bg-rule-soft/70"
                 }`}
               >
@@ -92,7 +92,7 @@ export function BusinessNav({
 
                   <span
                     aria-label={`${item.count} item${item.count === 1 ? "" : "s"}`}
-                    className={`ml-2 rounded-full px-1.5 py-0.5 font-mono text-[10px] tabular-nums leading-none ${
+                    className={`ml-2 rounded-full px-2 py-0.5 text-xs font-medium leading-none ${
                       active ? "bg-paper/20 text-paper" : "bg-ink/10 text-ink"
                     }`}
                   >

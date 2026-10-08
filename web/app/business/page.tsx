@@ -15,6 +15,9 @@ import { StewardSwitch } from "@/components/steward/StewardSwitch";
 import { loadAhead, loadNeedsYou, loadToday } from "@/lib/server/home";
 import { HomeQueues } from "@/components/home/HomeQueues";
 import { showMoney } from "@/lib/format";
+import { LinkButton } from "@/components/ui/button";
+import { Money } from "@/components/ui/Money";
+import { Eyebrow, PageTitle } from "@/components/ui/Type";
 
 export const dynamic = "force-dynamic";
 
@@ -40,105 +43,102 @@ export default async function BusinessHome() {
   return (
     <Shell where={where} current={{ kind: "business", id: b?.id ?? "" }}>
       {b ? (
-        <div className="max-w-[1080px]">
-          <div className="max-w-[760px]">
-            <h1 className="font-display text-4xl leading-tight">{b.name}</h1>
-            <p className="mt-2 text-graphite">
-              You’re signed in as <span className="capitalize text-ink">{b.role}</span>.
-            </p>
-            <p className="mt-5 text-sm">
-              <Link href="/business/vendors" className="underline decoration-rule underline-offset-4">
-                Manage vendors
-              </Link>
-            </p>
-            <dl className="mt-8 border-t border-rule text-sm">
-              <div className="grid grid-cols-[10rem_1fr] gap-3 border-b border-rule-soft py-3">
-                <dt className="text-graphite">Vault</dt>
-                <dd>
-                  {b.vault ? (
-                    <Address value={b.vault} full explorer={explorer} copy />
-                  ) : b.role === "owner" ? (
-                    <span>
-                      Not created yet.{" "}
-                      <Link href={`/setup?business=${b.id}`} className="underline decoration-rule underline-offset-4">
-                        Finish setting up
-                      </Link>
-                    </span>
+        <div>
+          <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+            <div className="min-w-0">
+              <Eyebrow className="capitalize">{b.role}</Eyebrow>
+              <PageTitle className="mt-1">{b.name}</PageTitle>
+            </div>
+            <LinkButton href="/business/vendors" variant="secondary">Manage vendors</LinkButton>
+          </div>
+
+          <dl className="mt-8 divide-y divide-rule-soft rounded-doc border border-rule px-5 text-sm">
+            <div className="grid gap-1 py-3.5 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
+              <dt className="text-graphite">Vault</dt>
+              <dd className="min-w-0">
+                {b.vault ? (
+                  <Address value={b.vault} full explorer={explorer} copy />
+                ) : b.role === "owner" ? (
+                  <span>
+                    Not created yet.{" "}
+                    <Link href={`/setup?business=${b.id}`} className="underline decoration-rule underline-offset-4">
+                      Finish setting up
+                    </Link>
+                  </span>
+                ) : (
+                  "Not created yet. Its owner hasn’t finished setting up."
+                )}
+              </dd>
+            </div>
+            {b.vault && standing ? (
+              <div className="grid gap-1 py-3.5 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
+                <dt className="text-graphite">Steward</dt>
+                <dd className="min-w-0">
+                  {standing.kind === "none" ? (
+                    "No Steward assigned. This Vault was made before Stewards were set up at creation."
+                  ) : standing.kind === "unknown" || standing.kind === "mismatch" ? (
+                    <>
+                      <span className="text-red">
+                        {standing.kind === "unknown"
+                          ? "Can’t confirm the Steward’s state right now."
+                          : "The Steward this Vault reports isn’t the wallet we set up for this business. Don’t rely on it."}
+                      </span>
+                      {/* The owner can always pause, whatever the Steward's standing */}
+                      {pause && b.role === "owner" ? (
+                        <PauseControl
+                          businessId={b.id}
+                          paused={pause.known && pause.paused}
+                          block={pause.known ? pause.block.toString() : "0"}
+                          known={pause.known}
+                          signer={ownerSigner}
+                          explorer={explorer}
+                        />
+                      ) : null}
+                    </>
                   ) : (
-                    "Not created yet. Its owner hasn’t finished setting up."
+                    <>
+                      <StewardSwitch
+                        businessId={b.id}
+                        state={standing.kind}
+                        block={standing.block.toString()}
+                        steward={standing.steward}
+                        signer={b.role === "owner" ? signerPlanFor(session, config) : null}
+                        explorer={explorer}
+                      />
+                      <p className="mt-3">
+                        <Link href="/business/steward" className="underline decoration-rule underline-offset-4 hover:text-ink">
+                          Steward settings and activity →
+                        </Link>
+                      </p>
+                    </>
                   )}
                 </dd>
               </div>
-              {b.vault && standing ? (
-                <div className="grid grid-cols-[10rem_1fr] gap-3 border-b border-rule-soft py-3">
-                  <dt className="text-graphite">Steward</dt>
-                  <dd>
-                    {standing.kind === "none" ? (
-                      "No Steward assigned. This Vault was made before Stewards were set up at creation."
-                    ) : standing.kind === "unknown" || standing.kind === "mismatch" ? (
-                      <>
-                        <span className="text-red">
-                          {standing.kind === "unknown"
-                            ? "Can’t confirm the Steward’s state right now."
-                            : "The Steward this Vault reports isn’t the wallet we set up for this business. Don’t rely on it."}
-                        </span>
-                        {/* The owner can always pause, whatever the Steward's standing */}
-                        {pause && b.role === "owner" ? (
-                          <PauseControl
-                            businessId={b.id}
-                            paused={pause.known && pause.paused}
-                            block={pause.known ? pause.block.toString() : "0"}
-                            known={pause.known}
-                            signer={ownerSigner}
-                            explorer={explorer}
-                          />
-                        ) : null}
-                      </>
-                    ) : (
-                      <>
-                        <StewardSwitch
-                          businessId={b.id}
-                          state={standing.kind}
-                          block={standing.block.toString()}
-                          steward={standing.steward}
-                          signer={b.role === "owner" ? signerPlanFor(session, config) : null}
-                          explorer={explorer}
-                        />
-                        <div className="mt-2">
-                          <Link href="/business/steward" className="text-xs text-graphite hover:text-ink underline decoration-rule underline-offset-4">
-                            Steward settings & activity →
-                          </Link>
-                        </div>
-                      </>
-                    )}
-                  </dd>
-                </div>
-              ) : null}
-              {b.vault ? (
-                <div className="grid grid-cols-[10rem_1fr] gap-3 border-b border-rule-soft py-3">
-                  <dt className="text-graphite">USDC held</dt>
-                  <dd>
-                    {summary?.ok ? (
-                      <>
-                        {showMoney(formatUnits(summary.usdc, summary.decimals), "USDC")}
-                        <span className="ml-2 text-xs text-graphite">read from Arc at block {summary.block.toString()}</span>
-                      </>
-                    ) : (
-                      <span className="text-red">Can’t confirm the balance right now.</span>
-                    )}
-                  </dd>
-                </div>
-              ) : null}
-            </dl>
-          </div>
+            ) : null}
+            {b.vault ? (
+              <div className="grid gap-1 py-3.5 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
+                <dt className="text-graphite">USDC held</dt>
+                <dd>
+                  {summary?.ok ? (
+                    <>
+                      <Money className="font-medium">{showMoney(formatUnits(summary.usdc, summary.decimals), "USDC")}</Money>
+                      <span className="ml-2 text-graphite">read from Arc at block {summary.block.toString()}</span>
+                    </>
+                  ) : (
+                    <span className="text-red">Can’t confirm the balance right now.</span>
+                  )}
+                </dd>
+              </div>
+            ) : null}
+          </dl>
 
           {needsYou && today ? (
             <HomeQueues needsYou={needsYou} today={today} ahead={ahead ?? undefined} />
           ) : null}
         </div>
       ) : (
-        <div className="max-w-[760px]">
-          <h1 className="font-display text-4xl leading-tight">No business yet</h1>
+        <div>
+          <PageTitle>No business yet</PageTitle>
           <p className="mt-2 text-graphite">
             You don’t belong to a business.{" "}
             <Link href="/setup" className="text-ink underline decoration-rule underline-offset-4">

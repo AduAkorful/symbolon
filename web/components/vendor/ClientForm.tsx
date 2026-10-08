@@ -3,8 +3,14 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { postJson } from "@/lib/client/api";
+import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/Field";
+import { Segmented } from "@/components/ui/Segmented";
+import { InlineError } from "@/components/ui/States";
+import { SectionTitle } from "@/components/ui/Type";
+import { controlClass } from "@/components/ui/Field";
 
-const box = "rounded-doc border border-rule bg-paper px-3 py-2 text-[15px] focus:border-ink focus:outline-none";
+const box = controlClass;
 
 /** Adds (or updates) a client: a name and a Vault address or an email. Symbolon doesn't list businesses; you enter theirs. */
 export function ClientForm() {
@@ -32,29 +38,22 @@ export function ClientForm() {
   }
 
   return (
-    <form onSubmit={add} className="mt-8 max-w-xl space-y-3 rounded-doc border border-rule p-4">
-      <h2 className="font-display text-xl">Add a client</h2>
-      <label className="block text-sm">
-        Their name
-        <input className={`${box} mt-1 w-full`} value={name} onChange={(e) => setName(e.target.value)} required minLength={2} maxLength={200} />
-      </label>
-      <div role="radiogroup" aria-label="How to reach them" className="flex gap-4 text-sm">
-        {(["vault", "email"] as const).map((k) => (
-          <label key={k} className="flex items-center gap-2">
-            <input type="radio" name="by" checked={by === k} onChange={() => setBy(k)} />
-            {k === "vault" ? "Their Vault address" : "Their email"}
-          </label>
-        ))}
-      </div>
-      <input className={`${box} w-full ${by === "vault" ? "font-mono" : ""}`} value={value} onChange={(e) => setValue(e.target.value)} placeholder={by === "vault" ? "0x…" : "ap@company.example"} aria-label={by === "vault" ? "Vault address" : "Email"} required />
-      {problem ? (
-        <p role="alert" className="text-sm text-red">
-          {problem}
-        </p>
-      ) : null}
-      <button disabled={busy} className="rounded-doc bg-ink px-4 py-2 text-sm font-medium text-paper disabled:opacity-40">
-        {busy ? "Saving…" : "Save client"}
-      </button>
+    <form onSubmit={add} className="mt-10 max-w-xl space-y-4 rounded-doc border border-rule px-6 py-6">
+      <SectionTitle>Add a client</SectionTitle>
+      <Field label="Their name">
+        {(a) => <input {...a} className={controlClass} value={name} onChange={(e) => setName(e.target.value)} required minLength={2} maxLength={200} />}
+      </Field>
+      <Segmented
+        label="How to reach them"
+        value={by}
+        options={[{ value: "vault", label: "Their Vault address" }, { value: "email", label: "Their email" }]}
+        onChange={setBy}
+      />
+      <Field label={by === "vault" ? "Vault address" : "Email"}>
+        {(a) => <input {...a} className={`${controlClass} ${by === "vault" ? "font-mono" : ""}`} value={value} onChange={(e) => setValue(e.target.value)} placeholder={by === "vault" ? "0x…" : "ap@company.example"} spellCheck={false} required />}
+      </Field>
+      {problem ? <InlineError>{problem}</InlineError> : null}
+      <Button type="submit" busy={busy}>{busy ? "Saving…" : "Save the client"}</Button>
     </form>
   );
 }

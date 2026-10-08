@@ -10,6 +10,9 @@ import { getDb } from "@/lib/server/db";
 import { loadPublicInvoice } from "@/lib/server/public-invoice";
 import { showAmount, showDate } from "@/lib/format";
 import { Address } from "@/components/Address";
+import { buttonClass } from "@/components/ui/button";
+import { Eyebrow, SectionTitle } from "@/components/ui/Type";
+import { CONTAINER } from "@/components/shell/container";
 
 export const dynamic = "force-dynamic";
 // An invoice link is for the person it was sent to, not for search engines
@@ -27,7 +30,7 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
       <div className="min-h-screen">
         <PublicHeader />
         <main className="mx-auto max-w-[760px] px-6 pb-24 pt-14 md:px-10">
-          <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-red">Did not pass the check</p>
+          <p className="font-mono text-xs uppercase tracking-[0.18em] text-red">Did not pass the check</p>
           <h1 className="mt-3 font-display text-[clamp(2rem,4vw,3rem)] leading-[1.05]">This invoice can’t be shown as genuine.</h1>
           <p className="mt-4 text-graphite">It was checked just now and did not match its signature. Don’t pay from it. Ask the sender for a new link.</p>
           <ul className="mt-6 list-disc space-y-1 pl-5 text-sm">
@@ -56,8 +59,8 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
   return (
     <div className="min-h-screen">
       <PublicHeader />
-      <main className="mx-auto max-w-[1180px] px-6 pb-24 pt-12 md:px-10 print:pt-0">
-        <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-graphite">Invoice for {d.payer.name}</p>
+      <main className={`${CONTAINER} pb-24 pt-12 print:pt-0`}>
+        <Eyebrow>Invoice for {d.payer.name}</Eyebrow>
         <h1 className="mt-3 max-w-[20ch] font-display text-[clamp(2.2rem,5vw,3.8rem)] leading-[1.02] tracking-[-0.01em]">
           {d.vendor.name} sent you an invoice for <span className="whitespace-nowrap">{showAmount(d.total)} {d.currency.symbol}.</span>
         </h1>
@@ -68,9 +71,9 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
 
           <section aria-labelledby="checks" className="space-y-6">
             <div>
-              <h2 id="checks" className="font-display text-2xl">
+              <SectionTitle id="checks">
                 Checked just now
-              </h2>
+              </SectionTitle>
               <ul className="mt-3 space-y-2 text-sm">
                 <li>
                   <span className="text-seal" aria-hidden>
@@ -93,7 +96,7 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
             </div>
 
             <div className="flex flex-wrap gap-3 print:hidden">
-              <a href={`/invoice/${view.fingerprint}/file`} className="rounded-doc bg-ink px-4 py-2.5 text-sm font-medium text-paper">
+              <a href={`/invoice/${view.fingerprint}/file`} className={buttonClass()}>
                 Download the sealed file
               </a>
               <PrintButton />
@@ -101,9 +104,9 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
 
             <div className="flex items-center gap-4 border-t border-rule pt-5">
               <QR text={link} />
-              <p className="max-w-[26ch] break-all text-xs text-graphite">
+              <p className="min-w-0 flex-1 break-all text-xs text-graphite">
                 This invoice’s link
-                <span className="mt-1 block font-mono">{link}</span>
+                <span data-wrap-ok className="mt-1 block font-mono">{link}</span>
               </p>
             </div>
             <p className="text-xs text-graphite">Paying from this page isn’t available yet.</p>

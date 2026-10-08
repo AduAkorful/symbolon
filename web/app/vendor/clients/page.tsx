@@ -3,6 +3,9 @@ import { Shell } from "@/components/shell/Shell";
 import { getDb } from "@/lib/server/db";
 import { listClients } from "@/lib/server/vendor";
 import { requireVendorPage } from "@/lib/server/vendor-page";
+import { EmptyState } from "@/components/ui/States";
+import { Lead, PageTitle } from "@/components/ui/Type";
+import { shortAddress, shortenAddressesIn } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -11,17 +14,17 @@ export default async function VendorClients() {
   const clients = await listClients(await getDb(), session.user);
   return (
     <Shell where={where} current={{ kind: "vendor" }}>
-      <div className="max-w-[760px]">
-        <h1 className="font-display text-4xl leading-tight">Clients</h1>
-        <p className="mt-2 text-graphite">The businesses you invoice. A client is remembered when you send them an invoice.</p>
+      <div>
+        <PageTitle>Clients</PageTitle>
+        <Lead className="mt-3">The businesses you invoice. A client is remembered once you send them an invoice.</Lead>
         {clients.length === 0 ? (
-          <p className="mt-6 text-graphite">No clients yet.</p>
+          <EmptyState title="No clients yet" className="mt-8">Add one below, or send an invoice and they are added for you.</EmptyState>
         ) : (
-          <ul className="mt-6 border-t border-rule text-sm">
+          <ul className="mt-8 divide-y divide-rule-soft border-y border-rule">
             {clients.map((c) => (
-              <li key={c.id} className="border-b border-rule-soft py-3">
-                <p className="font-medium">{c.name}</p>
-                <p className="break-all font-mono text-xs text-graphite">{[c.vault, c.email].filter(Boolean).join(" · ")}</p>
+              <li key={c.id} className="py-4">
+                <p className="font-medium text-ink">{shortenAddressesIn(c.name)}</p>
+                <p className="mt-0.5 break-words text-sm text-graphite">{[c.vault ? shortAddress(c.vault) : null, c.email].filter(Boolean).join(" · ")}</p>
               </li>
             ))}
           </ul>

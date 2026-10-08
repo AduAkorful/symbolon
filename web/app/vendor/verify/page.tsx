@@ -5,6 +5,8 @@ import { loadSpaces } from "@/lib/server/space";
 import { showCodeToSeal } from "@/lib/server/verification";
 import { formatDateTime } from "@/lib/format";
 import { Address } from "@/components/Address";
+import { EmptyState } from "@/components/ui/States";
+import { Lead, PageTitle } from "@/components/ui/Type";
 
 export const dynamic = "force-dynamic";
 
@@ -13,16 +15,29 @@ export default async function VendorVerificationPage() {
   const db = await getDb();
   const where = await loadSpaces(session);
   const requests = await showCodeToSeal(db, session.user);
-  return <Shell where={where} current={{ kind: "vendor" }}>
-    <div className="max-w-[760px]">
-      <h1 className="font-display text-4xl">First-contact checks</h1>
-      <p className="mt-3 max-w-[62ch] text-graphite">A business may call you at a number or channel it already trusts. Read the code below to that person. Do not share it with anyone who contacted you unexpectedly.</p>
-      {requests.length ? <ul className="mt-8 divide-y divide-rule border-y border-rule">{requests.map((r) => <li key={r.id} className="py-5">
-        <p className="font-medium">{r.businessName}</p>
-        <p className="mt-1 text-xs text-graphite">Vault: {r.vault ? <Address value={r.vault} full /> : "not available"}</p>
-        <p className="mt-4 font-mono text-3xl tracking-[0.3em]" aria-label={`Verification code ${r.code}`}>{r.code}</p>
-        <p className="mt-2 text-xs text-graphite">Expires {formatDateTime(r.expiresAt)}</p>
-      </li>)}</ul> : <p className="mt-8 border-y border-rule py-6 text-graphite">No active verification requests.</p>}
-    </div>
-  </Shell>;
+  return (
+    <Shell where={where} current={{ kind: "vendor" }}>
+      <div>
+        <PageTitle>First-contact checks</PageTitle>
+        <Lead className="mt-3">A business may call you on a number or channel it already trusts. Read it the code below. Never share a code with someone who contacted you unexpectedly.</Lead>
+        {requests.length ? (
+          <ul className="mt-8 divide-y divide-rule-soft border-y border-rule">
+            {requests.map((r) => (
+              <li key={r.id} className="py-5">
+                <p className="font-medium text-ink">{r.businessName}</p>
+                <div className="mt-1 flex flex-wrap items-baseline gap-x-3 text-sm text-graphite">
+                  <span>Vault</span>
+                  {r.vault ? <Address value={r.vault} /> : "not available"}
+                </div>
+                <p className="mt-4 font-display text-5xl tracking-[0.25em] text-ink" aria-label={`Verification code ${r.code}`}>{r.code}</p>
+                <p className="mt-2 text-sm text-graphite">Expires {formatDateTime(r.expiresAt)}</p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <EmptyState title="No checks waiting" className="mt-8">When a business wants to verify you by phone, the code to read out shows up here.</EmptyState>
+        )}
+      </div>
+    </Shell>
+  );
 }

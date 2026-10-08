@@ -7,8 +7,14 @@ import { listClients, mySeal } from "@/lib/server/vendor";
 import { listMyInvoices } from "@/lib/server/invoice-send";
 import { loadSpaces } from "@/lib/server/space";
 import { showAmount, showDate } from "@/lib/format";
-import { toneClass, vendorStatus } from "@/lib/invoice-status";
+import { vendorStatus } from "@/lib/invoice-status";
+import { pillTone } from "@/lib/status-tone";
 import { Address } from "@/components/Address";
+import { LinkButton } from "@/components/ui/button";
+import { DataTable } from "@/components/ui/DataTable";
+import { EmptyState } from "@/components/ui/States";
+import { StatusPill } from "@/components/ui/StatusPill";
+import { Eyebrow, PageTitle, SectionTitle } from "@/components/ui/Type";
 
 export const dynamic = "force-dynamic";
 
@@ -23,45 +29,47 @@ export default async function VendorHome() {
 
   return (
     <Shell where={where} current={{ kind: "vendor" }}>
-      <div className="max-w-[760px]">
-        <h1 className="font-display text-4xl leading-tight">{seal.displayName}</h1>
-        <p className="mt-2 text-graphite">
-          <span className="font-mono">@{seal.handle}</span> · your Seal is <Address value={seal.address} full className="text-xs" />
-        </p>
-
-        <div className="mt-8 flex flex-wrap items-center gap-4">
-          <Link href="/vendor/new" className="rounded-doc bg-ink px-5 py-3 font-medium text-paper">
-            New invoice
-          </Link>
-          <span className="text-sm text-graphite">
-            {invoices.length} {invoices.length === 1 ? "invoice" : "invoices"} · {clients.length} {clients.length === 1 ? "client" : "clients"}
-          </span>
+      <div>
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+          <div className="min-w-0">
+            <Eyebrow>@{seal.handle}</Eyebrow>
+            <PageTitle className="mt-1">{seal.displayName}</PageTitle>
+          </div>
+          <LinkButton href="/vendor/new">New invoice</LinkButton>
         </div>
 
-        <h2 className="mt-12 font-display text-2xl">Latest invoices</h2>
+        <dl className="mt-8 divide-y divide-rule-soft rounded-doc border border-rule px-5 text-sm">
+          <div className="grid gap-1 py-3.5 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
+            <dt className="text-graphite">Your Seal</dt>
+            <dd className="min-w-0"><Address value={seal.address} full copy /></dd>
+          </div>
+          <div className="grid gap-1 py-3.5 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
+            <dt className="text-graphite">Sent so far</dt>
+            <dd>{invoices.length} {invoices.length === 1 ? "invoice" : "invoices"} to {clients.length} {clients.length === 1 ? "client" : "clients"}</dd>
+          </div>
+        </dl>
+
+        <SectionTitle className="mt-12">Latest invoices</SectionTitle>
         {invoices.length === 0 ? (
-          <p className="mt-3 text-graphite">You haven’t sent an invoice yet. Write one and sign it with your wallet; you get a link to send.</p>
+          <EmptyState title="No invoices yet" className="mt-4" action={<LinkButton href="/vendor/new">Write your first invoice</LinkButton>}>
+            Write one, sign it with your wallet, and you get a link to send.
+          </EmptyState>
         ) : (
-          <ul className="mt-3 border-t border-rule text-sm">
-            {invoices.slice(0, 5).map((i) => {
-              const st = vendorStatus(i.status);
-              return (
-                <li key={i.fingerprint} className="border-b border-rule-soft">
-                  <Link href={`/vendor/invoices/${i.fingerprint}`} className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 py-3 hover:bg-rule-soft/40 sm:grid-cols-[6rem_1fr_auto_auto]">
-                    <span className="font-mono">No. {i.invoiceNumber}</span>
-                    <span className="min-w-0 truncate">{i.clientName}</span>
-                    <span className="tabular-nums sm:text-right">
-                      {showAmount(i.total)} {i.symbol}
-                    </span>
-                    <span className={`whitespace-nowrap text-xs sm:text-right ${toneClass[st.tone]}`}>
-                      {st.label} · due {showDate(Math.floor(i.dueDate.getTime() / 1000))}
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
+          <DataTable
+            className="mt-4"
+            caption="Your latest invoices"
+            rows={invoices.slice(0, 5)}
+            rowKey={(i) => i.fingerprint}
+            columns={[
+              { key: "client", header: "Client", primary: true, cell: (i) => <Link href={`/vendor/invoices/${i.fingerprint}`} className="underline decoration-rule underline-offset-4 hover:decoration-ink">{i.clientName}</Link> },
+              { key: "amount", header: "Amount", amount: true, cell: (i) => `${showAmount(i.total)} ${i.symbol}` },
+              { key: "no", header: "Invoice", nowrap: true, cell: (i) => `No. ${i.invoiceNumber}` },
+              { key: "due", header: "Due", nowrap: true, cell: (i) => showDate(Math.floor(i.dueDate.getTime() / 1000)) },
+              { key: "status", header: "Status", cell: (i) => { const st = vendorStatus(i.status); return <StatusPill tone={pillTone[st.tone]}>{st.label}</StatusPill>; } },
+            ]}
+          />
         )}
+        {invoices.length > 5 ? <p className="mt-4 text-sm"><Link href="/vendor/invoices" className="text-graphite underline decoration-rule underline-offset-4 hover:text-ink">All {invoices.length} invoices →</Link></p> : null}
       </div>
     </Shell>
   );

@@ -2,6 +2,10 @@
 
 import { useState } from "react";
 import { postJson } from "@/lib/client/api";
+import { Overlay } from "@/components/Overlay";
+import { Button } from "@/components/ui/button";
+import { controlClass, Field } from "@/components/ui/Field";
+import { InlineError } from "@/components/ui/States";
 
 export function VerifyVendor({ businessId, seal, verificationId, awaitingSecond }: { businessId: string; seal: string; verificationId?: string; awaitingSecond?: boolean }) {
   const [id, setId] = useState(verificationId ?? "");
@@ -29,14 +33,54 @@ export function VerifyVendor({ businessId, seal, verificationId, awaitingSecond 
     catch (e) { setMessage(e instanceof Error ? e.message : "Couldn't confirm."); }
     finally { setBusy(false); }
   }
-  return <div className="mt-3 max-w-[460px] rounded border border-rule p-3">
-    {awaitingSecond ? <button onClick={second} disabled={busy} className="rounded border border-rule px-3 py-1.5 text-xs">{busy ? "Recording…" : "Confirm as second person"}</button> : !id ? <button onClick={start} disabled={busy} className="rounded border border-rule px-3 py-1.5 text-xs">{busy ? "Starting…" : "Verify by trusted callback"}</button> : <div className="grid gap-2">
-      <p className="text-xs text-graphite">Do not use contact details from the invoice, its email, or the Seal profile. Record who you reached and the channel.</p>
-      <label className="grid gap-1 text-xs">Six-digit code<input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value)} className="rounded border border-rule bg-paper px-2 py-2 font-mono" /></label>
-      <label className="grid gap-1 text-xs">Person reached<input maxLength={120} value={contacted} onChange={(e) => setContacted(e.target.value)} className="rounded border border-rule bg-paper px-2 py-2" /></label>
-      <label className="grid gap-1 text-xs">Trusted channel used<input maxLength={120} value={channel} onChange={(e) => setChannel(e.target.value)} className="rounded border border-rule bg-paper px-2 py-2" /></label>
-      <button onClick={submit} disabled={busy} className="w-fit rounded-doc bg-ink px-3 py-2 text-xs font-medium text-paper">{busy ? "Checking…" : "Confirm code"}</button>
-    </div>}
-    {message ? <p role="status" className="mt-2 text-xs text-graphite">{message}</p> : null}
-  </div>;
+  const [open, setOpen] = useState(false);
+  const note = message ? <p role="status" className="text-graphite">{message}</p> : null;
+  if (awaitingSecond) {
+    return (
+      <div className="mt-3">
+        <Button variant="secondary" size="sm" busy={busy} onClick={second}>{busy ? "Recording…" : "Confirm as the second person"}</Button>
+        {message ? <p role="status" className="mt-2 text-sm text-graphite">{message}</p> : null}
+      </div>
+    );
+  }
+  return (
+    <div className="mt-3">
+      <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>Verify by trusted callback</Button>
+      {open ? (
+        <Overlay
+          title="Verify this vendor"
+          description="Call them on a number your business already trusted, from before this invoice. Never use contact details from the invoice, its email or the Seal profile."
+          onClose={() => { if (!busy) setOpen(false); }}
+        >
+          {!id ? (
+            <>
+              <p className="text-graphite">Symbolon gives the vendor a six-digit code. Ask them to open Checks in their Symbolon account, read you the code on the call, and enter it here.</p>
+              {message ? <InlineError>{message}</InlineError> : null}
+              <Overlay.Footer>
+                <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
+                <Button busy={busy} onClick={start}>{busy ? "Starting…" : "Get the code started"}</Button>
+              </Overlay.Footer>
+            </>
+          ) : (
+            <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+              <Field label="Six-digit code">
+                {(a) => <input {...a} inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value)} className={`${controlClass} font-mono`} />}
+              </Field>
+              <Field label="Person you reached">
+                {(a) => <input {...a} maxLength={120} value={contacted} onChange={(e) => setContacted(e.target.value)} className={controlClass} />}
+              </Field>
+              <Field label="Trusted channel you used" hint="For example: the finance desk number on our contract.">
+                {(a) => <input {...a} maxLength={120} value={channel} onChange={(e) => setChannel(e.target.value)} className={controlClass} />}
+              </Field>
+              {note}
+              <Overlay.Footer>
+                <Button variant="secondary" onClick={() => setOpen(false)}>Close</Button>
+                <Button type="submit" busy={busy}>{busy ? "Checking…" : "Confirm the code"}</Button>
+              </Overlay.Footer>
+            </form>
+          )}
+        </Overlay>
+      ) : null}
+    </div>
+  );
 }

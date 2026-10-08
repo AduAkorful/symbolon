@@ -11,39 +11,111 @@ import { requirePageSession } from "@/lib/server/http";
 import { loadSpaces } from "@/lib/server/space";
 import { listVendors } from "@/lib/server/vendors";
 import { signerPlanFor } from "@/lib/server/signer-plan";
-import { formatDay, usd } from "@/lib/format";
+import { formatDay, shortenAddressesIn, usd } from "@/lib/format";
 import { Address } from "@/components/Address";
+import { EmptyState } from "@/components/ui/States";
+import { StatusPill, type Tone } from "@/components/ui/StatusPill";
+import { Lead, PageTitle, SectionTitle } from "@/components/ui/Type";
 
 export const dynamic = "force-dynamic";
 const trustLabel = (status: string) => status === "pending_verification" ? "Sealed, new vendor" : status === "verified" ? "Verified" : status === "blocked" ? "Blocked" : status === "invited" ? "Invited" : status === "awaiting_second" ? "Awaiting second confirmation" : status === "open" ? "Callback code in progress" : status === "expired" ? "Expired" : status === "cancelled" ? "Cancelled" : status === "retired" ? "Retired" : status;
+const verificationTone = (status: string): Tone => status === "verified" ? "ok" : status === "blocked" || status === "expired" ? "danger" : status === "awaiting_second" || status === "open" || status === "pending_verification" ? "warn" : "neutral";
 const methodLabel = (method: string) => method === "code" ? "trusted callback code" : method === "invitation" ? "business invitation" : method;
 
 export default async function BusinessVendorsPage() {
   const session = await requirePageSession("/business/vendors");
   const where = await loadSpaces(session);
   const business = where.business;
-  if (!business) return <Shell where={where} current={{ kind: "business", id: "" }}><h1 className="font-display text-4xl">No business yet</h1></Shell>;
+  if (!business) return <Shell where={where} current={{ kind: "business", id: "" }}><PageTitle>No business yet</PageTitle></Shell>;
   const data = await listVendors(await getDb(), getClient(), getConfig().deployment, session.user, business.id);
   const config = getConfig();
   const signer = signerPlanFor(session, config);
   const explorer = config.deployment.explorer;
-  return <Shell where={where} current={{ kind: "business", id: business.id }}>
-    <div className="max-w-[900px]">
-      <p className="font-mono text-xs uppercase tracking-[0.14em] text-graphite">{business.name}</p>
-      <h1 className="mt-2 font-display text-4xl">Vendors</h1>
-      <p className="mt-3 max-w-[64ch] text-graphite">Verification is your first-contact record. Vault payee activation is a separate onchain fact; it does not mean an invoice will pass every payment check.</p>
-      {business.role === "owner" ? <section className="mt-8 border-y border-rule py-5"><h2 className="font-display text-2xl">Invite a vendor</h2><InviteVendor businessId={business.id} /></section> : null}
-      <h2 className="mt-10 font-display text-2xl">Relationships</h2>
-      {data.vendors.length ? <ul className="mt-4 divide-y divide-rule border-y border-rule">{data.vendors.map((v) => <li key={v.seal} className="grid gap-2 py-4 sm:grid-cols-[1fr_auto]">
-        <div><p className="font-medium"><Link href={"/business/vendors/" + v.seal} className="underline decoration-rule underline-offset-4">{v.name}</Link>{v.handle ? <span className="ml-2 font-mono text-xs text-graphite">@{v.handle}</span> : null}</p><p className="mt-1 text-[11px] text-graphite"><Address value={v.seal} full /></p>
-          <p className="mt-2 text-sm">Verification: <span>{trustLabel(v.verification?.status ?? v.status)}</span>{v.verification?.method ? ` · ${methodLabel(v.verification.method)}` : ""}</p>
-          {(business.role === "owner" || business.role === "approver") && v.status !== "blocked" ? v.verification?.status === "awaiting_second" ? <VerifyVendor businessId={business.id} seal={v.seal} verificationId={v.verification.id} awaitingSecond /> : v.status !== "verified" && v.invoiceOnFile ? <VerifyVendor businessId={business.id} seal={v.seal} verificationId={v.verification?.status === "open" ? v.verification.id : undefined} /> : null : null}
-          {business.role === "owner" && v.status === "verified" && v.canBePaid.confirmed && !v.canBePaid.exists ? <AddPayee businessId={business.id} seal={v.seal} signer={signer} explorer={explorer} /> : null}
+  const canVerify = business.role === "owner" || business.role === "approver";
+  const nowSec = BigInt(Math.floor(Date.now() / 1000));
+  return (
+    <Shell where={where} current={{ kind: "business", id: business.id }}>
+      <div>
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+          <div className="min-w-0">
+            <PageTitle>Vendors</PageTitle>
+            <Lead className="mt-3">
+              Verification is your record of first contact. Becoming a payee is a separate onchain step in your Vault; it doesn’t mean an invoice will pass every payment check.
+            </Lead>
+          </div>
+          {business.role === "owner" ? <InviteVendor businessId={business.id} /> : null}
         </div>
-        <div className="text-sm sm:text-right"><p>Vault payee activation: {v.canBePaid.confirmed ? v.canBePaid.exists ? v.canBePaid.activeAt === "0" || BigInt(v.canBePaid.activeAt) <= BigInt(Math.floor(Date.now() / 1000)) ? "active" : `starts ${formatDay(new Date(Number(v.canBePaid.activeAt) * 1000))}` : "not added" : "can't confirm"}</p><p className="mt-1 break-all text-xs text-graphite">{v.canBePaid.confirmed && v.canBePaid.exists ? `Paid ${v.canBePaid.paidCount} invoices · cap ${usd(BigInt(v.canBePaid.terms.monthlyCap))} a month · PO ${v.canBePaid.terms.requirePo ? "required" : "not required"} · delivery ${v.canBePaid.terms.requireDelivery ? "required" : "not required"}` : v.invoiceOnFile ? "Invoice on file" : "No invoice yet"}</p>{v.canBePaid.confirmed && v.canBePaid.exists ? <p className="mt-1 text-xs text-graphite">Screening: {v.canBePaid.screening.risk}{v.canBePaid.screening.at !== "0" ? ` · block ${v.blockNumber}` : ""}</p> : null}</div>
-      </li>)}</ul> : <p className="mt-4 border-y border-rule py-6 text-graphite">No linked vendors yet.</p>}
-      {data.invitations.length ? <section className="mt-10"><h2 className="font-display text-2xl">Open invitations</h2><ul className="mt-3 divide-y divide-rule border-y border-rule">{data.invitations.map((i) => <li key={i.id} className="py-3"><p>{i.vendorName}</p><p className="mt-1 text-xs text-graphite">Contact note (business only): {i.contactNote} · expires {formatDay(i.expiresAt)}</p><p className="mt-1 text-xs">The secret link was shown once when created; it is not recoverable here.</p>{business.role === "owner" ? <div className="mt-2"><RevokeInvitation businessId={business.id} invitationId={i.id} /></div> : null}</li>)}</ul></section> : null}
-      <p className="mt-8 text-sm"><Link href="/business/inbox" className="underline">Back to inbox</Link></p>
-    </div>
-  </Shell>;
+
+        <SectionTitle className="mt-12">Relationships</SectionTitle>
+        {data.vendors.length ? (
+          <ul className="mt-4 divide-y divide-rule-soft border-y border-rule">
+            {data.vendors.map((v) => {
+              const payee = v.canBePaid;
+              const active = payee.confirmed && payee.exists && (payee.activeAt === "0" || BigInt(payee.activeAt) <= nowSec);
+              const verification = v.verification?.status ?? v.status;
+              return (
+                <li key={v.seal} className="grid gap-x-8 gap-y-3 py-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+                  <div className="min-w-0">
+                    <p className="flex flex-wrap items-baseline gap-x-3">
+                      <Link href={"/business/vendors/" + v.seal} className="break-words font-medium text-ink underline decoration-rule underline-offset-4 hover:decoration-ink">{shortenAddressesIn(v.name)}</Link>
+                      {v.handle ? <span className="text-sm text-graphite">@{v.handle}</span> : null}
+                    </p>
+                    <div className="mt-1 text-sm text-graphite"><Address value={v.seal} /></div>
+                    <p className="mt-3 flex flex-wrap items-center gap-2">
+                      <StatusPill tone={verificationTone(verification)}>{trustLabel(verification)}</StatusPill>
+                      {v.verification?.method ? <span className="text-sm text-graphite">via {methodLabel(v.verification.method)}</span> : null}
+                    </p>
+                    {canVerify && v.status !== "blocked" ? (
+                      v.verification?.status === "awaiting_second" ? (
+                        <VerifyVendor businessId={business.id} seal={v.seal} verificationId={v.verification.id} awaitingSecond />
+                      ) : v.status !== "verified" && v.invoiceOnFile ? (
+                        <VerifyVendor businessId={business.id} seal={v.seal} verificationId={v.verification?.status === "open" ? v.verification.id : undefined} />
+                      ) : null
+                    ) : null}
+                    {business.role === "owner" && v.status === "verified" && payee.confirmed && !payee.exists ? (
+                      <AddPayee businessId={business.id} seal={v.seal} signer={signer} explorer={explorer} />
+                    ) : null}
+                  </div>
+                  <div className="min-w-0 text-sm lg:text-right">
+                    <p className="flex flex-wrap items-center gap-2 lg:justify-end">
+                      <span className="text-graphite">In your Vault:</span>
+                      <StatusPill tone={!payee.confirmed ? "warn" : active ? "ok" : payee.exists ? "info" : "neutral"}>
+                        {!payee.confirmed ? "Can’t confirm" : !payee.exists ? "Not added" : active ? "Active payee" : `Starts ${formatDay(new Date(Number(payee.activeAt) * 1000))}`}
+                      </StatusPill>
+                    </p>
+                    <p className="mt-2 text-graphite">
+                      {payee.confirmed && payee.exists
+                        ? `Paid ${payee.paidCount} ${payee.paidCount === 1 ? "invoice" : "invoices"} · ${usd(BigInt(payee.terms.monthlyCap))} a month · PO ${payee.terms.requirePo ? "required" : "not required"} · delivery ${payee.terms.requireDelivery ? "required" : "not required"}`
+                        : v.invoiceOnFile ? "An invoice is on file" : "No invoice yet"}
+                    </p>
+                    {payee.confirmed && payee.exists ? <p className="mt-1 text-graphite">Screening: {payee.screening.risk}{payee.screening.at !== "0" ? ` · block ${v.blockNumber}` : ""}</p> : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <EmptyState title="No vendors yet" className="mt-4">Invite a vendor, or add a sealed invoice to the inbox, and they appear here.</EmptyState>
+        )}
+
+        {data.invitations.length ? (
+          <section className="mt-12">
+            <SectionTitle>Open invitations</SectionTitle>
+            <ul className="mt-4 divide-y divide-rule-soft border-y border-rule">
+              {data.invitations.map((i) => (
+                <li key={i.id} className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-4">
+                  <div className="min-w-0">
+                    <p className="font-medium text-ink">{i.vendorName}</p>
+                    <p className="mt-1 text-sm text-graphite">How you know them: {i.contactNote} · expires {formatDay(i.expiresAt)}</p>
+                    <p className="mt-1 text-sm text-graphite">The secret link was shown once, when it was created, and can’t be recovered.</p>
+                  </div>
+                  {business.role === "owner" ? <RevokeInvitation businessId={business.id} invitationId={i.id} /> : null}
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+      </div>
+    </Shell>
+  );
 }

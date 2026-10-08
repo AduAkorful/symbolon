@@ -12,8 +12,9 @@ import { requirePageSession } from "@/lib/server/http";
 import { describePolicyLines } from "@/lib/server/policy-text";
 import { signerPlanFor } from "@/lib/server/signer-plan";
 import { loadSpaces } from "@/lib/server/space";
-import { feeBalance, formatFeeBalance, lastRun, listRunDecisions } from "@/lib/server/steward-runtime";
+import { feeBalance, formatFeeBalance, lastRun, listRunDecisions, STEWARD_RUN_LEASE_MS } from "@/lib/server/steward-runtime";
 import { readVaultState, stewardStanding } from "@/lib/server/vault-read";
+import { PageTitle } from "@/components/ui/Type";
 
 export const dynamic = "force-dynamic";
 
@@ -25,8 +26,8 @@ export default async function BusinessStewardPage() {
   if (!business) {
     return (
       <Shell where={where} current={{ kind: "business", id: "" }}>
-        <div className="max-w-[760px]">
-          <h1 className="font-display text-4xl">No business yet</h1>
+        <div>
+          <PageTitle>No business yet</PageTitle>
           <p className="mt-2 text-graphite">
             You don’t belong to a business.{" "}
             <Link href="/setup" className="text-ink underline decoration-rule underline-offset-4">
@@ -42,8 +43,8 @@ export default async function BusinessStewardPage() {
   if (!business.vault) {
     return (
       <Shell where={where} current={{ kind: "business", id: business.id }}>
-        <div className="max-w-[760px]">
-          <h1 className="font-display text-4xl">Vault not created yet</h1>
+        <div>
+          <PageTitle>Vault not created yet</PageTitle>
           <p className="mt-2 text-graphite">
             This business does not have an active Vault yet.{" "}
             {business.role === "owner" ? (
@@ -95,7 +96,8 @@ export default async function BusinessStewardPage() {
         id: run.id,
         trigger: run.trigger,
         mode: run.mode,
-        status: run.status,
+        // a run still "running" after its lease has run out never finished; say so rather than show work in progress
+        status: run.status === "running" && Date.now() - run.startedAt.getTime() > STEWARD_RUN_LEASE_MS ? "stalled" : run.status,
         startedAt: run.startedAt.toISOString(),
         finishedAt: run.finishedAt?.toISOString() ?? null,
         summary: run.summary as Record<string, unknown>,

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
-import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { formatAmount } from "@symbolon/seal";
 import {
   paymentsBeancount,
@@ -96,7 +96,9 @@ export async function loadAccounting(
   const bizInvoices = await db.select().from(invoices).where(eq(invoices.businessId, businessId));
   const byFp = new Map(bizInvoices.map((i) => [i.fingerprint.toLowerCase(), i]));
 
-  const sealsList = await db.select().from(seals);
+  // only the Seals this business has invoices from, not everyone's
+  const sealAddresses = [...new Set(bizInvoices.map((i) => i.seal.toLowerCase()))];
+  const sealsList = sealAddresses.length ? await db.select().from(seals).where(inArray(sql`lower(${seals.address})`, sealAddresses)) : [];
   const sealMap = new Map(sealsList.map((s) => [s.address.toLowerCase(), s.displayName || s.handle || s.address]));
 
   const poList = await db.select().from(purchaseOrders).where(eq(purchaseOrders.businessId, businessId));
@@ -121,7 +123,7 @@ export async function loadAccounting(
   }
 
   // 2. Settled Events for business invoices
-  const conditions = [eq(chainEvents.eventName, "Settled")];
+  const conditions = [eq(chainEvents.eventName, "Settled"), eq(chainEvents.chainId, deployment.chainId)];
   if (opts.from) conditions.push(gte(chainEvents.blockTime, new Date(opts.from)));
   if (opts.to) conditions.push(lte(chainEvents.blockTime, new Date(opts.to)));
 

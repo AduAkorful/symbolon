@@ -6,6 +6,11 @@ import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { sendCall, type SignerPlan } from "@/components/setup/owner-signer";
 import { postJson } from "@/lib/client/api";
 import { moneyDraft, moneyInput } from "@/lib/money-draft";
+import { Overlay } from "@/components/Overlay";
+import { Button } from "@/components/ui/button";
+import { controlClass, Field } from "@/components/ui/Field";
+import { InlineError, InlineLoading } from "@/components/ui/States";
+import { shortAddress } from "@/lib/format";
 
 type Option = { address: string; domain: number; source: string };
 type ChoiceResult = { options: Option[]; defaults: { monthlyCap: string | null; requirePo: boolean; requireDelivery: boolean } };
@@ -29,6 +34,8 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
   const [txHash, setTxHash] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // while a transaction is being sent or its receipt recorded the dialog stays; reading the payout choices can be abandoned
+  const [sending, setSending] = useState(false);
   const router = useRouter();
   const path = `/api/business/${businessId}/payee`;
   async function loadOptions() {
@@ -39,14 +46,14 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
   }
   async function add() {
     const [payout, domainText] = selected.split(":");
-    setBusy(true); setError("");
+    setBusy(true); setSending(true); setError("");
     try {
       const call = await postJson<{ to: string; data: string }>(path, { action: "prepare", seal, payout, domain: Number(domainText), requirePo, requireDelivery, monthlyCap: capRaw(cap) });
       const hash = await sendCall(signer, call, discover);
       setTxHash(hash);
       await confirm(hash);
     } catch (e) { setError(e instanceof Error ? e.message : "Couldn't add this payee."); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setSending(false); }
   }
   async function confirm(hash = txHash) {
     if (!hash) return;
@@ -55,15 +62,45 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
     catch (e) { setError(e instanceof Error ? e.message : "The receipt isn't confirmed yet. Try again."); }
     finally { setBusy(false); }
   }
-  return <div className="mt-3">
-    {!options.length ? <button onClick={loadOptions} disabled={busy} className="rounded border border-rule px-3 py-1.5 text-xs disabled:opacity-60">{busy ? "Loading…" : "Set up payee"}</button> : <div className="grid max-w-[420px] gap-3 rounded border border-rule p-4 text-left">
-      <label className="grid gap-1 text-xs">Payout address signed by this vendor<select value={selected} onChange={(e) => setSelected(e.target.value)} className="min-w-0 rounded border border-rule bg-paper px-2 py-2 font-mono text-[11px]">{options.map((o) => <option key={`${o.address}:${o.domain}`} value={`${o.address}:${o.domain}`}>{o.address} · domain {o.domain} · {o.source}</option>)}</select></label>
-      <label className="grid gap-1 text-xs">Monthly cap in dollars (blank uses your current approval threshold)<input inputMode="decimal" value={cap} onChange={(e) => setCap(e.target.value)} placeholder="For example 5000.00" className="rounded border border-rule bg-paper px-2 py-2" /></label>
-      <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={requirePo} onChange={(e) => setRequirePo(e.target.checked)} />Require a purchase order</label>
-      <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={requireDelivery} onChange={(e) => setRequireDelivery(e.target.checked)} />Require delivery confirmation</label>
-      <button onClick={add} disabled={busy || signer.kind === "none" || !selected} className="w-fit rounded-doc bg-ink px-3 py-2 text-xs font-medium text-paper disabled:opacity-60">{busy ? "Waiting…" : "Sign add-payee transaction"}</button>
-      {txHash ? <button onClick={() => confirm()} disabled={busy} className="w-fit text-xs underline">Check receipt: {txHash.slice(0, 10)}…</button> : null}
-    </div>}
-    {error ? <p role="alert" className="mt-2 max-w-[420px] text-xs text-red">{error}{txHash ? <> <a href={`${explorer}/tx/${txHash}`} target="_blank" rel="noreferrer" className="underline">View transaction</a></> : null}</p> : null}
-  </div>;
+  const [open, setOpen] = useState(false);
+  const openDialog = () => { setOpen(true); if (!options.length) void loadOptions(); };
+  return (
+    <div className="mt-3">
+      <Button variant="secondary" size="sm" onClick={openDialog}>Set up as a payee</Button>
+      {open ? (
+        <Overlay title="Add this vendor as a payee" description="You sign one transaction that lets your Vault pay this vendor, within the terms below." onClose={() => { if (!sending) setOpen(false); }}>
+          {error ? (
+            <InlineError>
+              {error}
+              {txHash ? <> <a href={`${explorer}/tx/${txHash}`} target="_blank" rel="noreferrer" className="underline">View the transaction</a></> : null}
+            </InlineError>
+          ) : null}
+          {!options.length ? (
+            <InlineLoading>Reading the vendor’s signed payout addresses…</InlineLoading>
+          ) : (
+            <div className="space-y-4">
+              <Field label="Payout address signed by this vendor">
+                {(a) => (
+                  <select {...a} value={selected} onChange={(e) => setSelected(e.target.value)} className={`${controlClass} min-w-0`}>
+                    {options.map((o) => <option key={`${o.address}:${o.domain}`} value={`${o.address}:${o.domain}`}>{shortAddress(o.address)} · domain {o.domain} · {o.source}</option>)}
+                  </select>
+                )}
+              </Field>
+              <Field label="Monthly cap, in dollars" hint="Leave it empty to use your current approval threshold.">
+                {(a) => <input {...a} inputMode="decimal" value={cap} onChange={(e) => setCap(e.target.value)} placeholder="5000.00" className={controlClass} />}
+              </Field>
+              <div className="space-y-1">
+                <label className="flex min-h-9 items-center gap-2"><input type="checkbox" checked={requirePo} onChange={(e) => setRequirePo(e.target.checked)} className="h-4 w-4 accent-[var(--seal)]" />Require a purchase order</label>
+                <label className="flex min-h-9 items-center gap-2"><input type="checkbox" checked={requireDelivery} onChange={(e) => setRequireDelivery(e.target.checked)} className="h-4 w-4 accent-[var(--seal)]" />Require delivery confirmation</label>
+              </div>
+              <Overlay.Footer>
+                {txHash ? <Button variant="secondary" disabled={busy} onClick={() => confirm()}>Check the receipt</Button> : <Button variant="secondary" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>}
+                <Button busy={busy} disabled={signer.kind === "none" || !selected} onClick={add}>{busy ? "Waiting…" : "Sign the transaction"}</Button>
+              </Overlay.Footer>
+            </div>
+          )}
+        </Overlay>
+      ) : null}
+    </div>
+  );
 }

@@ -1,20 +1,23 @@
-import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
-import { syncLedger } from "@symbolon/core";
+import { syncLedger, syncProtocolEvents } from "@symbolon/core";
 import { symbolonContracts } from "@symbolon/chain";
 import { getClient } from "@/lib/server/chain";
 import { getConfig } from "@/lib/server/config";
+import { refuseUnlessScheduler } from "@/lib/server/cron-auth";
 import { getDb } from "@/lib/server/db";
 
-export async function POST(request: Request) {
+async function run(request: Request) {
+  const refused = refuseUnlessScheduler(request, "Ledger syncing");
+  if (refused) return refused;
   const cfg = getConfig();
-  const secret = process.env.CRON_SECRET?.trim();
-  // The route exists for a scheduler that holds the secret; with no secret configured it is off, in every build.
-  if (!secret) return NextResponse.json({ error: "Ledger syncing is not configured." }, { status: 503 });
-  const given = Buffer.from(request.headers.get("authorization") ?? "");
-  const expected = Buffer.from(`Bearer ${secret}`);
-  if (given.length !== expected.length || !timingSafeEqual(given, expected)) return NextResponse.json({ error: "Not authorized." }, { status: 401 });
   const client = getClient();
-  const report = await syncLedger(await getDb(), client, symbolonContracts(client, cfg.deployment), cfg.deployment);
-  return new NextResponse(JSON.stringify(report, (_key: string, value: unknown) => typeof value === "bigint" ? value.toString() : value), { headers: { "content-type": "application/json" } });
+  const db = await getDb();
+  const report = await syncLedger(db, client, symbolonContracts(client, cfg.deployment), cfg.deployment);
+  // the network history behind /stats fills in a window at a time; a failure there is reported, and never hides the ledger result
+  const protocol = await syncProtocolEvents(db, client, cfg.deployment).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }));
+  return new NextResponse(JSON.stringify({ ...report, protocol }, (_key: string, value: unknown) => typeof value === "bigint" ? value.toString() : value), { headers: { "content-type": "application/json" } });
 }
+
+// POST for GitHub Actions and cron services; GET because Vercel Cron only sends GET (same secret, same work)
+export const POST = run;
+export const GET = run;

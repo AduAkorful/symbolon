@@ -5,6 +5,7 @@ import { getConfig } from "@/lib/server/config";
 import { signerPlanFor } from "@/lib/server/signer-plan";
 import { requireVendorPage } from "@/lib/server/vendor-page";
 import { Address } from "@/components/Address";
+import { PageTitle, SectionTitle } from "@/components/ui/Type";
 
 export const dynamic = "force-dynamic";
 
@@ -15,29 +16,25 @@ export default async function VendorSettings() {
 
   return (
     <Shell where={where} current={{ kind: "vendor" }}>
-      <div className="max-w-[760px]">
-        <h1 className="font-display text-4xl leading-tight">Settings</h1>
-        <dl className="mt-6 border-t border-rule text-sm">
+      <div>
+        <PageTitle>Settings</PageTitle>
+        <dl className="mt-8 divide-y divide-rule-soft rounded-doc border border-rule px-5 text-sm">
           {([
             ["Name on invoices", seal.displayName],
             ["Handle", `@${seal.handle}`],
-            ["Seal (your wallet)", <Address value={seal.address} full />],
+            ["Seal (your wallet)", <Address key="a" value={seal.address} full copy />],
             ["Website", seal.website ?? "—"],
           ] as [string, React.ReactNode][]).map(([label, v]) => (
-            <div key={label} className="grid grid-cols-[10rem_1fr] gap-3 border-b border-rule-soft py-3">
+            <div key={label} className="grid gap-1 py-3.5 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4">
               <dt className="text-graphite">{label}</dt>
-              <dd className="break-all">{v}</dd>
+              <dd className="min-w-0 break-words">{v}</dd>
             </div>
           ))}
         </dl>
-        <h2 className="mt-10 font-display text-2xl">Default payout address</h2>
+        <SectionTitle className="mt-12">Default payout address</SectionTitle>
         <PayoutForm initial={seal.payoutAddress} sealAddress={seal.address} />
 
-        <ChangePayoutAddressSection
-          currentPayout={seal.payoutAddress}
-          sealAddress={seal.address}
-          signer={signer}
-        />
+        <ChangePayoutAddressSection currentPayout={seal.payoutAddress} sealAddress={seal.address} signer={signer} />
       </div>
     </Shell>
   );

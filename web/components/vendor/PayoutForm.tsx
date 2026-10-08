@@ -3,6 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { postJson } from "@/lib/client/api";
+import { Button } from "@/components/ui/button";
+import { controlClass, Field } from "@/components/ui/Field";
+import { InlineError } from "@/components/ui/States";
 
 /** The payout address new invoices start with. Blank means your Seal's own wallet. */
 export function PayoutForm({ initial, sealAddress }: { initial: string | null; sealAddress: string }) {
@@ -28,26 +31,12 @@ export function PayoutForm({ initial, sealAddress }: { initial: string | null; s
   }
 
   return (
-    <form onSubmit={save} className="mt-4 max-w-xl">
-      <label className="block text-sm">
-        Payout address on Arc
-        <input
-          className="mt-1 w-full rounded-doc border border-rule bg-paper px-3 py-2.5 font-mono text-sm focus:border-ink focus:outline-none"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder={sealAddress}
-          spellCheck={false}
-        />
-      </label>
-      <p className="mt-2 text-xs text-graphite">Leave it blank to be paid at your Seal’s wallet. Invoices you have already signed keep the address they were signed with.</p>
-      {note ? (
-        <p role={note.ok ? "status" : "alert"} className={`mt-3 text-sm ${note.ok ? "text-seal" : "text-red"}`}>
-          {note.text}
-        </p>
-      ) : null}
-      <button disabled={busy} className="mt-4 rounded-doc bg-ink px-4 py-2 text-sm font-medium text-paper disabled:opacity-40">
-        {busy ? "Saving…" : "Save"}
-      </button>
+    <form onSubmit={save} className="mt-4 max-w-xl space-y-4">
+      <Field label="Payout address on Arc" hint="Leave it empty to be paid at your Seal’s wallet. Invoices you have already signed keep the address they were signed with.">
+        {(a) => <input {...a} className={`${controlClass} font-mono`} value={value} onChange={(e) => setValue(e.target.value)} placeholder={sealAddress} spellCheck={false} />}
+      </Field>
+      {note ? (note.ok ? <p role="status" className="text-sm text-ok">{note.text}</p> : <InlineError>{note.text}</InlineError>) : null}
+      <Button type="submit" busy={busy}>{busy ? "Saving…" : "Save"}</Button>
     </form>
   );
 }

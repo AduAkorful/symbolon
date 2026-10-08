@@ -2,10 +2,14 @@
 
 import { useState } from "react";
 
+import { Address } from "@/components/Address";
 import { Overlay } from "@/components/Overlay";
+import { Button, buttonClass } from "@/components/ui/button";
 import type { SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { signTypedData } from "@/components/vendor/seal-signer";
+import { SectionTitle } from "@/components/ui/Type";
+import { controlClass } from "@/components/ui/Field";
 
 interface Props {
   currentPayout: string | null;
@@ -91,7 +95,7 @@ export function ChangePayoutAddressSection({ currentPayout, sealAddress, signer 
 
   return (
     <div className="mt-10 border-t border-rule pt-8">
-      <h2 className="font-display text-2xl">Change payout address across businesses</h2>
+      <SectionTitle>Change payout address across businesses</SectionTitle>
       <p className="mt-2 text-sm text-graphite max-w-xl">
         To change where your existing Vault counterparties deliver payments, your Seal signs an onchain PayoutChange request.
         Each business must confirm it with their owner key, and the change takes effect only after that Vault&apos;s cooldown (72h default).
@@ -113,7 +117,7 @@ export function ChangePayoutAddressSection({ currentPayout, sealAddress, signer 
         <label className="block text-sm">
           New payout address
           <input
-            className="mt-1 w-full rounded-doc border border-rule bg-paper px-3 py-2 font-mono text-sm focus:border-ink focus:outline-none"
+            className={`${controlClass} font-mono`}
             value={newPayout}
             onChange={(e) => setNewPayout(e.target.value)}
             placeholder="0x…"
@@ -124,64 +128,46 @@ export function ChangePayoutAddressSection({ currentPayout, sealAddress, signer 
         <button
           type="submit"
           disabled={busy || !newPayout.trim()}
-          className="rounded-doc bg-ink px-4 py-2 text-sm font-medium text-paper hover:opacity-90 disabled:opacity-40"
+          className={buttonClass()}
         >
           {busy ? "Checking Vaults..." : "Request Payout Change"}
         </button>
       </form>
 
-      {/* Confirmation & Signature Modal */}
+      {/* Confirmation and signature */}
       {prepared ? (
         <Overlay
-          label={{ id: "payout-change-modal" }}
+          title="Confirm the payout change"
           onClose={() => {
             if (!busy) setPrepared(null);
           }}
         >
-          <div className="p-7">
-            <h3 id="payout-change-modal" className="font-display text-2xl">
-              Confirm Payout Change
-            </h3>
-            <p className="mt-2 text-sm text-graphite">
-              Your Seal will sign an onchain payout change to <strong>{prepared.newPayout}</strong>.
-            </p>
-
-            <div className="mt-4 rounded-doc border border-rule bg-rule-soft/30 p-3 text-xs">
-              <span className="font-medium text-ink">Businesses that will be notified:</span>
-              <ul className="mt-2 space-y-1">
-                {prepared.businesses.map((b) => (
-                  <li key={b.id} className="flex justify-between text-graphite">
-                    <span>{b.name}</span>
-                    <span className="font-mono">{b.vault.slice(0, 10)}…</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <p className="mt-3 text-xs text-graphite">
-              Each business owner must execute the change on their Vault. The change will take effect after their Vault cooldown.
-              Invoices sealed to the old address cannot be settled once the cooldown clears.
-            </p>
-
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => setPrepared(null)}
-                className="rounded-doc border border-rule px-4 py-2 text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={handleSignAndSubmit}
-                className="rounded-doc bg-ink px-4 py-2 text-sm font-medium text-paper hover:opacity-90 disabled:opacity-50"
-              >
-                {busy ? "Signing..." : "Sign with Wallet"}
-              </button>
-            </div>
+          <div>
+            <p className="mb-1.5 text-graphite">Your Seal will sign a change of payout address to:</p>
+            <Address value={prepared.newPayout} full className="text-ink" />
           </div>
+
+          <div className="rounded-doc border border-rule px-4 py-3">
+            <p className="font-medium text-ink">Businesses that will be told</p>
+            <ul className="mt-2 space-y-1.5">
+              {prepared.businesses.map((b) => (
+                <li key={b.id} className="flex justify-between gap-4 text-graphite">
+                  <span className="min-w-0 truncate">{b.name}</span>
+                  <Address value={b.vault} />
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <p className="text-graphite">
+            Each business owner then applies the change on their Vault, and it takes effect after that Vault's waiting period. Invoices
+            sealed to the old address can't be paid once the wait is over.
+          </p>
+
+          <Overlay.Footer>
+            <Button variant="secondary" disabled={busy} onClick={() => setPrepared(null)}>Cancel</Button>
+            <Button busy={busy} onClick={handleSignAndSubmit}>{busy ? "Signing…" : "Sign with wallet"}</Button>
+          </Overlay.Footer>
         </Overlay>
       ) : null}
     </div>

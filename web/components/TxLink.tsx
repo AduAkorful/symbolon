@@ -9,7 +9,7 @@ export function TxLink({ href, label, children, className = "" }: { href: string
       target="_blank"
       rel="noreferrer"
       aria-label={label}
-      className={`font-mono text-xs underline decoration-rule underline-offset-4 hover:decoration-ink ${className}`}
+      className={`font-mono text-sm underline decoration-rule underline-offset-4 hover:decoration-ink ${className}`}
     >
       {children}
       <span aria-hidden> ↗</span>

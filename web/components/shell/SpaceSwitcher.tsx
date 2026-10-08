@@ -15,8 +15,8 @@ export interface SwitcherSpaces {
 
 export type Current = { kind: "vendor" } | { kind: "business"; id: string };
 
-const item = "flex w-full items-center gap-3 rounded-sm px-2.5 py-2 text-left text-sm outline-none hover:bg-rule-soft/70 focus-visible:bg-rule-soft/70 focus-visible:ring-2 focus-visible:ring-seal";
-const quiet = "block w-full rounded-sm px-2.5 py-1.5 text-left text-sm text-graphite outline-none hover:text-ink focus-visible:text-ink focus-visible:ring-2 focus-visible:ring-seal";
+const item = "flex min-h-11 w-full items-center gap-3 rounded-doc px-2.5 py-2 text-left text-sm outline-none hover:bg-rule-soft/70 focus-visible:bg-rule-soft/70 focus-visible:ring-2 focus-visible:ring-seal";
+const quiet = "flex min-h-10 w-full items-center rounded-doc px-2.5 py-1.5 text-left text-sm text-graphite outline-none hover:text-ink focus-visible:text-ink focus-visible:ring-2 focus-visible:ring-seal";
 
 /** Switch between your Seal and each business you belong to, and sign out. One person can be both a vendor and a business owner. */
 export function SpaceSwitcher({ spaces, current, who, compact = false }: { spaces: SwitcherSpaces; current: Current; who: string; compact?: boolean }) {
@@ -84,19 +84,19 @@ export function SpaceSwitcher({ spaces, current, who, compact = false }: { space
         onClick={() => setOpen(!open)}
         aria-expanded={open}
         aria-haspopup="menu"
-        className={`flex items-center gap-2 rounded-doc border border-rule px-3 py-2 text-left text-sm hover:border-ink/50 ${compact ? "" : "w-full"}`}
+        className={`flex min-h-11 items-center gap-2 rounded-doc border border-rule px-3 py-2 text-left text-sm hover:border-ink/50 sm:min-h-10 ${compact ? "max-w-[8.5rem] sm:max-w-[16rem]" : "w-full"}`}
       >
         <Avatar name={now.name} size={24} />
         <span className="min-w-0 flex-1">
           <span className="block truncate font-medium leading-tight">{now.name}</span>
-          {!compact ? <span className="hidden truncate text-xs text-graphite md:block">{now.role}</span> : null}
+          {!compact ? <span className="hidden truncate text-xs text-graphite lg:block">{now.role}</span> : null}
         </span>
         <span aria-hidden className="text-graphite">▾</span>
       </button>
       {open ? (
         <div role="menu" aria-label="Switch account" onKeyDown={onMenuKey} className={`menu-in absolute right-0 top-full z-50 mt-1.5 origin-top rounded-doc border border-rule bg-paper-raised p-1.5 shadow-xl ${
             // hangs from the button's right edge so it can't run off a phone screen; in the wide sidebar it matches the button's width
-            compact ? "min-w-[15rem]" : "min-w-[17rem] md:left-0 md:min-w-0"
+            compact ? "min-w-[15rem]" : "min-w-[17rem] lg:left-0 lg:min-w-0"
           }`}>
           <p className="truncate px-2.5 pb-1.5 pt-1 text-xs text-graphite">
             Signed in as <span className="text-ink">{who}</span>

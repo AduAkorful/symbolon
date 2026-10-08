@@ -20,7 +20,10 @@ import { pauseStateOf, readVaultState, stewardStanding, type PauseState } from "
 import { checkReleaseNudge } from "@/lib/server/release";
 import { loadNavCounts, type NavCounts } from "@/lib/server/nav-counts";
 
+import { buttonClass } from "@/components/ui/button";
+
 import { BusinessNav } from "./BusinessNav";
+import { CONTAINER } from "./container";
 
 import { Avatar } from "@/components/Avatar";
 import { Bell } from "@/components/notifications/Bell";
@@ -28,7 +31,7 @@ import { getUnreadNotificationCount } from "@/lib/server/notifications";
 import { SpaceSwitcher, type Current } from "./SpaceSwitcher";
 import { VendorNav } from "./VendorNav";
 
-const pill = "rounded-full border border-rule px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-graphite";
+const pill = "rounded-full border border-rule px-2.5 py-1 font-mono text-xs uppercase tracking-[0.14em] text-graphite";
 
 /**
  * The frame around a signed-in space: the wordmark, the space switcher and the way out. Business screens get the
@@ -82,24 +85,26 @@ async function Frame({
   if (current.kind === "vendor") {
     return (
       <div className="min-h-screen">
-        <header className="mx-auto flex max-w-[1180px] flex-wrap items-center gap-x-6 gap-y-2 border-b border-rule px-6 py-3 md:px-10 lg:flex-nowrap">
-          <Link href="/vendor" aria-label="Symbolon home" className="shrink-0">
-            <Wordmark />
-          </Link>
-          {where.spaces.seal ? <VendorNav /> : null}
-          <div className="ml-auto flex shrink-0 items-center gap-3">
-            <span className="hidden xl:inline-block">{chain}</span>
-            {where.spaces.seal ? (
-              <Link href="/vendor/new" className="hidden whitespace-nowrap rounded-doc bg-ink px-4 py-2 text-sm font-medium text-paper sm:inline-block">
-                New invoice
-              </Link>
-            ) : null}
-            <Bell unreadCount={unreadCount ?? 0} />
-            <SpaceSwitcher spaces={where.spaces} current={current} who={where.who} compact />
+        <header className="border-b border-rule">
+          <div className={`${CONTAINER} flex flex-wrap items-center gap-x-6 gap-y-2 py-3 lg:flex-nowrap`}>
+            <Link href="/vendor" aria-label="Symbolon home" className="shrink-0">
+              <Wordmark />
+            </Link>
+            {where.spaces.seal ? <VendorNav /> : null}
+            <div className="ml-auto flex shrink-0 items-center gap-3">
+              <span className="hidden xl:inline-block">{chain}</span>
+              {where.spaces.seal ? (
+                <Link href="/vendor/new" className={buttonClass({ size: "sm", className: "hidden sm:inline-flex" })}>
+                  New invoice
+                </Link>
+              ) : null}
+              <Bell unreadCount={unreadCount ?? 0} />
+              <SpaceSwitcher spaces={where.spaces} current={current} who={where.who} compact />
+            </div>
           </div>
         </header>
         {/* id="main-content" lets the skip-link jump here and lets Overlay make this inert while a dialog is open */}
-        <main id="main-content" className="mx-auto max-w-[1180px] px-6 py-10 md:px-10">{children}</main>
+        <main id="main-content" className={`${CONTAINER} py-10`}>{children}</main>
       </div>
     );
   }
@@ -164,16 +169,16 @@ async function Frame({
   }
 
   return (
-    <div className="min-h-screen md:grid md:grid-cols-[232px_1fr]">
+    <div className="min-h-screen lg:grid lg:grid-cols-[232px_minmax(0,1fr)]">
       {/* S13: Red rule across top when payments are paused */}
       {vaultPaused ? <div className="col-span-full h-1 w-full bg-red" role="presentation" /> : null}
 
-      <aside className="border-b border-rule md:sticky md:top-0 md:h-screen md:overflow-y-auto md:border-b-0 md:border-r">
-        <div className="flex items-center justify-between px-6 py-3 md:block md:px-3 md:py-6">
-          <Link href="/business" aria-label="Symbolon home" className="md:block md:px-3">
+      <aside className="border-b border-rule lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto lg:border-b-0 lg:border-r">
+        <div className="flex items-center justify-between px-6 py-3 lg:block lg:px-3 lg:py-6">
+          <Link href="/business" aria-label="Symbolon home" className="lg:block lg:px-3">
             <Wordmark />
           </Link>
-          <div className="md:mt-7">
+          <div className="lg:mt-7">
             <SpaceSwitcher spaces={where.spaces} current={current} who={where.who} />
           </div>
         </div>
@@ -182,16 +187,14 @@ async function Frame({
 
 
       <div className="min-w-0">
-        <header className="flex items-center justify-between gap-x-3 border-b border-rule px-6 py-3 md:px-10">
+        <header className="border-b border-rule">
+         <div className={`${CONTAINER} flex items-center justify-between gap-x-3 py-3`}>
           <div className="flex min-w-0 items-center gap-2 text-sm">
             <StewardChip standing={standing} mode={biz?.stewardMode} />
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            <Link
-              href="/business/ask"
-              className="hidden whitespace-nowrap rounded-doc border border-rule px-3 py-1.5 text-xs font-medium text-graphite transition hover:border-ink/50 hover:text-ink sm:inline-block"
-            >
+            <Link href="/business/ask" className={buttonClass({ variant: "secondary", size: "sm", className: "hidden sm:inline-flex" })}>
               Ask the Steward
             </Link>
             {biz && biz.role === "owner" && biz.vault ? (
@@ -207,12 +210,13 @@ async function Frame({
             <span className="hidden md:inline-block">{chain}</span>
             <Bell unreadCount={unreadCount ?? 0} />
           </div>
+         </div>
         </header>
 
         {/* S13: Pause banner when payments are paused */}
         {vaultPaused ? (
-          <div className="border-b border-red/40 bg-red-wash px-6 py-3 text-sm text-ink md:px-10">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="border-b border-red/40 bg-red-wash text-sm text-ink">
+            <div className={`${CONTAINER} flex flex-wrap items-center justify-between gap-2 py-3`}>
               <p>
                 <span className="font-medium text-red">Payments are paused.</span> The Steward can't pay, and nothing scheduled goes out until you resume.
                 {pauseTxHash ? (
@@ -228,7 +232,7 @@ async function Frame({
         ) : null}
 
         {/* id="main-content" lets the skip-link jump here and lets Overlay make this inert while a dialog is open */}
-        <main id="main-content" className="px-6 py-10 md:px-10">{children}</main>
+        <main id="main-content" className={`${CONTAINER} py-10`}>{children}</main>
       </div>
     </div>
   );
@@ -241,7 +245,7 @@ function StewardChip({ standing, mode }: { standing: ReturnType<typeof stewardSt
   const modeName = mode ? MODE_NAMES[mode] : undefined;
   if (standing?.kind === "paused") {
     return (
-      <span className="flex items-center gap-1.5 font-medium text-red">
+      <span className="flex items-center gap-1.5 whitespace-nowrap font-medium text-red">
         <span className="h-2 w-2 rounded-full bg-red" aria-hidden />
         Steward: Paused
       </span>
@@ -249,25 +253,25 @@ function StewardChip({ standing, mode }: { standing: ReturnType<typeof stewardSt
   }
   if (standing?.kind === "mismatch") {
     return (
-      <span className="flex items-center gap-1.5 text-amber-500">
-        <span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden />
+      <span className="flex items-center gap-1.5 whitespace-nowrap text-warn">
+        <span className="h-2 w-2 rounded-full bg-warn" aria-hidden />
         Steward mismatch
-        <Link href="/business/steward" className="hidden text-xs underline underline-offset-4 sm:inline">Review</Link>
+        <Link href="/business/steward" className="hidden text-sm underline underline-offset-4 sm:inline">Review</Link>
       </span>
     );
   }
   if (standing?.kind === "unknown") {
     return (
-      <span className="flex items-center gap-1.5 text-graphite">
-        <span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden />
+      <span className="flex items-center gap-1.5 whitespace-nowrap text-graphite">
+        <span className="h-2 w-2 rounded-full bg-warn" aria-hidden />
         Steward: can't confirm
       </span>
     );
   }
   if (standing?.kind === "active") {
     return (
-      <span className="flex items-center gap-1.5 text-graphite">
-        <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
+      <span className="flex items-center gap-1.5 whitespace-nowrap text-graphite">
+        <span className="h-2 w-2 rounded-full bg-ok" aria-hidden />
         Steward: <span className="text-ink">{modeName ?? "Active"}</span>
       </span>
     );

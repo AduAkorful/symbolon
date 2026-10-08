@@ -1,10 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
+import { Overlay } from "@/components/Overlay";
+import { Button } from "@/components/ui/button";
+import { controlClass, Field } from "@/components/ui/Field";
+import { InlineError } from "@/components/ui/States";
+
+/** The inbox's one "Add" control: a button that opens a dialog for a sealed invoice (link or file) or an unsigned bill (file) */
 export function InboxActions({ businessId }: { businessId: string }) {
+  const [open, setOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const sealedFile = useRef<HTMLInputElement>(null);
+  const billFile = useRef<HTMLInputElement>(null);
 
   async function addLink(form: HTMLFormElement) {
     const data = new FormData(form);
@@ -34,27 +43,32 @@ export function InboxActions({ businessId }: { businessId: string }) {
   }
 
   return (
-    <div className="space-y-4 rounded-doc border border-rule bg-paper-raised p-5">
-      <div>
-        <p className="font-medium">Add a sealed invoice</p>
-        <form onSubmit={(e) => { e.preventDefault(); void addLink(e.currentTarget); }} className="mt-2 flex flex-wrap gap-2">
-          <input name="link" placeholder="https://…/invoice/0x…" className="min-w-0 flex-1 rounded-doc border border-rule bg-paper px-3 py-2 text-sm" />
-          <button disabled={busy} className="rounded-doc bg-ink px-3 py-2 text-sm text-paper disabled:opacity-50">Add link</button>
-        </form>
-        <label className="mt-2 inline-block text-sm underline decoration-rule underline-offset-4">
-          Or choose a .symbolon file
-          <input type="file" accept="application/json,.symbolon" className="sr-only" onChange={(e) => { const file = e.target.files?.[0]; if (file) void upload(file, `/api/business/${businessId}/inbox/upload`); }} />
-        </label>
-      </div>
-      <div>
-        <p className="font-medium">Add an unsigned bill</p>
-        <p className="mt-1 text-sm text-graphite">It will be held and assessed. It can never be paid as uploaded.</p>
-        <label className="mt-2 inline-block rounded-doc border border-rule px-3 py-2 text-sm">
-          Choose PDF or text
-          <input type="file" accept="application/pdf,text/plain,.txt" className="sr-only" onChange={(e) => { const file = e.target.files?.[0]; if (file) void upload(file, `/api/business/${businessId}/bills`); }} />
-        </label>
-      </div>
-      {message ? <p role="status" className="text-sm text-red">{message}</p> : null}
-    </div>
+    <>
+      <Button onClick={() => { setMessage(""); setOpen(true); }}>Add to the inbox</Button>
+
+      {open ? (
+        <Overlay title="Add to the inbox" description="Sealed invoices are checked against the vendor’s Seal. Anything else is held and can never be paid as uploaded." onClose={() => { if (!busy) setOpen(false); }}>
+          <form onSubmit={(e) => { e.preventDefault(); void addLink(e.currentTarget); }} className="space-y-3">
+            <Field label="A sealed invoice" hint="Paste the link the vendor sent you.">
+              {(a) => <input {...a} name="link" placeholder="https://…/invoice/0x…" className={controlClass} />}
+            </Field>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="submit" busy={busy}>Add the invoice</Button>
+              <input ref={sealedFile} type="file" accept="application/json,.symbolon" className="sr-only" tabIndex={-1} aria-label="Choose a .symbolon file" onChange={(e) => { const file = e.target.files?.[0]; if (file) void upload(file, `/api/business/${businessId}/inbox/upload`); }} />
+              <Button variant="secondary" disabled={busy} onClick={() => sealedFile.current?.click()}>Or choose a .symbolon file</Button>
+            </div>
+          </form>
+
+          <div className="space-y-2 border-t border-rule pt-4">
+            <p className="font-medium text-ink">An unsigned bill</p>
+            <p className="text-graphite">A PDF or text file without a Seal. It is held, assessed, and can’t be paid.</p>
+            <input ref={billFile} type="file" accept="application/pdf,text/plain,.txt" className="sr-only" tabIndex={-1} aria-label="Choose a PDF or text file" onChange={(e) => { const file = e.target.files?.[0]; if (file) void upload(file, `/api/business/${businessId}/bills`); }} />
+            <Button variant="secondary" disabled={busy} onClick={() => billFile.current?.click()}>Choose a PDF or text file</Button>
+          </div>
+
+          {message ? <InlineError>{message}</InlineError> : null}
+        </Overlay>
+      ) : null}
+    </>
   );
 }

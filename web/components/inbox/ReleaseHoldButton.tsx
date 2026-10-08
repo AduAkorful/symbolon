@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { buttonClass } from "@/components/ui/button";
 
 interface Props {
   businessId: string;
@@ -40,7 +41,7 @@ export function ReleaseHoldButton({ businessId, fingerprint }: Props) {
         type="button"
         onClick={handleRelease}
         disabled={busy}
-        className="rounded-doc border border-ink bg-ink px-3 py-1.5 text-xs font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-40"
+        className={buttonClass({ size: "sm" })}
       >
         {busy ? "Releasing hold…" : "Release the hold"}
       </button>

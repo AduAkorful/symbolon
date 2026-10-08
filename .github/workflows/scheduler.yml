@@ -1,0 +1,45 @@
+# Calls the app's two scheduler routes (plan 05zc §3): ledger sync every 5 minutes, a Steward run every 15. Both routes check
+# `Authorization: Bearer $CRON_SECRET`; without the secret they are off. Add CRON_SECRET as a repository secret (and the same
+# value in Vercel). GitHub may start a scheduled run several minutes late, and the Steward runs under a lease, so a late or
+# doubled call is safe. Vercel's own daily cron (web/vercel.json) is the backstop if this is paused: GitHub pauses scheduled
+# workflows after 60 days without repository activity.
+name: scheduler
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  CRON_SECRET: ${{ secrets.CRON_SECRET }}
+  APP_ORIGIN: ${{ vars.APP_ORIGIN || 'https://symbolon-app.vercel.app' }}
+
+jobs:
+  sync:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '*/5 * * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    concurrency:
+      group: scheduler-sync
+      cancel-in-progress: false
+    steps:
+      - name: Sync the ledger copy
+        run: |
+          if [ -z "$CRON_SECRET" ]; then echo "::notice::CRON_SECRET is not set as a repository secret; nothing to call."; exit 0; fi
+          curl --fail-with-body --silent --show-error --max-time 60 -X POST -H "Authorization: Bearer $CRON_SECRET" "$APP_ORIGIN/api/cron/sync"
+
+  steward:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '*/15 * * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    concurrency:
+      group: scheduler-steward
+      cancel-in-progress: false
+    steps:
+      - name: Run the Steward
+        run: |
+          if [ -z "$CRON_SECRET" ]; then echo "::notice::CRON_SECRET is not set as a repository secret; nothing to call."; exit 0; fi
+          curl --fail-with-body --silent --show-error --max-time 60 -X POST -H "Authorization: Bearer $CRON_SECRET" "$APP_ORIGIN/api/cron/steward"

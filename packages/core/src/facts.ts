@@ -12,7 +12,8 @@ const CCTP_ABI = parseAbi([
 
 /**
  * Everything the Steward's policy mirror needs, read from chain through `VaultLens` at one block. Chain time comes from
- * that block, never the server clock.
+ * that block, never the server clock. A caller reading several invoices at once passes the block it already fetched
+ * (`at`), so the list reads one block instead of one per invoice.
  */
 export async function readVaultFacts(
   contracts: SymbolonContracts,
@@ -20,18 +21,17 @@ export async function readVaultFacts(
   vault: Address,
   invoice: Invoice,
   fingerprint: Hex,
+  at?: { number: bigint; timestamp: bigint },
 ): Promise<VaultFacts> {
   const lens = contracts.lens.read;
-  const block = await client.getBlock();
+  const block = at ?? (await client.getBlock());
   const blockNumber = block.number;
-  const [state, payee, po, delivered, tokenOk] = await Promise.all([
+  const [state, payee, po, delivered, tokenOk, localDomain, messenger] = await Promise.all([
     lens.getVaultState([vault], { blockNumber }),
     lens.getPayee([vault, invoice.seal], { blockNumber }),
     invoice.poRef === ZERO32 ? Promise.resolve(undefined) : lens.getPurchaseOrder([vault, invoice.poRef], { blockNumber }),
     lens.deliveryConfirmed([vault, fingerprint], { blockNumber }),
     lens.isSupportedToken([vault, invoice.token], { blockNumber }),
-  ]);
-  const [localDomain, messenger] = await Promise.all([
     contracts.ledger.read.localDomain({ blockNumber }),
     contracts.ledger.read.tokenMessenger({ blockNumber }),
   ]);

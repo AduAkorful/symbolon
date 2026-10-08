@@ -8,6 +8,12 @@ import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import type { PayoutChangeRequestItem } from "@/lib/server/payout-change";
 import { formatDay, formatDateTime } from "@/lib/format";
 import { Address } from "@/components/Address";
+import { useConfirm } from "@/components/useConfirm";
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/Callout";
+import { InlineError } from "@/components/ui/States";
+import { StatusPill } from "@/components/ui/StatusPill";
+import { SectionTitle } from "@/components/ui/Type";
 
 interface Props {
   businessId: string;
@@ -31,6 +37,7 @@ export function VendorRequestsSection({
   signer,
 }: Props) {
   const router = useRouter();
+  const [ask, confirmDialog] = useConfirm();
   const discover = useWalletProviders();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,7 +98,7 @@ export function VendorRequestsSection({
 
   async function handleCancelPending(requestId: string) {
     if (!isOwner) return;
-    if (!confirm("Cancel this pending payout change on the Vault?")) return;
+    if (!(await ask({ title: "Cancel this payout change?", body: "The pending change is cancelled in the Vault and the vendor’s current payout address stays in place.", confirmLabel: "Cancel the change", destructive: true }))) return;
     setError(null);
     setBusy(true);
 
@@ -138,7 +145,7 @@ export function VendorRequestsSection({
   }
 
   async function handleReject(requestId: string) {
-    if (!confirm("Reject this payout change request?")) return;
+    if (!(await ask({ title: "Reject this payout change?", body: "The vendor’s request is rejected and their current payout address stays in place. They can ask again.", confirmLabel: "Reject the request", destructive: true }))) return;
     setError(null);
     setBusy(true);
 
@@ -159,104 +166,62 @@ export function VendorRequestsSection({
   }
 
   return (
-    <section className="mt-8 border-t border-rule pt-6">
-      <h2 className="font-display text-2xl">Payout change requests</h2>
-      <p className="mt-1 text-xs text-graphite">
-        When a vendor signs a change to their payout address, it must be confirmed onchain by the Vault owner.
-        A cooldown protects your business before the new address takes effect.
+    <section className="mt-10 border-t border-rule pt-8">
+      {confirmDialog}
+      <SectionTitle>Payout change requests</SectionTitle>
+      <p className="mt-1 max-w-[64ch] text-sm text-graphite">
+        When a vendor signs a change to their payout address, the Vault’s owner confirms it onchain. A cooldown protects your business before the new address takes effect.
       </p>
 
-      {error ? (
-        <div role="alert" className="mt-4 rounded-doc border border-red/40 bg-red-wash p-3 text-xs text-red">
-          {error}
-        </div>
-      ) : null}
+      {error ? <InlineError className="mt-4">{error}</InlineError> : null}
 
-      {/* Active cooldown banner */}
       {hasActiveCooldown ? (
-        <div className="mt-4 rounded-doc border border-seal/50 bg-seal/5 p-4 text-sm">
-          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-            <div>
-              <span className="font-mono text-xs uppercase tracking-wider text-seal font-medium">
-                Cooldown in progress
-              </span>
-              <p className="mt-1 text-xs text-ink">
-                Payout changing to <span className="font-mono">{pendingPayout}</span>
-              </p>
-              <p className="mt-0.5 text-xs text-graphite">
-                Active from {formatDateTime(new Date(pendingActiveAt! * 1000))}
-              </p>
-            </div>
-            {isOwner && requests[0] ? (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => handleCancelPending(requests[0]!.id)}
-                className="rounded-doc border border-red/50 px-3 py-1.5 text-xs text-red hover:bg-red-wash disabled:opacity-40 self-start sm:self-auto"
-              >
-                Cancel change on Vault
-              </button>
-            ) : null}
-          </div>
-        </div>
+        <Callout
+          tone="info"
+          title="Cooldown in progress"
+          className="mt-4"
+          actions={isOwner && requests[0] ? <Button variant="danger" size="sm" disabled={busy} onClick={() => handleCancelPending(requests[0]!.id)}>Cancel the change in the Vault</Button> : undefined}
+        >
+          <p className="flex flex-wrap items-baseline gap-x-2">Payout is changing to <Address value={pendingPayout!} /></p>
+          <p className="mt-1 text-graphite">Takes effect {formatDateTime(new Date(pendingActiveAt! * 1000))}</p>
+        </Callout>
       ) : null}
 
-      {/* Pending requests */}
       {pendingRequests.length > 0 ? (
         <div className="mt-4 space-y-4">
           {pendingRequests.map((req) => (
-            <div key={req.id} className="rounded-doc border border-rule bg-paper p-4 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="font-mono uppercase tracking-wider text-seal font-medium">
-                  Pending Owner Confirmation
-                </span>
-                <span className="text-graphite">{formatDay(new Date(req.createdAt))}</span>
+            <div key={req.id} className="rounded-doc border border-rule px-5 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <StatusPill tone="warn">Waiting for the owner</StatusPill>
+                <span className="text-sm text-graphite">{formatDay(new Date(req.createdAt))}</span>
               </div>
 
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                <div>
-                  <span className="text-graphite block">New payout address:</span>
+              <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                <div className="min-w-0">
+                  <p className="text-graphite">New payout address</p>
                   <Address value={req.newPayout} full className="font-medium text-ink" />
                 </div>
                 <div>
-                  <span className="text-graphite block">Domain / Nonce:</span>
-                  <span>Domain {req.payoutDomain} · Nonce {req.nonce}</span>
+                  <p className="text-graphite">Domain and nonce</p>
+                  <p>Domain {req.payoutDomain} · Nonce {req.nonce}</p>
                 </div>
               </div>
 
-              <p className="mt-2 text-graphite">
-                Payable at the new address after your Vault cooldown clears, and never before.
-              </p>
+              <p className="mt-3 text-sm text-graphite">Payable at the new address only after your Vault’s cooldown has passed.</p>
 
-              <div className="mt-4 flex gap-3 pt-3 border-t border-rule/60 justify-end">
-                {isApprover || isOwner ? (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => handleReject(req.id)}
-                    className="rounded-doc border border-rule px-3 py-1.5 hover:border-ink disabled:opacity-40"
-                  >
-                    Reject
-                  </button>
-                ) : null}
+              <div className="mt-4 flex flex-wrap items-center justify-end gap-3 border-t border-rule-soft pt-4">
+                {isApprover || isOwner ? <Button variant="secondary" disabled={busy} onClick={() => handleReject(req.id)}>Reject</Button> : null}
                 {isOwner ? (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => handleConfirm(req.id)}
-                    className="rounded-doc bg-ink px-4 py-1.5 font-medium text-paper hover:opacity-90 disabled:opacity-40"
-                  >
-                    {busy ? "Confirming..." : "Confirm on Vault"}
-                  </button>
+                  <Button busy={busy} onClick={() => handleConfirm(req.id)}>{busy ? "Confirming…" : "Confirm in the Vault"}</Button>
                 ) : (
-                  <span className="text-graphite italic self-center">Owner confirmation required</span>
+                  <span className="text-sm text-graphite">Only the owner can confirm this.</span>
                 )}
               </div>
             </div>
           ))}
         </div>
       ) : !hasActiveCooldown ? (
-        <p className="mt-3 text-xs text-graphite">No pending payout change requests for this vendor.</p>
+        <p className="mt-3 text-sm text-graphite">No payout change is waiting for this vendor.</p>
       ) : null}
     </section>
   );

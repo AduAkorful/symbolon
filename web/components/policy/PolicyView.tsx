@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { TxLink } from "@/components/TxLink";
 import { QueuedChange } from "@/components/QueuedChange";
 import { sendWithWallet, type SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
@@ -13,6 +12,13 @@ import { policyTemplate, type PolicyTemplate } from "@/lib/policy-template";
 import { moneyDraft, moneyInput } from "@/lib/money-draft";
 import { usd, duration } from "@/lib/format";
 import { isLooseningPolicy } from "@/lib/server/loosening";
+import { Overlay } from "@/components/Overlay";
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/Callout";
+import { controlClass, Field, type FieldAria } from "@/components/ui/Field";
+import { InlineError } from "@/components/ui/States";
+import { StatusPill } from "@/components/ui/StatusPill";
+import { Lead, PageTitle, SectionTitle } from "@/components/ui/Type";
 
 
 interface PolicyViewProps extends PolicyViewData {
@@ -23,6 +29,29 @@ interface PolicyViewProps extends PolicyViewData {
   budgets: BudgetViewItem[];
   explorerUrl?: string;
 }
+
+/** Whether a draft value is looser or tighter than the Vault's current one */
+function fieldDelta(current: bigint | number, draft: bigint | number, looserWhen: "higher" | "lower") {
+  const c = BigInt(current);
+  const d = BigInt(draft);
+  if (c === d) return { label: "unchanged", color: "text-graphite" };
+  const looser = looserWhen === "higher" ? d > c : d < c;
+  return looser
+    ? { label: "looser", color: "text-warn font-medium" }
+    : { label: "tighter", color: "text-ok font-medium" };
+}
+
+
+/** A policy setting in the editor: its label, whether the draft is looser or tighter than the Vault's, the control and a hint */
+function PolicyField({ id, label, current, draft, looserWhen, hint, children }: { id: string; label: string; current: bigint | number; draft: bigint | number; looserWhen: "higher" | "lower"; hint: React.ReactNode; children: (a: FieldAria) => React.ReactNode }) {
+  const delta = fieldDelta(current, draft, looserWhen);
+  return (
+    <Field label={<span className="flex flex-wrap items-baseline justify-between gap-x-3"><span>{label}</span><span className={`text-xs font-normal ${delta.color}`}>{delta.label}</span></span>} hint={hint}>
+      {(a) => children(a)}
+    </Field>
+  );
+}
+
 
 export function PolicyView({
   businessId,
@@ -107,21 +136,10 @@ export function PolicyView({
 
   const isLooser = draftPolicyRaw ? isLooseningPolicy(currentPolicyRaw, draftPolicyRaw) : false;
 
-  // Field-level comparison helper
-  function fieldDelta(current: bigint | number, draft: bigint | number, looserWhen: "higher" | "lower") {
-    const c = BigInt(current);
-    const d = BigInt(draft);
-    if (c === d) return { label: "unchanged", color: "text-graphite" };
-    const looser = looserWhen === "higher" ? d > c : d < c;
-    return looser
-      ? { label: "looser", color: "text-amber-600 font-medium" }
-      : { label: "tighter", color: "text-emerald-600 font-medium" };
-  }
-
   async function handleSavePolicy(e: React.FormEvent) {
     e.preventDefault();
     if (signer.kind !== "wallet") {
-      alert("Please connect the business owner's wallet to submit policy changes.");
+      setError("Connect the owner’s wallet to change the policy.");
       return;
     }
 
@@ -181,7 +199,7 @@ export function PolicyView({
   async function handleCreateBudget(e: React.FormEvent) {
     e.preventDefault();
     if (signer.kind !== "wallet") {
-      alert("Please connect the business owner's wallet to create a budget.");
+      setError("Connect the owner’s wallet to create a budget.");
       return;
     }
 
@@ -238,61 +256,40 @@ export function PolicyView({
     "Cross-chain",
   ];
 
+  const draftNow = draftPolicyRaw ?? currentPolicyRaw;
+
+  const seconds = (n: number) => String(n);
+
   return (
-    <article className="max-w-[960px] pb-24">
-      <div className="flex flex-wrap items-baseline justify-between gap-4">
-        <div>
-          <p className="font-mono text-xs uppercase tracking-[0.14em] text-graphite">
-            {businessName} · Security Controls
-          </p>
-          <h1 className="mt-2 font-display text-4xl">Policy</h1>
+    <article className="pb-24">
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+        <div className="min-w-0">
+          <PageTitle>Policy</PageTitle>
+          <Lead className="mt-3">
+            The rules {businessName}’s Vault enforces for every payment, whoever or whatever asks. A stricter rule applies at once; a looser one waits for
+            the Vault’s loosening delay, so a stolen session can’t widen the limits and drain funds immediately.
+          </Lead>
         </div>
-        {isOwner ? (
-          <button
-            onClick={() => setEditing(!editing)}
-            className="rounded-doc bg-ink px-4 py-2 text-sm font-medium text-paper transition-opacity hover:opacity-90"
-          >
-            {editing ? "Close editor" : "Edit policy"}
-          </button>
-        ) : null}
+        {isOwner ? <Button onClick={() => setEditing(true)}>Edit policy</Button> : null}
       </div>
 
-      <p className="mt-4 max-w-[75ch] text-graphite text-sm leading-relaxed">
-        The rules {businessName}’s Vault enforces for every payment, whoever or whatever asks.
-        Making a rule stricter applies at once; making it looser waits for the Vault’s loosening delay, so a stolen session cannot widen limits and drain funds immediately.
-      </p>
-
-      {/* Sanity or status notices */}
-      {statusMessage ? (
-        <div role="status" className="mt-6 rounded-doc border border-seal/40 bg-seal-wash/50 p-4 text-sm">
-          {statusMessage}
-        </div>
-      ) : null}
-
-      {(error || draftError) ? (
-        <div role="alert" className="mt-6 rounded-doc border border-red-300 bg-red-50 p-4 text-sm text-red-800">
-          {error || draftError}
-        </div>
-      ) : null}
+      {statusMessage ? <Callout tone="info" className="mt-6">{statusMessage}</Callout> : null}
+      {!editing && (error || draftError) ? <Callout tone="danger" className="mt-6">{error || draftError}</Callout> : null}
 
       {initialWarnings.length > 0 ? (
-        <div className="mt-6 space-y-2 rounded-doc border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-          <p className="font-medium">Policy considerations:</p>
-          <ul className="list-inside list-disc space-y-1 text-xs">
+        <Callout tone="warn" title="Worth a look" className="mt-6">
+          <ul className="list-inside list-disc space-y-1">
             {initialWarnings.map((w, idx) => (
               <li key={idx}>{w}</li>
             ))}
           </ul>
-        </div>
+        </Callout>
       ) : null}
 
-      {/* Waiting to apply change */}
+      {/* A change waiting to apply */}
       {pendingChange ? (
-        <section className="mt-8 rounded-doc border border-amber-300 bg-amber-50/60 p-5">
-          <h2 className="font-display text-xl text-amber-950">A policy change is queued</h2>
-          <p className="mt-1 text-sm text-amber-900">
-            A loosening policy update was queued onchain and will become ready to apply once the loosening delay passes.
-          </p>
+        <Callout tone="warn" title="A policy change is waiting" className="mt-6">
+          <p>A looser policy was queued onchain. It can be applied once the loosening delay has passed.</p>
           <div className="mt-4">
             <QueuedChange
               businessId={businessId}
@@ -307,320 +304,101 @@ export function PolicyView({
               onCancelled={() => window.location.reload()}
             />
           </div>
-        </section>
+        </Callout>
       ) : null}
 
-      {/* Edit Form Sheet */}
+      {/* The editor */}
       {editing ? (
-        <section className="mt-8 rounded-doc border-2 border-ink/20 bg-paper-raised p-6 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-rule pb-4">
-            <div>
-              <h2 className="font-display text-2xl">Edit Vault Policy</h2>
-              <p className="text-xs text-graphite">
-                Preset templates prefill these fields below. They are not applied until you review and sign.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-graphite font-mono uppercase tracking-wider">Presets:</span>
-              <button
-                type="button"
-                onClick={() => handlePrefillTemplate("starter")}
-                className="rounded-doc border border-rule px-2.5 py-1 text-xs hover:bg-paper"
-              >
-                Starter
-              </button>
-              <button
-                type="button"
-                onClick={() => handlePrefillTemplate("standard")}
-                className="rounded-doc border border-rule px-2.5 py-1 text-xs hover:bg-paper"
-              >
-                Standard
-              </button>
-              <button
-                type="button"
-                onClick={() => handlePrefillTemplate("strict")}
-                className="rounded-doc border border-rule px-2.5 py-1 text-xs hover:bg-paper"
-              >
-                Strict
-              </button>
-            </div>
-          </div>
-
-          <form onSubmit={handleSavePolicy} className="mt-6 space-y-6">
-            <div className="grid gap-6 md:grid-cols-2">
-              {/* perTxCap */}
-              <div className="rounded-doc border border-rule p-4">
-                <div className="flex items-center justify-between">
-                  <label htmlFor="perTxCap" className="font-medium text-sm">
-                    Largest single payment ($)
-                  </label>
-                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.perTxCap, (draftPolicyRaw ?? currentPolicyRaw).perTxCap, "higher").color}`}>
-                    {fieldDelta(currentPolicyRaw.perTxCap, (draftPolicyRaw ?? currentPolicyRaw).perTxCap, "higher").label}
-                  </span>
-                </div>
-                <input
-                  id="perTxCap"
-                  type="number"
-                  step="any"
-                  value={draftPerTxCap}
-                  onChange={(e) => setDraftPerTxCap(e.target.value)}
-                  className="mt-2 w-full rounded border border-ink/40 bg-paper px-3 py-1.5 text-sm"
-                  required
-                />
-                <p className="mt-1 text-xs text-graphite">No single outflow may ever exceed this amount.</p>
-              </div>
-
-              {/* ownerThreshold */}
-              <div className="rounded-doc border border-rule p-4">
-                <div className="flex items-center justify-between">
-                  <label htmlFor="ownerThreshold" className="font-medium text-sm">
-                    Owner signs above ($)
-                  </label>
-                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.ownerThreshold, (draftPolicyRaw ?? currentPolicyRaw).ownerThreshold, "higher").color}`}>
-                    {fieldDelta(currentPolicyRaw.ownerThreshold, (draftPolicyRaw ?? currentPolicyRaw).ownerThreshold, "higher").label}
-                  </span>
-                </div>
-                <input
-                  id="ownerThreshold"
-                  type="number"
-                  step="any"
-                  value={draftOwnerThreshold}
-                  onChange={(e) => setDraftOwnerThreshold(e.target.value)}
-                  className="mt-2 w-full rounded border border-ink/40 bg-paper px-3 py-1.5 text-sm"
-                  required
-                />
-                <p className="mt-1 text-xs text-graphite">Invoices between auto-pay and this need an approver; above this, the owner.</p>
-              </div>
-
-              {/* autoPayLimit */}
-              <div className="rounded-doc border border-rule p-4">
-                <div className="flex items-center justify-between">
-                  <label htmlFor="autoPayLimit" className="font-medium text-sm">
-                    Auto-pay limit ($)
-                  </label>
-                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.autoPayLimit, (draftPolicyRaw ?? currentPolicyRaw).autoPayLimit, "higher").color}`}>
-                    {fieldDelta(currentPolicyRaw.autoPayLimit, (draftPolicyRaw ?? currentPolicyRaw).autoPayLimit, "higher").label}
-                  </span>
-                </div>
-                <input
-                  id="autoPayLimit"
-                  type="number"
-                  step="any"
-                  value={draftAutoPayLimit}
-                  onChange={(e) => setDraftAutoPayLimit(e.target.value)}
-                  className="mt-2 w-full rounded border border-ink/40 bg-paper px-3 py-1.5 text-sm"
-                  required
-                />
-                <p className="mt-1 text-xs text-graphite">Up to this amount can settle without human sign-off if requirements match.</p>
-              </div>
-
-              {/* newVendorMinPaid */}
-              <div className="rounded-doc border border-rule p-4">
-                <div className="flex items-center justify-between">
-                  <label htmlFor="newVendorMinPaid" className="font-medium text-sm">
-                    New vendor invoice threshold
-                  </label>
-                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.newVendorMinPaid, (draftPolicyRaw ?? currentPolicyRaw).newVendorMinPaid, "lower").color}`}>
-                    {fieldDelta(currentPolicyRaw.newVendorMinPaid, (draftPolicyRaw ?? currentPolicyRaw).newVendorMinPaid, "lower").label}
-                  </span>
-                </div>
-                <input
-                  id="newVendorMinPaid"
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={draftNewVendorMinPaid}
-                  onChange={(e) => setDraftNewVendorMinPaid(Number(e.target.value))}
-                  className="mt-2 w-full rounded border border-ink/40 bg-paper px-3 py-1.5 text-sm"
-                  required
-                />
-                <p className="mt-1 text-xs text-graphite">Number of invoices a vendor must successfully clear before qualifying for auto-pay.</p>
-              </div>
-
-              {/* screeningMaxAge */}
-              <div className="rounded-doc border border-rule p-4">
-                <div className="flex items-center justify-between">
-                  <label htmlFor="screeningMaxAge" className="font-medium text-sm">
-                    Screening max age
-                  </label>
-                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.screeningMaxAge, (draftPolicyRaw ?? currentPolicyRaw).screeningMaxAge, "higher").color}`}>
-                    {fieldDelta(currentPolicyRaw.screeningMaxAge, (draftPolicyRaw ?? currentPolicyRaw).screeningMaxAge, "higher").label}
-                  </span>
-                </div>
-                <select
-                  id="screeningMaxAge"
-                  value={draftScreeningMaxAge}
-                  onChange={(e) => setDraftScreeningMaxAge(e.target.value)}
-                  className="mt-2 w-full rounded border border-ink/40 bg-paper px-3 py-1.5 text-sm"
-                >
-                  <option value="0">Not required (0 days — loosest)</option>
-                  <option value={String(7 * 86400)}>7 days</option>
-                  <option value={String(14 * 86400)}>14 days</option>
-                  <option value={String(30 * 86400)}>30 days</option>
-                  <option value={String(60 * 86400)}>60 days</option>
-                  <option value={String(90 * 86400)}>90 days</option>
-                </select>
-                <p className="mt-1 text-xs text-graphite">
-                  Payees need screening within this window. See{" "}
-                  <Link href="/business/compliance" className="underline underline-offset-2">
-                    Compliance
-                  </Link>{" "}
-                  for screening status.
-                </p>
-              </div>
-
-              {/* newPayeeDelay */}
-              <div className="rounded-doc border border-rule p-4">
-                <div className="flex items-center justify-between">
-                  <label htmlFor="newPayeeDelay" className="font-medium text-sm">
-                    New payee delay
-                  </label>
-                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.newPayeeDelay, (draftPolicyRaw ?? currentPolicyRaw).newPayeeDelay, "lower").color}`}>
-                    {fieldDelta(currentPolicyRaw.newPayeeDelay, (draftPolicyRaw ?? currentPolicyRaw).newPayeeDelay, "lower").label}
-                  </span>
-                </div>
-                <select
-                  id="newPayeeDelay"
-                  value={draftNewPayeeDelay}
-                  onChange={(e) => setDraftNewPayeeDelay(e.target.value)}
-                  className="mt-2 w-full rounded border border-ink/40 bg-paper px-3 py-1.5 text-sm"
-                >
-                  <option value="0">Immediate (0 delay)</option>
-                  <option value={String(12 * 3600)}>12 hours</option>
-                  <option value={String(24 * 3600)}>24 hours</option>
-                  <option value={String(48 * 3600)}>48 hours</option>
-                  <option value={String(72 * 3600)}>72 hours</option>
-                </select>
-                <p className="mt-1 text-xs text-graphite">Wait time before a newly added payee can receive their first payment.</p>
-              </div>
-
-              {/* changeCooldown */}
-              <div className="rounded-doc border border-rule p-4">
-                <div className="flex items-center justify-between">
-                  <label htmlFor="changeCooldown" className="font-medium text-sm">
-                    Payout & Seal change cooldown
-                  </label>
-                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.changeCooldown, (draftPolicyRaw ?? currentPolicyRaw).changeCooldown, "lower").color}`}>
-                    {fieldDelta(currentPolicyRaw.changeCooldown, (draftPolicyRaw ?? currentPolicyRaw).changeCooldown, "lower").label}
-                  </span>
-                </div>
-                <select
-                  id="changeCooldown"
-                  value={draftChangeCooldown}
-                  onChange={(e) => setDraftChangeCooldown(e.target.value)}
-                  className="mt-2 w-full rounded border border-ink/40 bg-paper px-3 py-1.5 text-sm"
-                >
-                  <option value={String(24 * 3600)}>24 hours</option>
-                  <option value={String(48 * 3600)}>48 hours</option>
-                  <option value={String(72 * 3600)}>72 hours</option>
-                  <option value={String(7 * 86400)}>7 days</option>
-                </select>
-                <p className="mt-1 text-xs text-graphite">Cooldown window for vendor payout address or Seal rotation requests.</p>
-              </div>
-
-              {/* looseningDelay */}
-              <div className="rounded-doc border border-rule p-4">
-                <div className="flex items-center justify-between">
-                  <label htmlFor="looseningDelay" className="font-medium text-sm">
-                    Loosening change delay
-                  </label>
-                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.looseningDelay, (draftPolicyRaw ?? currentPolicyRaw).looseningDelay, "lower").color}`}>
-                    {fieldDelta(currentPolicyRaw.looseningDelay, (draftPolicyRaw ?? currentPolicyRaw).looseningDelay, "lower").label}
-                  </span>
-                </div>
-                <select
-                  id="looseningDelay"
-                  value={draftLooseningDelay}
-                  onChange={(e) => setDraftLooseningDelay(e.target.value)}
-                  className="mt-2 w-full rounded border border-ink/40 bg-paper px-3 py-1.5 text-sm"
-                >
-                  <option value="0">Immediate (0 delay — caution)</option>
-                  <option value={String(12 * 3600)}>12 hours</option>
-                  <option value={String(24 * 3600)}>24 hours</option>
-                  <option value={String(48 * 3600)}>48 hours</option>
-                  <option value={String(72 * 3600)}>72 hours</option>
-                </select>
-                <p className="mt-1 text-xs text-graphite">Time looser policy changes must wait in queue before they can be applied.</p>
-              </div>
-
-              {/* maxBridgeFee */}
-              <div className="rounded-doc border border-rule p-4">
-                <div className="flex items-center justify-between">
-                  <label htmlFor="maxBridgeFee" className="font-medium text-sm">
-                    Max cross-chain bridge fee ($)
-                  </label>
-                  <span className={`text-xs ${fieldDelta(currentPolicyRaw.maxBridgeFee, (draftPolicyRaw ?? currentPolicyRaw).maxBridgeFee, "higher").color}`}>
-                    {fieldDelta(currentPolicyRaw.maxBridgeFee, (draftPolicyRaw ?? currentPolicyRaw).maxBridgeFee, "higher").label}
-                  </span>
-                </div>
-                <input
-                  id="maxBridgeFee"
-                  type="number"
-                  step="any"
-                  value={draftMaxBridgeFee}
-                  onChange={(e) => setDraftMaxBridgeFee(e.target.value)}
-                  className="mt-2 w-full rounded border border-ink/40 bg-paper px-3 py-1.5 text-sm"
-                  required
-                />
-                <p className="mt-1 text-xs text-graphite">Maximum CCTP bridge fee permitted per cross-chain payment.</p>
-              </div>
+        <Overlay title="Edit the Vault’s policy" description="Presets fill in the fields below. Nothing changes until you review and sign." size="lg" onClose={() => { if (!busy) setEditing(false); }}>
+          <form onSubmit={handleSavePolicy} className="space-y-5">
+            {error || draftError ? <InlineError>{error || draftError}</InlineError> : null}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-graphite">Start from</span>
+              {(["starter", "standard", "strict"] as const).map((t) => (
+                <Button key={t} variant="secondary" size="sm" onClick={() => handlePrefillTemplate(t)}>{t[0]!.toUpperCase() + t.slice(1)}</Button>
+              ))}
             </div>
 
-            {/* Action Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-4 border-t border-rule pt-4">
-              <div>
-                <p className="text-sm font-medium">
-                  {isLooser ? (
-                    <span className="text-amber-700">
-                      Looser policy: this change will be queued and must wait {duration(BigInt(policy.looseningDelay))}.
-                    </span>
-                  ) : (
-                    <span className="text-emerald-700">
-                      Tighter policy: this change will apply immediately upon signing.
-                    </span>
-                  )}
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setEditing(false)}
-                  disabled={busy}
-                  className="rounded-doc border border-rule px-4 py-2 text-sm text-graphite hover:bg-paper"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={busy}
-                  className="rounded-doc bg-ink px-5 py-2 text-sm font-medium text-paper hover:opacity-90 disabled:opacity-50"
-                >
-                  {busy ? "Processing..." : isLooser ? "Queue change" : "Apply now"}
-                </button>
-              </div>
+            <div className="grid gap-x-6 gap-y-5 md:grid-cols-2">
+              <PolicyField id="perTxCap" label="Largest single payment ($)" current={currentPolicyRaw.perTxCap} draft={draftNow.perTxCap} looserWhen="higher" hint="No single payment may ever exceed this.">
+                {(a) => <input {...a} type="number" step="any" value={draftPerTxCap} onChange={(e) => setDraftPerTxCap(e.target.value)} className={controlClass} required />}
+              </PolicyField>
+              <PolicyField id="ownerThreshold" label="Owner signs above ($)" current={currentPolicyRaw.ownerThreshold} draft={draftNow.ownerThreshold} looserWhen="higher" hint="Between the auto-pay limit and this, an approver signs; above it, the owner.">
+                {(a) => <input {...a} type="number" step="any" value={draftOwnerThreshold} onChange={(e) => setDraftOwnerThreshold(e.target.value)} className={controlClass} required />}
+              </PolicyField>
+              <PolicyField id="autoPayLimit" label="Auto-pay limit ($)" current={currentPolicyRaw.autoPayLimit} draft={draftNow.autoPayLimit} looserWhen="higher" hint="Up to this, a payment can settle with no one signing, if every other rule holds.">
+                {(a) => <input {...a} type="number" step="any" value={draftAutoPayLimit} onChange={(e) => setDraftAutoPayLimit(e.target.value)} className={controlClass} required />}
+              </PolicyField>
+              <PolicyField id="newVendorMinPaid" label="Invoices before a vendor is trusted" current={currentPolicyRaw.newVendorMinPaid} draft={draftNow.newVendorMinPaid} looserWhen="lower" hint="How many invoices a vendor must have been paid for before auto-pay applies.">
+                {(a) => <input {...a} type="number" min="0" step="1" value={draftNewVendorMinPaid} onChange={(e) => setDraftNewVendorMinPaid(Number(e.target.value))} className={controlClass} required />}
+              </PolicyField>
+              <PolicyField id="screeningMaxAge" label="Newest screening allowed" current={currentPolicyRaw.screeningMaxAge} draft={draftNow.screeningMaxAge} looserWhen="higher" hint={<>Payees must have been screened within this time. See <Link href="/business/compliance" className="underline underline-offset-2">Compliance</Link>.</>}>
+                {(a) => (
+                  <select {...a} value={draftScreeningMaxAge} onChange={(e) => setDraftScreeningMaxAge(e.target.value)} className={controlClass}>
+                    <option value="0">Not required</option>
+                    {[7, 14, 30, 60, 90].map((d) => <option key={d} value={seconds(d * 86400)}>{d} days</option>)}
+                  </select>
+                )}
+              </PolicyField>
+              <PolicyField id="newPayeeDelay" label="Wait before a new payee is paid" current={currentPolicyRaw.newPayeeDelay} draft={draftNow.newPayeeDelay} looserWhen="lower" hint="Time between adding a payee and their first payment.">
+                {(a) => (
+                  <select {...a} value={draftNewPayeeDelay} onChange={(e) => setDraftNewPayeeDelay(e.target.value)} className={controlClass}>
+                    <option value="0">No wait</option>
+                    {[12, 24, 48, 72].map((h) => <option key={h} value={seconds(h * 3600)}>{h} hours</option>)}
+                  </select>
+                )}
+              </PolicyField>
+              <PolicyField id="changeCooldown" label="Wait before a payout change takes effect" current={currentPolicyRaw.changeCooldown} draft={draftNow.changeCooldown} looserWhen="lower" hint="Applies to a vendor’s new payout address or new Seal.">
+                {(a) => (
+                  <select {...a} value={draftChangeCooldown} onChange={(e) => setDraftChangeCooldown(e.target.value)} className={controlClass}>
+                    {[24, 48, 72].map((h) => <option key={h} value={seconds(h * 3600)}>{h} hours</option>)}
+                    <option value={seconds(7 * 86400)}>7 days</option>
+                  </select>
+                )}
+              </PolicyField>
+              <PolicyField id="looseningDelay" label="Wait before a looser rule applies" current={currentPolicyRaw.looseningDelay} draft={draftNow.looseningDelay} looserWhen="lower" hint="How long a looser change waits in the queue. A short wait gives a thief less to wait out.">
+                {(a) => (
+                  <select {...a} value={draftLooseningDelay} onChange={(e) => setDraftLooseningDelay(e.target.value)} className={controlClass}>
+                    <option value="0">No wait (risky)</option>
+                    {[12, 24, 48, 72].map((h) => <option key={h} value={seconds(h * 3600)}>{h} hours</option>)}
+                  </select>
+                )}
+              </PolicyField>
+              <PolicyField id="maxBridgeFee" label="Most to pay in cross-chain fees ($)" current={currentPolicyRaw.maxBridgeFee} draft={draftNow.maxBridgeFee} looserWhen="higher" hint="The largest CCTP fee one cross-chain payment may cost.">
+                {(a) => <input {...a} type="number" step="any" value={draftMaxBridgeFee} onChange={(e) => setDraftMaxBridgeFee(e.target.value)} className={controlClass} required />}
+              </PolicyField>
             </div>
+
+            <p className={isLooser ? "text-warn" : "text-ok"}>
+              {isLooser
+                ? `A looser policy: it is queued and has to wait ${duration(BigInt(policy.looseningDelay))} before you can apply it.`
+                : "A tighter or equal policy: it applies as soon as you sign."}
+            </p>
+
+            <Overlay.Footer>
+              <Button variant="secondary" disabled={busy} onClick={() => setEditing(false)}>Cancel</Button>
+              <Button type="submit" busy={busy}>{busy ? "Working…" : isLooser ? "Queue the change" : "Apply now"}</Button>
+            </Overlay.Footer>
           </form>
-        </section>
+        </Overlay>
       ) : null}
 
-      {/* Rules list */}
+      {/* The rules */}
       <section className="mt-10 space-y-10">
         {groups.map((group) => {
           const groupRules = rules.filter((r) => r.group === group);
           if (!groupRules.length) return null;
           return (
             <div key={group}>
-              <h2 className="font-display text-2xl">{group}</h2>
-              <ul className="mt-3 divide-y divide-rule border-y border-rule">
+              <SectionTitle>{group}</SectionTitle>
+              <ul className="mt-3 divide-y divide-rule-soft border-y border-rule">
                 {groupRules.map((rule) => (
-                  <li key={rule.id} className="flex flex-col justify-between gap-2 py-4 sm:flex-row sm:items-center">
-                    <div>
-                      <p className="font-medium text-sm">{rule.name}</p>
-                      <p className="text-xs text-graphite">{rule.note}</p>
+                  <li key={rule.id} className="flex flex-col justify-between gap-1 py-4 sm:flex-row sm:items-center sm:gap-8">
+                    <div className="min-w-0">
+                      <p className="font-medium text-ink">{rule.name}</p>
+                      <p className="text-sm text-graphite">{rule.note}</p>
                     </div>
-                    <div className="text-right">
-                      <p className="font-mono text-sm font-medium">{rule.formatted}</p>
-                    </div>
+                    <p className="shrink-0 font-medium text-ink sm:text-right">{rule.formatted}</p>
                   </li>
                 ))}
               </ul>
@@ -629,122 +407,61 @@ export function PolicyView({
         })}
       </section>
 
-      {/* Budgets Section */}
+      {/* Budgets */}
       <section className="mt-16 border-t border-rule pt-10">
-        <div className="flex flex-wrap items-baseline justify-between gap-4">
-          <div>
-            <h2 className="font-display text-2xl">Budgets</h2>
-            <p className="mt-1 text-sm text-graphite">
-              Caps on spending from {businessName}’s single Vault balance, not separated bank accounts.
-              Periods are fixed-length windows (e.g. 30 days), epoch-aligned onchain.
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+          <div className="min-w-0">
+            <SectionTitle>Budgets</SectionTitle>
+            <p className="mt-1 max-w-[64ch] text-sm text-graphite">
+              Limits on spending from {businessName}’s one Vault balance, not separate bank accounts. A period is a fixed window, such as 30 days, counted onchain.
             </p>
           </div>
-          {isOwner ? (
-            <button
-              onClick={() => setCreatingBudget(!creatingBudget)}
-              className="rounded-doc border border-ink bg-paper px-3 py-1.5 text-xs font-medium text-ink hover:bg-ink hover:text-paper"
-            >
-              {creatingBudget ? "Cancel" : "New budget"}
-            </button>
-          ) : null}
+          {isOwner ? <Button variant="secondary" onClick={() => setCreatingBudget(true)}>New budget</Button> : null}
         </div>
 
         {creatingBudget ? (
-          <form onSubmit={handleCreateBudget} className="mt-6 rounded-doc border border-ink/20 bg-paper-raised p-5">
-            <h3 className="font-display text-lg">Create a New Budget</h3>
-            <div className="mt-4 grid gap-4 sm:grid-cols-3">
-              <div>
-                <label htmlFor="budgetName" className="block text-xs font-medium text-graphite">
-                  Budget name
-                </label>
-                <input
-                  id="budgetName"
-                  type="text"
-                  placeholder="e.g. Marketing, Engineering"
-                  value={budgetName}
-                  onChange={(e) => setBudgetName(e.target.value)}
-                  className="mt-1 w-full rounded border border-rule bg-paper px-3 py-1.5 text-sm"
-                  required
-                />
-              </div>
-              <div>
-                <label htmlFor="budgetCap" className="block text-xs font-medium text-graphite">
-                  Cap ($)
-                </label>
-                <input
-                  id="budgetCap"
-                  type="number"
-                  step="any"
-                  value={budgetCap}
-                  onChange={(e) => setBudgetCap(e.target.value)}
-                  className="mt-1 w-full rounded border border-rule bg-paper px-3 py-1.5 text-sm"
-                  required
-                />
-              </div>
-              <div>
-                <label htmlFor="budgetPeriod" className="block text-xs font-medium text-graphite">
-                  Period window
-                </label>
-                <select
-                  id="budgetPeriod"
-                  value={budgetPeriod}
-                  onChange={(e) => setBudgetPeriod(e.target.value)}
-                  className="mt-1 w-full rounded border border-rule bg-paper px-3 py-1.5 text-sm"
-                >
-                  <option value={String(7 * 86400)}>7-day period</option>
-                  <option value={String(30 * 86400)}>30-day period</option>
-                  <option value={String(90 * 86400)}>90-day period</option>
-                </select>
-              </div>
-            </div>
-            <div className="mt-4 flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setCreatingBudget(false)}
-                className="rounded-doc border border-rule px-3 py-1.5 text-xs text-graphite"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={busy}
-                className="rounded-doc bg-ink px-4 py-1.5 text-xs font-medium text-paper hover:opacity-90 disabled:opacity-50"
-              >
-                {busy ? "Creating..." : "Create budget"}
-              </button>
-            </div>
-          </form>
+          <Overlay title="New budget" description="A cap on spending over a fixed period." onClose={() => { if (!busy) setCreatingBudget(false); }}>
+            <form onSubmit={handleCreateBudget} className="space-y-4">
+              {error ? <InlineError>{error}</InlineError> : null}
+              <Field label="Name">
+                {(a) => <input {...a} type="text" placeholder="Marketing" value={budgetName} onChange={(e) => setBudgetName(e.target.value)} className={controlClass} required />}
+              </Field>
+              <Field label="Cap ($)">
+                {(a) => <input {...a} type="number" step="any" value={budgetCap} onChange={(e) => setBudgetCap(e.target.value)} className={controlClass} required />}
+              </Field>
+              <Field label="Period">
+                {(a) => (
+                  <select {...a} value={budgetPeriod} onChange={(e) => setBudgetPeriod(e.target.value)} className={controlClass}>
+                    <option value={String(7 * 86400)}>7 days</option>
+                    <option value={String(30 * 86400)}>30 days</option>
+                    <option value={String(90 * 86400)}>90 days</option>
+                  </select>
+                )}
+              </Field>
+              <Overlay.Footer>
+                <Button variant="secondary" disabled={busy} onClick={() => setCreatingBudget(false)}>Cancel</Button>
+                <Button type="submit" busy={busy}>{busy ? "Creating…" : "Create the budget"}</Button>
+              </Overlay.Footer>
+            </form>
+          </Overlay>
         ) : null}
 
-        <div className="mt-6 divide-y divide-rule border-y border-rule">
+        <ul className="mt-6 divide-y divide-rule-soft border-y border-rule">
           {budgets.map((b) => (
-            <div key={b.id} className="grid gap-3 py-4 sm:grid-cols-[1.5fr_1fr_1fr_auto] sm:items-center">
-              <div>
-                <p className="font-medium text-sm flex items-center gap-2">
+            <li key={b.id} className="grid gap-x-6 gap-y-2 py-4 sm:grid-cols-[minmax(0,1.5fr)_1fr_1fr_1fr] sm:items-center">
+              <div className="min-w-0">
+                <p className="flex flex-wrap items-center gap-2 font-medium text-ink">
                   <span>{b.name}</span>
-                  {b.isOperating ? (
-                    <span className="rounded bg-ink/10 px-1.5 py-0.5 text-[10px] font-mono uppercase text-ink">
-                      Default
-                    </span>
-                  ) : null}
+                  {b.isOperating ? <StatusPill tone="neutral">Default</StatusPill> : null}
                 </p>
-                <p className="text-xs text-graphite">{b.periodLengthLabel}</p>
+                <p className="text-sm text-graphite">{b.periodLengthLabel}</p>
               </div>
-              <div>
-                <p className="text-xs text-graphite">Spent in period</p>
-                <p className="font-mono text-sm font-medium">{b.spent}</p>
-              </div>
-              <div>
-                <p className="text-xs text-graphite">Cap</p>
-                <p className="font-mono text-sm font-medium">{b.cap}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-graphite">Remaining</p>
-                <p className="font-mono text-sm font-medium">{b.remaining}</p>
-              </div>
-            </div>
+              <div><p className="text-sm text-graphite">Spent this period</p><p className="font-medium text-ink">{b.spent}</p></div>
+              <div><p className="text-sm text-graphite">Cap</p><p className="font-medium text-ink">{b.cap}</p></div>
+              <div><p className="text-sm text-graphite">Remaining</p><p className="font-medium text-ink">{b.remaining}</p></div>
+            </li>
           ))}
-        </div>
+        </ul>
       </section>
     </article>
   );

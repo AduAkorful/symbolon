@@ -10,5 +10,8 @@ import { arcChain } from "./chains.js";
 export function createArcClient(chainId: number, rpcUrl?: string): PublicClient {
   const chain = arcChain(chainId);
   const transport = rpcUrl ? http(rpcUrl) : fallback(chain.rpcUrls.default.http.map((url) => http(url)));
-  return createPublicClient({ chain, transport }) as PublicClient;
+  // Reads made in the same moment travel as one Multicall3 request: a page that reads the Vault for several invoices at once
+  // would otherwise send dozens of requests to a public RPC. Only plain reads are batched; a call with a sender (every
+  // simulation) goes on its own, as before.
+  return createPublicClient({ chain, transport, batch: { multicall: true } }) as PublicClient;
 }

@@ -4,7 +4,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { Address } from "@/components/Address";
 import { Overlay } from "@/components/Overlay";
+import { Button } from "@/components/ui/button";
+import { DetailList } from "@/components/ui/DetailList";
+import { Field, textareaClass } from "@/components/ui/Field";
+import { Callout } from "@/components/ui/Callout";
+import { Money } from "@/components/ui/Money";
+import { StatusPill } from "@/components/ui/StatusPill";
+import { EmptyState, InlineError } from "@/components/ui/States";
 import { sendCall, type SignerPlan } from "@/components/setup/owner-signer";
 import { TxLink } from "@/components/TxLink";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
@@ -13,6 +21,7 @@ import type { ApprovalItem, ApprovalsListResult } from "@/lib/server/approvals";
 import type { businessOffers } from "@/lib/server/offers";
 import { BusinessOffers } from "@/components/inbox/BusinessOffers";
 import { formatDay, showMoney } from "@/lib/format";
+import { Eyebrow, Lead, PageTitle, SectionTitle, SmallTitle } from "@/components/ui/Type";
 
 interface Props {
   businessId: string;
@@ -162,166 +171,91 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
   }
 
   return (
-    <div className="max-w-[840px] space-y-12">
-      {/* Header & Metric */}
+    <div className="space-y-12">
       <div>
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <h1 className="font-display text-4xl leading-tight">Approvals</h1>
-          {data.humanMetric ? (
-            <div className="rounded-full border border-rule bg-paper-raised px-4 py-1.5 font-mono text-xs text-graphite">
-              {data.humanMetric.text}
-            </div>
-          ) : null}
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+          <PageTitle>Approvals</PageTitle>
+          {data.humanMetric ? <StatusPill tone="neutral">{data.humanMetric.text}</StatusPill> : null}
         </div>
-        <p className="mt-2 text-graphite">
-          Payments that require human authorization under your Vault’s policy. The Steward recommends; you decide.
-        </p>
+        <Lead className="mt-3">Payments your Vault’s policy says need a person. The Steward recommends; you decide.</Lead>
       </div>
 
       {lastTxHash ? (
-        <div className="rounded-doc border border-seal/40 bg-seal/5 p-4 text-sm text-seal">
-          Payment confirmed onchain.{" "}
-          <TxLink href={`${explorerUrl}/tx/${lastTxHash}`} label="View transaction on Arc" className="underline font-mono">
+        <Callout tone="ok" title="Payment confirmed onchain">
+          <TxLink href={`${explorerUrl}/tx/${lastTxHash}`} label="View transaction on Arc">
             {lastTxHash.slice(0, 10)}…{lastTxHash.slice(-8)}
           </TxLink>
-        </div>
+        </Callout>
       ) : null}
 
-      {/* Awaiting Approvals List */}
-      <section aria-labelledby="awaiting-title" className="space-y-6">
-        <h2 id="awaiting-title" className="text-xs uppercase tracking-[0.14em] text-graphite">
-          Waiting for your decision ({data.items.length})
-        </h2>
+      {/* Waiting for a decision */}
+      <section aria-labelledby="awaiting-title" className="space-y-5">
+        <SectionTitle id="awaiting-title">
+          Waiting for your decision <span className="text-graphite">({data.items.length})</span>
+        </SectionTitle>
 
         {data.items.length === 0 ? (
-          <div className="rounded-doc border border-rule-soft bg-paper-raised p-8 text-center text-graphite">
-            Nothing is waiting for you. All approved payments are either processed or up to date.
-          </div>
+          <EmptyState title="Nothing is waiting for you">Payments that need a person show up here. Everything else is processed or up to date.</EmptyState>
         ) : (
-          <div className="space-y-6">
+          <div className="grid gap-5 xl:grid-cols-2">
             {data.items.map((item) => (
-              <article
-                key={item.fingerprint}
-                className="rounded-doc border border-rule bg-paper-raised p-6 transition-colors hover:border-rule-strong"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-ink">{item.invoiceNumber}</span>
-                    <span
-                      className={`rounded px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider ${
-                        item.vendor.trust === "verified"
-                          ? "bg-seal/10 text-seal"
-                          : item.vendor.trust === "blocked"
-                          ? "bg-red/10 text-red"
-                          : "bg-paper text-graphite"
-                      }`}
-                    >
-                      {item.vendor.trust === "verified"
-                        ? "Verified payee"
-                        : item.vendor.trust === "blocked"
-                        ? "Blocked vendor"
-                        : "New vendor"}
-                    </span>
+              <article key={item.fingerprint} className="flex min-w-0 flex-col rounded-doc border border-rule bg-paper-raised px-6 py-5">
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-graphite">Invoice {item.invoiceNumber}</span>
+                    <StatusPill tone={item.vendor.trust === "verified" ? "ok" : item.vendor.trust === "blocked" ? "danger" : "neutral"}>
+                      {item.vendor.trust === "verified" ? "Verified payee" : item.vendor.trust === "blocked" ? "Blocked vendor" : "New vendor"}
+                    </StatusPill>
                   </div>
-                  <Link
-                    href={`/business/inbox/${item.fingerprint}`}
-                    className="text-graphite underline decoration-rule underline-offset-4 hover:text-ink"
-                  >
-                    View invoice details →
+                  <Link href={`/business/inbox/${item.fingerprint}`} className="text-graphite underline decoration-rule underline-offset-4 hover:text-ink">
+                    Invoice details →
                   </Link>
                 </div>
 
-                <div className="mt-4 flex flex-wrap items-baseline justify-between gap-2">
-                  <h3 className="text-xl font-medium text-ink">{item.vendor.name}</h3>
-                  <div className="font-mono text-2xl font-medium text-ink">
-                    {showMoney(item.amountFormatted, item.token)}
-                  </div>
+                <div className="mt-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <SmallTitle as="h3" className="min-w-0 text-xl">{item.vendor.name}</SmallTitle>
+                  <Money className="font-display text-3xl text-ink">{showMoney(item.amountFormatted, item.token)}</Money>
                 </div>
 
-                {/* Recommendation summary sentence */}
-                <div className="mt-4 rounded-md border border-rule-soft bg-paper p-3 text-sm">
+                <div className="mt-4 rounded-doc border border-rule-soft bg-paper px-4 py-3 text-sm">
                   <p className="text-ink">{item.stewardSentence}</p>
-                  {item.explanation ? (
-                    <p className="mt-1 text-xs text-graphite">{item.explanation}</p>
-                  ) : null}
-                  <p className="mt-2 text-xs text-graphite">
-                    Why it needs a person: {item.ruleNeededHuman}. {item.requiredLevel === "owner" ? "The owner has to sign it off." : "An approver or the owner can sign it off."}
+                  {item.explanation ? <p className="mt-1 text-graphite">{item.explanation}</p> : null}
+                  <p className="mt-2 text-graphite">
+                    Needs a person because: {item.ruleNeededHuman}. {item.requiredLevel === "owner" ? "The owner has to sign it off." : "An approver or the owner can sign it off."}
                   </p>
                 </div>
 
-                {/* Evidence summary */}
                 {offerViews?.[item.fingerprint] ? <BusinessOffers businessId={businessId} fingerprint={item.fingerprint} view={offerViews[item.fingerprint]!} symbol={item.token} /> : null}
                 {item.evidence.length > 0 ? (
                   <div className="mt-4 border-t border-rule-soft pt-3">
-                    <p className="text-xs uppercase tracking-wider text-graphite">Evidence checks</p>
-                    <div className="mt-2 space-y-1.5">
+                    <Eyebrow>Checks</Eyebrow>
+                    <ul className="mt-2 space-y-1.5 text-sm">
                       {item.evidence.slice(0, 3).map((ev, idx) => (
-                        <div key={idx} className="flex items-center gap-2 text-xs">
-                          <span
-                            className={
-                              ev.state === "holds"
-                                ? "text-seal"
-                                : ev.state === "blocks"
-                                ? "text-red"
-                                : "text-graphite"
-                            }
-                          >
+                        <li key={idx} className="flex items-baseline gap-2">
+                          <span aria-hidden className={ev.state === "holds" ? "text-ok" : ev.state === "blocks" ? "text-red" : "text-graphite"}>
                             {ev.state === "holds" ? "✓" : ev.state === "blocks" ? "✕" : "–"}
                           </span>
-                          <span className="text-ink font-medium">{ev.label}:</span>
-                          <span className="text-graphite">{ev.value}</span>
-                        </div>
+                          <span className="font-medium text-ink">{ev.label}:</span>
+                          <span className="min-w-0 text-graphite">{ev.value}</span>
+                          <span className="sr-only">{ev.state === "holds" ? "(passes)" : ev.state === "blocks" ? "(fails)" : "(open)"}</span>
+                        </li>
                       ))}
-                    </div>
+                    </ul>
                   </div>
                 ) : null}
 
-                {/* Action buttons */}
                 <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-rule-soft pt-4">
                   {item.canPayNow ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActionError(null);
-                        setPayNowItem(item);
-                      }}
-                      className="rounded-doc bg-ink px-4 py-2 text-sm font-medium text-paper hover:bg-ink/90"
-                    >
-                      Approve and pay
-                    </button>
+                    <Button onClick={() => { setActionError(null); setPayNowItem(item); }}>Approve and pay</Button>
                   ) : null}
-
                   {item.canSign ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActionError(null);
-                        setSignItem(item);
-                      }}
-                      className="rounded-doc border border-rule px-4 py-2 text-sm font-medium text-ink hover:border-ink"
-                    >
-                      Approve (sign)
-                    </button>
+                    <Button variant="secondary" onClick={() => { setActionError(null); setSignItem(item); }}>Sign approval</Button>
                   ) : null}
-
                   {item.canReject ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActionError(null);
-                        setRejectionReason("");
-                        setRejectItem(item);
-                      }}
-                      className="rounded-doc border border-rule px-4 py-2 text-sm text-graphite hover:border-red hover:text-red"
-                    >
-                      Reject
-                    </button>
+                    <Button variant="secondary" onClick={() => { setActionError(null); setRejectionReason(""); setRejectItem(item); }}>Reject</Button>
                   ) : null}
-
                   {!item.canPayNow && !item.canSign && !item.canReject ? (
-                    <p className="text-xs text-graphite">
-                      Your current role or connected wallet does not have permissions to approve or pay this invoice.
-                    </p>
+                    <p className="text-sm text-graphite">Your role or connected wallet can’t approve or pay this invoice.</p>
                   ) : null}
                 </div>
               </article>
@@ -330,200 +264,103 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
         )}
       </section>
 
-      {/* Recent Answers Section */}
+      {/* Recent responses */}
       {data.recentAnswers.length > 0 ? (
         <section aria-labelledby="recent-title" className="space-y-4 border-t border-rule pt-8">
-          <h2 id="recent-title" className="text-xs uppercase tracking-[0.14em] text-graphite">
-            Recent decisions & responses
-          </h2>
-          <div className="divide-y divide-rule-soft rounded-doc border border-rule bg-paper-raised">
+          <SectionTitle id="recent-title">Recent responses</SectionTitle>
+          <ul className="divide-y divide-rule-soft rounded-doc border border-rule bg-paper-raised">
             {data.recentAnswers.map((ans) => (
-              <div key={ans.id} className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm">
+              <li key={ans.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 text-sm">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`font-mono text-xs uppercase tracking-wider ${
-                        ans.kind === "approval_granted" ? "text-seal" : "text-red"
-                      }`}
-                    >
-                      {ans.kind === "approval_granted" ? "Approval granted" : "Approval rejected"}
-                    </span>
-                    <span className="text-xs text-graphite">
-                      {formatDay(new Date(ans.createdAt))}
-                    </span>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <StatusPill tone={ans.kind === "approval_granted" ? "ok" : "danger"}>
+                      {ans.kind === "approval_granted" ? "Approved" : "Rejected"}
+                    </StatusPill>
+                    <span className="text-graphite">{formatDay(new Date(ans.createdAt))}</span>
                   </div>
-                  {ans.reason ? <p className="mt-1 text-xs text-graphite">Reason: {ans.reason}</p> : null}
+                  {ans.reason ? <p className="mt-1.5 text-graphite">Reason: {ans.reason}</p> : null}
                 </div>
-                <Link
-                  href={`/business/decisions/${ans.id}`}
-                  className="text-xs text-graphite underline decoration-rule underline-offset-4 hover:text-ink"
-                >
-                  View decision →
+                <Link href={`/business/decisions/${ans.id}`} className="text-graphite underline decoration-rule underline-offset-4 hover:text-ink">
+                  Decision record →
                 </Link>
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         </section>
       ) : null}
 
-      {/* --- Modal: Approve and Pay --- */}
+      {/* Approve and pay */}
       {payNowItem ? (
-        <Overlay label="Approve and pay payment" onClose={() => setPayNowItem(null)}>
-          <div className="p-6 md:p-8">
-            <h2 className="font-display text-2xl">Approve and pay</h2>
-            <p className="mt-2 text-sm text-graphite">
-              Your wallet will send this payment directly to the Vault. The transaction will clear on Arc immediately.
-            </p>
+        <Overlay title="Approve and pay" description="Your wallet sends this payment to the vendor from the Vault. It clears on Arc within moments." onClose={() => setPayNowItem(null)}>
+          <DetailList
+            items={[
+              { label: "Vendor", value: payNowItem.vendor.name },
+              { label: "Invoice", value: payNowItem.invoiceNumber },
+              { label: "Amount", value: <Money>{showMoney(payNowItem.amountFormatted, payNowItem.token)}</Money> },
+              { label: "Paid by", value: data.userWallet ? <Address value={data.userWallet} /> : "Your connected wallet" },
+            ]}
+          />
 
-            <dl className="mt-6 divide-y divide-rule-soft rounded-doc border border-rule bg-paper p-4 text-sm">
-              <div className="flex justify-between py-2">
-                <dt className="text-graphite">Vendor</dt>
-                <dd className="font-medium text-ink">{payNowItem.vendor.name}</dd>
-              </div>
-              <div className="flex justify-between py-2">
-                <dt className="text-graphite">Invoice number</dt>
-                <dd className="font-mono text-ink">{payNowItem.invoiceNumber}</dd>
-              </div>
-              <div className="flex justify-between py-2">
-                <dt className="text-graphite">Payment amount</dt>
-                <dd className="font-mono font-medium text-ink">
-                  {showMoney(payNowItem.amountFormatted, payNowItem.token)}
-                </dd>
-              </div>
-              <div className="flex justify-between py-2">
-                <dt className="text-graphite">Authorizing wallet</dt>
-                <dd className="font-mono text-xs text-ink">{data.userWallet ?? "Connected wallet"}</dd>
-              </div>
-            </dl>
+          {actionError ? <InlineError>{actionError}</InlineError> : null}
 
-            {actionError ? (
-              <p className="mt-4 rounded bg-red/10 p-3 text-xs text-red">{actionError}</p>
-            ) : null}
-
-            <div className="mt-8 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setPayNowItem(null)}
-                disabled={actionLoading}
-                className="rounded-doc border border-rule px-4 py-2 text-sm text-graphite hover:text-ink"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => handlePayNow(payNowItem)}
-                disabled={actionLoading}
-                className="rounded-doc bg-ink px-4 py-2 text-sm font-medium text-paper hover:bg-ink/90 disabled:opacity-50"
-              >
-                {actionLoading ? "Sending transaction…" : "Confirm and pay"}
-              </button>
-            </div>
-          </div>
+          <Overlay.Footer>
+            <Button variant="secondary" onClick={() => setPayNowItem(null)} disabled={actionLoading}>Cancel</Button>
+            <Button onClick={() => handlePayNow(payNowItem)} busy={actionLoading}>{actionLoading ? "Sending…" : "Confirm and pay"}</Button>
+          </Overlay.Footer>
         </Overlay>
       ) : null}
 
-      {/* --- Modal: Sign Approval --- */}
+      {/* Sign an approval */}
       {signItem ? (
-        <Overlay label="Sign EIP-712 approval" onClose={() => setSignItem(null)}>
-          <div className="p-6 md:p-8">
-            <h2 className="font-display text-2xl">Sign payment approval</h2>
-            <p className="mt-2 text-sm text-graphite">
-              You are signing an offchain EIP-712 approval. The Steward will include this signature and execute the payment on its next autonomous run. No gas fee is required to sign.
-            </p>
+        <Overlay
+          title="Sign the approval"
+          description="You sign a message, not a transaction: no fee. The Steward attaches your signature and makes the payment on its next run."
+          onClose={() => setSignItem(null)}
+        >
+          <DetailList
+            items={[
+              { label: "Vendor", value: signItem.vendor.name },
+              { label: "Amount to settle", value: <Money>{showMoney(signItem.amountFormatted, signItem.token)}</Money> },
+              { label: "Good for", value: "24 hours from signing" },
+              { label: "Signed by", value: data.userWallet ? <Address value={data.userWallet} /> : "Your connected wallet" },
+            ]}
+          />
 
-            <dl className="mt-6 divide-y divide-rule-soft rounded-doc border border-rule bg-paper p-4 text-sm">
-              <div className="flex justify-between py-2">
-                <dt className="text-graphite">Vendor</dt>
-                <dd className="font-medium text-ink">{signItem.vendor.name}</dd>
-              </div>
-              <div className="flex justify-between py-2">
-                <dt className="text-graphite">Credit to settle</dt>
-                <dd className="font-mono font-medium text-ink">
-                  {showMoney(signItem.amountFormatted, signItem.token)}
-                </dd>
-              </div>
-              <div className="flex justify-between py-2">
-                <dt className="text-graphite">Validity period</dt>
-                <dd className="text-xs text-ink">24 hours from signing</dd>
-              </div>
-              <div className="flex justify-between py-2">
-                <dt className="text-graphite">Signer</dt>
-                <dd className="font-mono text-xs text-ink">{data.userWallet ?? "Connected wallet"}</dd>
-              </div>
-            </dl>
+          {actionError ? <InlineError>{actionError}</InlineError> : null}
 
-            {actionError ? (
-              <p className="mt-4 rounded bg-red/10 p-3 text-xs text-red">{actionError}</p>
-            ) : null}
-
-            <div className="mt-8 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setSignItem(null)}
-                disabled={actionLoading}
-                className="rounded-doc border border-rule px-4 py-2 text-sm text-graphite hover:text-ink"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSignApproval(signItem)}
-                disabled={actionLoading}
-                className="rounded-doc bg-ink px-4 py-2 text-sm font-medium text-paper hover:bg-ink/90 disabled:opacity-50"
-              >
-                {actionLoading ? "Signing…" : "Sign approval"}
-              </button>
-            </div>
-          </div>
+          <Overlay.Footer>
+            <Button variant="secondary" onClick={() => setSignItem(null)} disabled={actionLoading}>Cancel</Button>
+            <Button onClick={() => handleSignApproval(signItem)} busy={actionLoading}>{actionLoading ? "Signing…" : "Sign approval"}</Button>
+          </Overlay.Footer>
         </Overlay>
       ) : null}
 
-      {/* --- Modal: Reject Approval --- */}
+      {/* Reject */}
       {rejectItem ? (
-        <Overlay label="Reject invoice approval" onClose={() => setRejectItem(null)}>
-          <div className="p-6 md:p-8">
-            <h2 className="font-display text-2xl">Reject invoice</h2>
-            <p className="mt-2 text-sm text-graphite">
-              Rejecting puts the invoice on human hold. The Steward will not re-evaluate or attempt to pay it until an owner releases the hold.
-            </p>
-
-            <div className="mt-6 space-y-2">
-              <label htmlFor="reject-reason" className="block text-xs uppercase tracking-wider text-graphite">
-                Reason for rejection (required, 3–500 characters)
-              </label>
+        <Overlay
+          title="Reject this invoice"
+          description="The invoice goes on hold. The Steward won't look at it or pay it until an owner releases the hold."
+          onClose={() => setRejectItem(null)}
+        >
+          <Field label="Reason" hint="Required: 3 to 500 characters. It is kept in the decision record.">
+            {(a) => (
               <textarea
-                id="reject-reason"
+                {...a}
                 rows={3}
                 value={rejectionReason}
                 onChange={(e) => setRejectionReason(e.target.value)}
-                placeholder="Explain why this invoice is being rejected…"
-                className="w-full rounded-md border border-rule bg-paper p-3 text-sm text-ink placeholder:text-graphite focus:border-ink focus:outline-none"
+                placeholder="Why this invoice is being rejected"
+                className={textareaClass}
               />
-            </div>
+            )}
+          </Field>
 
-            {actionError ? (
-              <p className="mt-4 rounded bg-red/10 p-3 text-xs text-red">{actionError}</p>
-            ) : null}
+          {actionError ? <InlineError>{actionError}</InlineError> : null}
 
-            <div className="mt-8 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setRejectItem(null)}
-                disabled={actionLoading}
-                className="rounded-doc border border-rule px-4 py-2 text-sm text-graphite hover:text-ink"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => handleReject(rejectItem)}
-                disabled={actionLoading}
-                className="rounded-doc bg-red px-4 py-2 text-sm font-medium text-white hover:bg-red/90 disabled:opacity-50"
-              >
-                {actionLoading ? "Rejecting…" : "Confirm rejection"}
-              </button>
-            </div>
-          </div>
+          <Overlay.Footer>
+            <Button variant="secondary" onClick={() => setRejectItem(null)} disabled={actionLoading}>Cancel</Button>
+            <Button variant="destructive" onClick={() => handleReject(rejectItem)} busy={actionLoading}>{actionLoading ? "Rejecting…" : "Reject invoice"}</Button>
+          </Overlay.Footer>
         </Overlay>
       ) : null}
     </div>

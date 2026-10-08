@@ -4,11 +4,21 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { Overlay } from "@/components/Overlay";
+import { Button, LinkButton } from "@/components/ui/button";
+import { Callout } from "@/components/ui/Callout";
+import { Field } from "@/components/ui/Field";
+import { Money } from "@/components/ui/Money";
+import { Segmented } from "@/components/ui/Segmented";
+import { EmptyState, InlineError } from "@/components/ui/States";
+import { StatusPill } from "@/components/ui/StatusPill";
+import { useConfirm } from "@/components/useConfirm";
 import type { SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { signTypedData } from "@/components/vendor/seal-signer";
 import type { OfferDisplay } from "@/lib/server/offers";
-import { formatDay, formatDateTime } from "@/lib/format";
+import { formatUnits } from "viem";
+import { formatDay, formatDateTime, showMoney } from "@/lib/format";
+import { Eyebrow, Lead, PageTitle, SectionTitle, SmallTitle } from "@/components/ui/Type";
 
 interface InvoiceSummary {
   fingerprint: string;
@@ -37,6 +47,7 @@ const DURATIONS = [
 
 export function EarlyPayClient({ invoice, offers: initialOffers, suggested, signer }: Props) {
   const discover = useWalletProviders();
+  const [ask, confirmDialog] = useConfirm();
   const [offers, setOffers] = useState<OfferDisplay[]>(initialOffers);
   const [pct, setPct] = useState<number>(suggested ? Number(suggested.discountPercent) : 1.5);
   const [durationSecs, setDurationSecs] = useState<number>(3 * 86400);
@@ -44,11 +55,13 @@ export function EarlyPayClient({ invoice, offers: initialOffers, suggested, sign
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // exact integer arithmetic, the ledger's own rule (credit - credit * bps / 10000); nothing here is floating point
   const remainingRaw = BigInt(invoice.total) - BigInt(invoice.credited);
-  const remainingFloat = Number(remainingRaw) / 10 ** invoice.decimals;
+  const netOf = (bps: number) => remainingRaw - (remainingRaw * BigInt(bps)) / 10_000n;
+  const money = (raw: bigint) => showMoney(formatUnits(raw, invoice.decimals), invoice.currencySymbol);
   const discountBps = Math.round(pct * 100);
-  const receiveFloat = remainingFloat * (1 - pct / 100);
-  const savingFloat = remainingFloat - receiveFloat;
+  const receiveRaw = netOf(discountBps);
+  const savingRaw = remainingRaw - receiveRaw;
 
   const openOffer = offers.find((o) => o.status === "open");
   const counterOffer = offers.find((o) => o.status === "countered");
@@ -113,7 +126,7 @@ export function EarlyPayClient({ invoice, offers: initialOffers, suggested, sign
   }
 
   async function handleWithdraw(offerId: string) {
-    if (!confirm("Withdraw this Early Pay offer?")) return;
+    if (!(await ask({ title: "Withdraw this offer?", body: "The business can no longer accept it. You can make a new offer later.", confirmLabel: "Withdraw the offer", destructive: true }))) return;
     setError(null);
     setBusy(true);
     try {
@@ -134,206 +147,96 @@ export function EarlyPayClient({ invoice, offers: initialOffers, suggested, sign
 
   return (
     <div className="pb-24">
+      {confirmDialog}
       <p className="text-sm text-graphite">
-        <Link href={`/vendor/invoices/${invoice.fingerprint}`} className="hover:text-ink">
+        <Link href={`/vendor/invoices/${invoice.fingerprint}`} className="underline decoration-rule underline-offset-4 hover:text-ink">
           Invoice {invoice.invoiceNumber}
         </Link>
-        <span className="mx-1.5">/</span> Early Pay
+        <span className="mx-2">/</span>Early Pay
       </p>
 
-      <h1 className="mt-3 font-display text-4xl leading-none">Get paid early</h1>
-      <p className="mt-3 max-w-[60ch] text-graphite">
-        {invoice.clientName} owes {invoice.currencySymbol} {remainingFloat.toFixed(2)} due on {invoice.dueDate} ({invoice.dueDays} days from now).
-        Offer a discount, signed by your Seal. Their Steward or team reviews it and can release payment early.
-      </p>
+      <PageTitle className="mt-3">Get paid early</PageTitle>
+      <Lead className="mt-3">
+        {invoice.clientName} owes {money(remainingRaw)}, due {invoice.dueDate} ({invoice.dueDays} days from now). Offer a discount signed by your Seal; their Steward or team reviews it and can pay you early.
+      </Lead>
 
-      {error ? (
-        <div role="alert" className="mt-6 rounded-doc border border-red/40 bg-red-wash p-4 text-sm text-red">
-          {error}
-        </div>
-      ) : null}
+      {error ? <InlineError className="mt-6">{error}</InlineError> : null}
 
       <div className="mt-10 grid gap-12 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-        {/* Left Column: Offer Form / Controls */}
-        <section aria-labelledby="offer-controls" className="space-y-6">
-          <div className="rounded-doc border border-rule bg-paper p-6">
-            <h2 id="offer-controls" className="font-display text-2xl">
-              Discount you offer
-            </h2>
+        <section aria-labelledby="offer-controls" className="min-w-0">
+          <div className="space-y-6 rounded-doc border border-rule bg-paper-raised px-6 py-6">
+            <SectionTitle id="offer-controls">Discount you offer</SectionTitle>
 
-            <div className="mt-4">
-              <div className="flex items-center justify-between text-sm">
-                <label htmlFor="discount-range" className="text-graphite">
-                  Discount rate
-                </label>
-                <span className="font-mono text-base font-semibold">{pct.toFixed(2)}%</span>
-              </div>
-              <input
-                id="discount-range"
-                type="range"
-                min={0.25}
-                max={5.0}
-                step={0.05}
-                value={pct}
-                disabled={busy || !!openOffer}
-                onChange={(e) => setPct(Number(e.target.value))}
-                className="mt-2 w-full accent-ink"
-              />
-              <div className="mt-1 flex justify-between text-xs text-graphite">
-                <span>0.25%</span>
-                <span>2.5%</span>
-                <span>5.0%</span>
-              </div>
-            </div>
+            <Field label={<span className="flex items-baseline justify-between"><span>Discount rate</span><span className="font-display text-2xl">{pct.toFixed(2)}%</span></span>} hint={suggested ? `Last accepted by this client: ${suggested.discountPercent}%` : "No earlier Early Pay with this client."}>
+              {(a) => (
+                <>
+                  <input {...a} type="range" min={0.25} max={5.0} step={0.05} value={pct} disabled={busy || !!openOffer} onChange={(e) => setPct(Number(e.target.value))} className="mt-1 w-full accent-[var(--seal)]" />
+                  <div className="mt-1 flex justify-between text-xs text-graphite" aria-hidden><span>0.25%</span><span>2.5%</span><span>5%</span></div>
+                </>
+              )}
+            </Field>
 
-            {suggested ? (
-              <p className="mt-3 text-xs text-seal">
-                Previous accepted discount: {suggested.discountPercent}%
-              </p>
-            ) : (
-              <p className="mt-3 text-xs text-graphite">
-                No previous Early Pay history with this client.
-              </p>
-            )}
+            <Segmented
+              label="Offer valid for"
+              value={String(durationSecs)}
+              disabled={busy || !!openOffer}
+              options={DURATIONS.map((d) => ({ value: String(d.seconds), label: d.label }))}
+              onChange={(v) => setDurationSecs(Number(v))}
+            />
 
-            <div className="mt-6 border-t border-rule pt-4">
-              <label className="block text-xs font-medium uppercase tracking-wider text-graphite">
-                Offer valid for
-              </label>
-              <div className="mt-2 flex gap-2">
-                {DURATIONS.map((d) => (
-                  <button
-                    key={d.seconds}
-                    type="button"
-                    disabled={busy || !!openOffer}
-                    onClick={() => setDurationSecs(d.seconds)}
-                    className={`rounded-doc px-3 py-1.5 text-xs font-medium transition-colors ${
-                      durationSecs === d.seconds
-                        ? "bg-ink text-paper"
-                        : "border border-rule hover:border-ink text-ink"
-                    }`}
-                  >
-                    {d.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-8 rounded-sm bg-rule-soft/40 p-4">
-              <p className="text-xs uppercase tracking-wider text-graphite">You receive upon settlement</p>
-              <p className="mt-1 font-display text-5xl leading-none tabular-nums text-ink">
-                {invoice.currencySymbol} {receiveFloat.toFixed(2)}
-              </p>
-              <p className="mt-2 text-xs text-graphite">
-                {pct.toFixed(2)}% off total · payer saves {invoice.currencySymbol} {savingFloat.toFixed(2)}
-              </p>
+            <div className="rounded-doc bg-rule-soft/40 px-5 py-4">
+              <Eyebrow>You receive when it settles</Eyebrow>
+              <p className="mt-1 font-display text-4xl leading-none text-ink"><Money>{money(receiveRaw)}</Money></p>
+              <p className="mt-2 text-sm text-graphite">{pct.toFixed(2)}% off the total · the payer saves {money(savingRaw)}</p>
             </div>
 
             {!openOffer && !latestTaken ? (
-              <button
-                type="button"
-                onClick={() => setSigning(true)}
-                disabled={busy}
-                className="mt-6 w-full rounded-doc bg-ink py-3 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
-              >
-                Sign this offer
-              </button>
+              <Button className="w-full" disabled={busy} onClick={() => setSigning(true)}>Sign this offer</Button>
             ) : null}
           </div>
         </section>
 
-        {/* Right Column: Status & History */}
-        <section aria-labelledby="status-header" className="space-y-6">
-          <h2 id="status-header" className="font-display text-2xl">
-            Offer status
-          </h2>
+        <section aria-labelledby="status-header" className="min-w-0 space-y-6">
+          <SectionTitle id="status-header">Offer status</SectionTitle>
 
           {latestTaken ? (
-            <div className="rounded-doc border border-seal/50 bg-seal/5 p-6">
-              <span className="font-mono text-xs uppercase tracking-wider text-seal font-medium">
-                Payment Released
-              </span>
-              <p className="mt-2 text-lg font-medium">Early Pay was accepted!</p>
-              <p className="mt-1 text-sm text-graphite">
-                This invoice has settled onchain with a discount of {latestTaken.discountPercent}%.
-              </p>
-              <Link
-                href={`/receipt/${invoice.fingerprint}`}
-                className="mt-4 inline-block font-medium text-seal underline decoration-seal/40 underline-offset-4 hover:text-ink text-sm"
-              >
-                View settlement receipt →
-              </Link>
-            </div>
+            <Callout tone="ok" title="Payment released" actions={<LinkButton href={`/receipt/${invoice.fingerprint}`} variant="secondary" size="sm">View the settlement receipt</LinkButton>}>
+              <p className="font-medium">Early Pay was accepted.</p>
+              <p className="mt-1 text-graphite">The invoice settled onchain with a discount of {latestTaken.discountPercent}%.</p>
+            </Callout>
           ) : counterOffer ? (
-            <div className="rounded-doc border border-seal/60 bg-paper-raised p-6 shadow-sm">
-              <span className="font-mono text-xs uppercase tracking-wider text-seal font-medium">
-                Counter-Offer Received
-              </span>
-              <p className="mt-2 text-xl font-medium">
-                {invoice.clientName} proposed {counterOffer.discountPercent}%
-              </p>
-              <p className="mt-2 text-sm text-graphite">
-                Their Steward proposed {counterOffer.discountPercent}% to pay today.
-                You would receive approximately {invoice.currencySymbol}{" "}
-                {(remainingFloat * (1 - counterOffer.discountBps / 10000)).toFixed(2)}.
-              </p>
-              <div className="mt-4 flex gap-3">
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => handleSignOffer(counterOffer.discountBps, durationSecs, counterOffer.id)}
-                  className="rounded-doc bg-ink px-4 py-2.5 text-xs font-medium text-paper hover:opacity-90 disabled:opacity-50"
-                >
-                  Accept and sign {counterOffer.discountPercent}%
-                </button>
-              </div>
-            </div>
+            <Callout
+              tone="info"
+              title="A counter-offer"
+              actions={<Button size="sm" disabled={busy} onClick={() => handleSignOffer(counterOffer.discountBps, durationSecs, counterOffer.id)}>Accept and sign {counterOffer.discountPercent}%</Button>}
+            >
+              <p className="text-lg font-medium">{invoice.clientName} proposed {counterOffer.discountPercent}%</p>
+              <p className="mt-1 text-graphite">Their Steward would pay today at {counterOffer.discountPercent}% off. You would receive about {money(netOf(counterOffer.discountBps))}.</p>
+            </Callout>
           ) : openOffer ? (
-            <div className="rounded-doc border border-rule bg-paper p-6">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs uppercase tracking-wider text-seal font-medium">
-                  Offer Open
-                </span>
-                <span className="text-xs text-graphite">
-                  Expires {formatDateTime(new Date(openOffer.validUntil))}
-                </span>
-              </div>
-              <p className="mt-2 text-xl font-medium">
-                {openOffer.discountPercent}% off ({invoice.currencySymbol} {(remainingFloat * (1 - openOffer.discountBps / 10000)).toFixed(2)})
-              </p>
-              <p className="mt-2 text-sm text-graphite">
-                Waiting for {invoice.clientName}&apos;s Steward or team to review.
-                If they decline or the offer expires, you will still be paid in full on the due date.
-              </p>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => handleWithdraw(openOffer.id)}
-                className="mt-4 rounded-doc border border-rule px-3 py-1.5 text-xs text-graphite hover:border-ink hover:text-ink"
-              >
-                Withdraw offer
-              </button>
-            </div>
+            <Callout
+              tone="neutral"
+              title="Your offer is open"
+              actions={<Button variant="secondary" size="sm" disabled={busy} onClick={() => handleWithdraw(openOffer.id)}>Withdraw the offer</Button>}
+            >
+              <p className="text-lg font-medium">{openOffer.discountPercent}% off · {money(netOf(openOffer.discountBps))}</p>
+              <p className="mt-1 text-graphite">Expires {formatDateTime(new Date(openOffer.validUntil))}. Waiting for {invoice.clientName}’s Steward or team. If they decline or it expires, you are still paid in full on the due date.</p>
+            </Callout>
           ) : (
-            <div className="rounded-doc border border-rule/70 p-6 text-sm text-graphite">
-              No active offer. Use the form to propose a cash-now discount.
-            </div>
+            <EmptyState title="No offer yet">Use the form to propose a discount for being paid early.</EmptyState>
           )}
 
-          {/* Past Offers List */}
           {offers.length > 0 ? (
             <div className="border-t border-rule pt-6">
-              <h3 className="font-mono text-xs uppercase tracking-wider text-graphite">History</h3>
-              <ul className="mt-4 space-y-3">
+              <SmallTitle as="h3">History</SmallTitle>
+              <ul className="mt-4 divide-y divide-rule-soft border-y border-rule text-sm">
                 {offers.map((o) => (
-                  <li key={o.id} className="flex items-center justify-between rounded-sm border border-rule/60 p-3 text-xs">
-                    <div>
+                  <li key={o.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
+                    <span>
                       <span className="font-medium text-ink">{o.discountPercent}% discount</span>
-                      <span className="ml-2 text-graphite">({formatDay(new Date(o.createdAt))})</span>
-                    </div>
-                    <span className="font-mono uppercase text-graphite">
-                      {o.status}
+                      <span className="ml-2 text-graphite">{formatDay(new Date(o.createdAt))}</span>
                     </span>
+                    <StatusPill tone={o.status === "taken" ? "ok" : o.status === "open" || o.status === "countered" ? "info" : "neutral"} className="capitalize">{o.status}</StatusPill>
                   </li>
                 ))}
               </ul>
@@ -342,45 +245,25 @@ export function EarlyPayClient({ invoice, offers: initialOffers, suggested, sign
         </section>
       </div>
 
-      {/* Confirmation Modal */}
+      {/* Confirmation */}
       {signing ? (
         <Overlay
-          label={{ id: "sign-modal-title" }}
+          title="Sign this Early Pay offer"
           onClose={() => {
             if (!busy) setSigning(false);
           }}
         >
-          <div className="p-7">
-            <h2 id="sign-modal-title" className="font-display text-3xl">
-              Sign Early Pay Offer
-            </h2>
-            <p className="mt-3 text-sm text-graphite">
-              You are offering <strong>{pct.toFixed(2)}% off</strong> invoice {invoice.invoiceNumber}.
-              You will receive approximately <strong>{invoice.currencySymbol} {receiveFloat.toFixed(2)}</strong> if {invoice.clientName} accepts.
-            </p>
-            <p className="mt-3 text-xs text-graphite">
-              Your wallet will prompt you to sign an EIP-712 typed data message.
-              This does not grant custody or access to your keys.
-            </p>
-            <div className="mt-6 flex gap-3">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => handleSignOffer()}
-                className="flex-1 rounded-doc bg-ink py-3 text-sm font-medium text-paper hover:opacity-90 disabled:opacity-50"
-              >
-                {busy ? "Signing..." : "Sign and send"}
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => setSigning(false)}
-                className="rounded-doc border border-rule px-5 py-3 text-sm"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
+          <p className="text-graphite">
+            You are offering <strong className="text-ink">{pct.toFixed(2)}% off</strong> invoice {invoice.invoiceNumber}. You will receive{" "}
+            <strong className="whitespace-nowrap text-ink">{money(receiveRaw)}</strong> if {invoice.clientName} accepts.
+          </p>
+          <p className="text-graphite">
+            Your wallet will ask you to sign a message. Signing does not give anyone custody of your keys or funds.
+          </p>
+          <Overlay.Footer>
+            <Button variant="secondary" disabled={busy} onClick={() => setSigning(false)}>Cancel</Button>
+            <Button busy={busy} onClick={() => handleSignOffer()}>{busy ? "Signing…" : "Sign and send"}</Button>
+          </Overlay.Footer>
         </Overlay>
       ) : null}
     </div>

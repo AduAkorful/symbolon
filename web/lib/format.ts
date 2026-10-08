@@ -112,3 +112,9 @@ export function shortAddress(value: string): string {
   const full = checksum(value);
   return /^0x[0-9a-fA-F]{40}$/.test(full) ? `${full.slice(0, 6)}…${full.slice(-4)}` : full;
 }
+
+
+/** Free text with any full address in it shortened ("paid 0x7d9a…", never 42 characters that can't be split): for names and labels, not for places an address is checked */
+export function shortenAddressesIn(text: string): string {
+  return text.replace(/0x[0-9a-fA-F]{40}\b/g, (a) => shortAddress(a));
+}

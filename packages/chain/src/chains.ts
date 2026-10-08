@@ -21,6 +21,9 @@ export const arcTestnet = defineChain({
   blockExplorers: {
     default: { name: "Arc Testnet Explorer", url: "https://explorer.testnet.arc.io", apiUrl: "https://explorer.testnet.arc.io/api" },
   },
+  // Multicall3 sits at the standard address on Arc (code present on both networks, checked with cast 2026-10-08); viem's own
+  // definition carries it, so reads can be batched into one request (client.ts)
+  contracts: viemArcTestnet.contracts,
   testnet: true,
 });
 
@@ -41,6 +44,7 @@ export const arcMainnet = defineChain({
   blockExplorers: {
     default: { name: "Arc Explorer", url: "https://explorer.arc.io", apiUrl: "https://explorer.arc.io/api" },
   },
+  contracts: viemArc.contracts,
 });
 
 const CHAINS: Record<number, Chain> = { [arcTestnet.id]: arcTestnet, [arcMainnet.id]: arcMainnet };

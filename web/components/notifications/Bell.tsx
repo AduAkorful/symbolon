@@ -7,7 +7,7 @@ export function Bell({ unreadCount }: { unreadCount: number }) {
     <Link
       href="/notifications"
       aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ""}`}
-      className="relative flex h-8 w-8 items-center justify-center rounded-sm text-graphite transition hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-seal"
+      className="relative flex h-11 w-11 items-center justify-center rounded-doc sm:h-10 sm:w-10 text-graphite transition hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-seal"
     >
       <svg
         width="18"
@@ -25,7 +25,7 @@ export function Bell({ unreadCount }: { unreadCount: number }) {
       </svg>
       {unreadCount > 0 ? (
         <span
-          className="absolute -right-1 -top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-seal px-1 font-mono text-[10px] font-semibold text-paper"
+          className="absolute right-0 top-0 flex h-5 min-w-5 items-center justify-center rounded-full bg-seal px-1 text-xs font-semibold leading-none text-paper"
         >
           {displayCount}
         </span>

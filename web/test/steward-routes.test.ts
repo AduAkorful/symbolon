@@ -39,6 +39,7 @@ async function load() {
     stewardGet: stewardRoute.GET,
     stewardPost: stewardRoute.POST,
     cronPost: cronRoute.POST,
+    cronGet: cronRoute.GET,
     signIn,
     http,
   };
@@ -184,5 +185,27 @@ describe("cron scheduler route", () => {
     const data = await res.json();
     expect(data.processed).toBeDefined();
     expect(Array.isArray(data.businesses)).toBe(true);
+  });
+
+  it("also answers Vercel Cron's GET, with the same secret and the same refusals", async () => {
+    const { cronGet } = await load();
+    delete env.CRON_SECRET;
+    expect((await cronGet(req("GET", "/api/cron/steward"))).status).toBe(503);
+
+    env.CRON_SECRET = "super-secret-cron-token";
+    expect((await cronGet(req("GET", "/api/cron/steward", undefined, { authorization: "Bearer nope" }))).status).toBe(401);
+    const res = await cronGet(req("GET", "/api/cron/steward", undefined, { authorization: "Bearer super-secret-cron-token" }));
+    expect(res.status).toBe(200);
+    expect(Array.isArray((await res.json()).businesses)).toBe(true);
+  });
+
+  it("keeps the ledger sync route off without the secret and refuses a wrong one, on POST and GET", async () => {
+    const sync = await import("@/app/api/cron/sync/route");
+    delete env.CRON_SECRET;
+    expect((await sync.POST(req("POST", "/api/cron/sync"))).status).toBe(503);
+    expect((await sync.GET(req("GET", "/api/cron/sync"))).status).toBe(503);
+    env.CRON_SECRET = "super-secret-cron-token";
+    expect((await sync.POST(req("POST", "/api/cron/sync", undefined, { authorization: "Bearer nope" }))).status).toBe(401);
+    expect((await sync.GET(req("GET", "/api/cron/sync", undefined, { authorization: "Bearer nope" }))).status).toBe(401);
   });
 });

@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { FromFile, Prefill } from "@/lib/server/upload";
 import { Composer, type ClientOption } from "./Composer";
 import type { SignerPlan } from "@/components/setup/owner-signer";
+import { PageTitle } from "@/components/ui/Type";
 
 type Reply = { ok: true; prefill: Prefill; fromFile: FromFile } | { ok: false; reason: string };
 
@@ -39,7 +40,7 @@ export function Upload(props: { available: boolean; handle: string; clients: Cli
 
   return (
     <div className="max-w-2xl">
-      <h1 className="font-display text-5xl leading-none">Upload an invoice</h1>
+      <PageTitle>Upload an invoice</PageTitle>
       <p className="mt-3 text-graphite">Already have one as a PDF? Upload it and Symbolon fills in a draft for you to check. Nothing is sealed until you review it and sign.</p>
       {props.available ? (
         <label

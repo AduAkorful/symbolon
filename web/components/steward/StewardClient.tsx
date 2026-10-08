@@ -5,12 +5,19 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Overlay } from "@/components/Overlay";
+import { Button } from "@/components/ui/button";
+import { controlClass, Field } from "@/components/ui/Field";
+import { InlineError } from "@/components/ui/States";
 import { sendCall, wasRejected, type SignerPlan } from "@/components/setup/owner-signer";
 import { TxLink } from "@/components/TxLink";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { postJson } from "@/lib/client/api";
 import { formatDateTime } from "@/lib/format";
 import { Address } from "@/components/Address";
+import { Money } from "@/components/ui/Money";
+import { EmptyState } from "@/components/ui/States";
+import { StatusPill, type Tone } from "@/components/ui/StatusPill";
+import { Eyebrow, Lead, PageTitle, SectionTitle } from "@/components/ui/Type";
 
 const modes = [
   {
@@ -32,6 +39,26 @@ const modes = [
     body: "Sends payments allowed by policy and node simulation. Holds or asks only when required.",
   },
 ] as const;
+
+const STANDING: Record<string, string> = { active: "Active", paused: "Paused", mismatch: "Doesn't match", unknown: "Can't confirm", none: "No Steward set" };
+const standingLabel = (kind: string) => STANDING[kind] ?? "Can't confirm";
+
+const RUN: Record<string, { label: string; tone: Tone }> = {
+  done: { label: "Completed", tone: "ok" },
+  running: { label: "Running", tone: "info" },
+  stalled: { label: "Stalled", tone: "warn" },
+  failed: { label: "Failed", tone: "danger" },
+  skipped_paused: { label: "Skipped: payments paused", tone: "neutral" },
+  skipped_fees: { label: "Skipped: low fee balance", tone: "warn" },
+};
+const runLabel = (status: string) => RUN[status]?.label ?? status.replace(/_/g, " ");
+const runTone = (status: string): Tone => RUN[status]?.tone ?? "neutral";
+
+/** A counter's key as people would say it: "evaluatedInvoices" → "Evaluated invoices" */
+const humanKey = (key: string) => {
+  const words = key.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").toLowerCase();
+  return words[0]!.toUpperCase() + words.slice(1);
+};
 
 export interface DecisionView {
   id: string;
@@ -247,90 +274,65 @@ export function StewardClient({
     }
   }
 
+  const lowFees = fee.raw !== null && BigInt(fee.raw) < 10_000_000_000_000_000n;
+  const standingTone: Tone = standing.kind === "active" ? "ok" : standing.kind === "paused" ? "danger" : "warn";
+
   return (
-    <div className="max-w-[900px] space-y-10">
-      {/* Header */}
-      <div>
-        <h1 className="font-display text-4xl leading-tight">Steward</h1>
-        <p className="mt-2 text-graphite">
-          {business.name}’s autonomous agent for payables and cashflow. The Vault enforces policy limits onchain in every mode:
-          the Steward cannot withdraw, modify policy, or add payees.
-        </p>
-      </div>
+    <div className="space-y-14">
+      <header>
+        <PageTitle>Steward</PageTitle>
+        <Lead className="mt-3">
+          {business.name}’s agent for payables and cash. In every mode the Vault enforces its limits onchain: the Steward cannot
+          withdraw money, change the policy or add payees.
+        </Lead>
+      </header>
 
-      {/* Identity & Status Card */}
-      <section aria-label="Steward Status" className="rounded-doc border border-rule bg-paper-raised p-6 text-sm">
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          <div>
-            <span className="block text-xs uppercase tracking-wider text-graphite">Steward Wallet</span>
-            {business.stewardWallet ? (
-              <span className="mt-1 block font-mono text-xs">
+      {/* Identity and standing */}
+      <section aria-label="Steward status">
+        <dl className="divide-y divide-rule-soft rounded-doc border border-rule px-5 text-sm">
+          <div className="grid gap-1 py-4 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-4">
+            <dt className="text-graphite">Wallet</dt>
+            <dd className="min-w-0">
+              {business.stewardWallet ? (
                 <Address value={business.stewardWallet} full explorer={explorer} copy />
+              ) : (
+                <span className="text-warn">Not provisioned</span>
+              )}
+            </dd>
+          </div>
+          <div className="grid gap-1 py-4 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-4">
+            <dt className="text-graphite">Standing on Arc</dt>
+            <dd>
+              <StatusPill tone={standingTone}>{standingLabel(standing.kind)}</StatusPill>
+              {standing.block ? <span className="ml-3 text-graphite">read at block {standing.block}</span> : null}
+              {standing.reason ? <p className="mt-2 text-warn">{standing.reason}</p> : null}
+            </dd>
+          </div>
+          <div className="grid gap-1 py-4 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-4">
+            <dt className="text-graphite">Fee balance</dt>
+            <dd className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+              <span>
+                <Money className="font-medium text-ink">{fee.formatted}</Money>
+                {lowFees ? <span className="ml-3 text-warn">Low: 0.01 USDC is the least that keeps it running</span> : null}
               </span>
-            ) : (
-              <span className="mt-1 block text-amber-500">Not provisioned</span>
-            )}
-          </div>
-
-          <div>
-            <span className="block text-xs uppercase tracking-wider text-graphite">Standing on Chain</span>
-            <div className="mt-1 flex items-center gap-2">
-              <span
-                className={`h-2.5 w-2.5 rounded-full ${
-                  standing.kind === "active"
-                    ? "bg-emerald-500"
-                    : standing.kind === "paused"
-                    ? "bg-red"
-                    : "bg-amber-500"
-                }`}
-              />
-              <span className="font-medium capitalize">{standing.kind}</span>
-              {standing.block ? (
-                <span className="text-xs text-graphite">(block {standing.block})</span>
-              ) : null}
-            </div>
-            {standing.reason ? (
-              <p className="mt-1 text-xs text-amber-500">{standing.reason}</p>
-            ) : null}
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs uppercase tracking-wider text-graphite">Fee Balance</span>
               {isOwner ? (
-                <button
-                  type="button"
-                  onClick={() => setFundingOpen(true)}
-                  className="text-xs font-medium text-ink underline decoration-rule underline-offset-4 hover:decoration-ink"
-                >
+                <Button variant="secondary" size="sm" onClick={() => setFundingOpen(true)}>
                   Fund fees
-                </button>
+                </Button>
               ) : null}
-            </div>
-            <span className="mt-1 block font-mono text-xs">{fee.formatted}</span>
-            {fee.raw !== null && BigInt(fee.raw) < 10_000_000_000_000_000n ? (
-              <span className="mt-1 block text-[11px] text-amber-500">
-                Low balance (0.01 USDC recommended for autonomous actions)
-              </span>
-            ) : null}
+            </dd>
           </div>
-        </div>
+        </dl>
       </section>
 
-      {/* Mode Picker (S1, S2) */}
+      {/* Mode */}
       <section aria-labelledby="mode-heading" className="space-y-4">
         <div>
-          <h2 id="mode-heading" className="font-display text-2xl">Operating Mode</h2>
-          <p className="mt-1 text-xs text-graphite">
-            This setting lives in Symbolon. The Vault’s own limits apply in every mode.
-          </p>
+          <SectionTitle id="mode-heading">Operating mode</SectionTitle>
+          <p className="mt-1 text-sm text-graphite">This setting lives in Symbolon. The Vault’s own limits apply in every mode.</p>
         </div>
 
-        {modeError ? (
-          <p role="alert" className="text-sm text-red">
-            {modeError}
-          </p>
-        ) : null}
+        {modeError ? <InlineError>{modeError}</InlineError> : null}
 
         <div role="radiogroup" aria-labelledby="mode-heading" className="grid gap-4 md:grid-cols-3">
           {modes.map((m) => {
@@ -343,119 +345,98 @@ export function StewardClient({
                 aria-checked={active}
                 disabled={!isOwner || modePending}
                 onClick={() => void handleModeSelect(m.key)}
-                className={`rounded-doc border p-5 text-left transition-all ${
-                  active
-                    ? "border-ink bg-paper-raised ring-1 ring-ink"
-                    : "border-rule hover:border-ink/50"
-                } ${!isOwner ? "cursor-not-allowed opacity-90" : ""}`}
+                className={`rounded-doc border p-5 text-left transition-colors disabled:cursor-not-allowed ${
+                  active ? "border-ink bg-paper-raised ring-1 ring-ink" : "border-rule hover:border-ink/50"
+                }`}
               >
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-ink">{m.name}</span>
-                  <span
-                    className={`grid h-4 w-4 place-items-center rounded-full border ${
-                      active ? "border-ink" : "border-rule"
-                    }`}
-                  >
-                    {active ? <span className="h-2 w-2 rounded-full bg-ink" /> : null}
+                <span className="flex items-center justify-between gap-3">
+                  <span className="text-base font-medium text-ink">{m.name}</span>
+                  <span className={`grid h-5 w-5 place-items-center rounded-full border ${active ? "border-ink" : "border-rule"}`}>
+                    {active ? <span className="h-2.5 w-2.5 rounded-full bg-ink" /> : null}
                   </span>
-                </div>
-                <span className="mt-1 block text-xs font-medium text-graphite">{m.tagline}</span>
-                <span className="mt-2 block text-xs leading-relaxed text-graphite/90">{m.body}</span>
+                </span>
+                <span className="mt-1 block text-sm font-medium text-graphite">{m.tagline}</span>
+                <span className="mt-2 block text-sm text-graphite">{m.body}</span>
               </button>
             );
           })}
         </div>
-        {!isOwner ? (
-          <p className="text-xs text-graphite">Only the business owner can change the Steward’s mode.</p>
-        ) : null}
+        {!isOwner ? <p className="text-sm text-graphite">Only the business owner can change the Steward’s mode.</p> : null}
       </section>
 
-      {/* Run Now & Last Run (S6, S11) */}
+      {/* Runs */}
       <section aria-labelledby="runs-heading" className="space-y-4 border-t border-rule pt-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 id="runs-heading" className="font-display text-2xl">Execution Runs</h2>
-            <p className="mt-1 text-xs text-graphite">
-              Runs happen when you ask; no schedule is set.
-            </p>
+            <SectionTitle id="runs-heading">Runs</SectionTitle>
+            <p className="mt-1 text-sm text-graphite">The Steward runs when you ask. No schedule is set.</p>
           </div>
           {canRun ? (
-            <button
-              type="button"
-              disabled={running}
-              onClick={() => void handleRunNow()}
-              className="rounded-doc bg-ink px-4 py-2 text-sm font-medium text-paper transition-opacity disabled:opacity-40"
-            >
+            <Button busy={running} onClick={() => void handleRunNow()}>
               {running ? "Evaluating invoices…" : "Run now"}
-            </button>
+            </Button>
           ) : null}
         </div>
 
-        {runMessage ? <p className="text-sm text-emerald-600">{runMessage}</p> : null}
-        {runError ? <p role="alert" className="text-sm text-red">{runError}</p> : null}
+        {runMessage ? <p role="status" className="text-sm text-ok">{runMessage}</p> : null}
+        {runError ? <InlineError>{runError}</InlineError> : null}
 
         {lastRun ? (
-          <div className="rounded-doc border border-rule p-4 text-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-graphite">
-              <span>
-                Last run: <strong className="capitalize text-ink">{lastRun.status}</strong> · Trigger: {lastRun.trigger} · Mode: {lastRun.mode}
+          <div className="rounded-doc border border-rule px-5 py-4 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+              <span className="flex flex-wrap items-center gap-3">
+                <StatusPill tone={runTone(lastRun.status)}>{runLabel(lastRun.status)}</StatusPill>
+                <span className="text-graphite">Started by {lastRun.trigger}, in {lastRun.mode} mode</span>
               </span>
-              <span>{formatDateTime(new Date(lastRun.startedAt))}</span>
+              <span className="text-graphite">{formatDateTime(new Date(lastRun.startedAt))}</span>
             </div>
 
-            {lastRun.error ? (
-              <p className="mt-2 text-xs text-red">Reason: {lastRun.error}</p>
+            {lastRun.status === "stalled" ? (
+              <p className="mt-3 text-warn">This run began more than five minutes ago and never reported back. Running again replaces it.</p>
             ) : null}
+            {lastRun.error ? <p className="mt-3 text-red">Reason: {lastRun.error}</p> : null}
 
             {lastRun.summary && typeof lastRun.summary === "object" ? (
-              <div className="mt-3 flex flex-wrap gap-4 text-xs font-mono">
-                {Object.entries(lastRun.summary).map(([k, v]) => {
-                  if (typeof v === "object" && v !== null) {
-                    return Object.entries(v as Record<string, number>).map(([sk, sv]) => (
-                      <span key={sk} className="rounded-sm bg-rule-soft/50 px-2 py-0.5">
-                        {sk}: {String(sv)}
-                      </span>
-                    ));
-                  }
-                  return (
-                    <span key={k} className="rounded-sm bg-rule-soft/50 px-2 py-0.5">
-                      {k}: {String(v)}
-                    </span>
-                  );
-                })}
-              </div>
+              <dl className="mt-4 flex flex-wrap gap-x-8 gap-y-2">
+                {Object.entries(lastRun.summary).flatMap(([k, v]) =>
+                  typeof v === "object" && v !== null
+                    ? Object.entries(v as Record<string, number>).map(([sk, sv]) => [sk, sv] as const)
+                    : [[k, v] as const],
+                ).map(([k, v]) => (
+                  <div key={k} className="flex items-baseline gap-2">
+                    <dt className="text-graphite">{humanKey(k)}</dt>
+                    <dd className="font-medium text-ink">{String(v)}</dd>
+                  </div>
+                ))}
+              </dl>
             ) : null}
           </div>
         ) : (
-          <p className="text-xs text-graphite">No runs recorded yet.</p>
+          <EmptyState title="No runs yet">Press “Run now” and the Steward will look at every invoice waiting for it.</EmptyState>
         )}
       </section>
 
-      {/* Shadow Agreement (Flow 13) */}
+      {/* Agreement with the Steward's recommendations */}
       <section aria-labelledby="shadow-heading" className="space-y-4 border-t border-rule pt-8">
         <div>
-          <h2 id="shadow-heading" className="font-display text-2xl">Your responses</h2>
-          <p className="mt-1 text-xs text-graphite">
-            Counts the latest response to each recommendation that asked for approval.
-          </p>
+          <SectionTitle id="shadow-heading">Your responses</SectionTitle>
+          <p className="mt-1 text-sm text-graphite">Counts your latest response to each recommendation that asked for approval.</p>
         </div>
 
         {shadow.compared > 0 ? (
-          <div className="rounded-doc border border-rule p-5">
-            <p className="font-display text-4xl">
+          <div className="rounded-doc border border-rule px-5 py-5">
+            <p className="font-display text-4xl text-ink">
               {shadow.agreed} <span className="text-xl text-graphite">of {shadow.compared}</span>
             </p>
-            <p className="mt-1 text-sm text-graphite">
-              recommendations you agreed with.
-            </p>
+            <p className="mt-1 text-sm text-graphite">recommendations you agreed with.</p>
 
             {shadow.disagreements.length > 0 ? (
               <div className="mt-4 border-t border-rule-soft pt-3">
-                <span className="text-xs font-medium uppercase text-graphite">Disagreements</span>
-                <ul className="mt-2 divide-y divide-rule-soft text-xs">
+                <Eyebrow as="p">Where you disagreed</Eyebrow>
+                <ul className="mt-2 divide-y divide-rule-soft text-sm">
                   {shadow.disagreements.map((d) => (
-                    <li key={d.fingerprint} className="py-2 flex items-center justify-between">
-                      <span className="font-mono text-graphite">{d.fingerprint.slice(0, 10)}…</span>
+                    <li key={d.fingerprint} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                      <span className="text-graphite">Invoice {d.fingerprint.slice(0, 10)}…</span>
                       <span>
                         Steward proposed <strong className="capitalize">{d.steward}</strong>, team recorded{" "}
                         <strong className="capitalize">{d.actual}</strong>
@@ -467,85 +448,62 @@ export function StewardClient({
             ) : null}
           </div>
         ) : (
-          <p className="text-xs text-graphite">Nothing to compare yet.</p>
+          <EmptyState title="Nothing to compare yet">Once you respond to a recommendation, your agreement with the Steward is counted here.</EmptyState>
         )}
       </section>
 
-      {/* Onchain Anchoring (A10) */}
+      {/* Anchoring */}
       <section aria-labelledby="anchoring-heading" className="space-y-4 border-t border-rule pt-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 id="anchoring-heading" className="font-display text-2xl">Onchain Anchoring</h2>
-            <p className="mt-1 text-xs text-graphite">
-              Decision hashes are batched into a Merkle tree and anchored into the Vault on Arc.
-            </p>
+            <SectionTitle id="anchoring-heading">Anchoring</SectionTitle>
+            <p className="mt-1 text-sm text-graphite">Decision records are batched into a Merkle tree and anchored in the Vault on Arc.</p>
           </div>
           {canRun ? (
-            <button
-              type="button"
-              disabled={anchoring || (pendingAnchorCount ?? 0) === 0}
-              onClick={() => void handleAnchorNow()}
-              className="rounded-doc bg-ink px-4 py-2 text-sm font-medium text-paper transition-opacity disabled:opacity-40"
-            >
-              {anchoring ? "Anchoring decisions…" : `Anchor now (${pendingAnchorCount ?? 0} pending)`}
-            </button>
+            <Button variant="secondary" busy={anchoring} disabled={(pendingAnchorCount ?? 0) === 0} onClick={() => void handleAnchorNow()}>
+              {anchoring ? "Anchoring…" : `Anchor now (${pendingAnchorCount ?? 0} waiting)`}
+            </Button>
           ) : null}
         </div>
 
-        {anchorMessage ? <p className="text-sm text-emerald-600">{anchorMessage}</p> : null}
-        {anchorError ? <p role="alert" className="text-sm text-red">{anchorError}</p> : null}
+        {anchorMessage ? <p role="status" className="text-sm text-ok">{anchorMessage}</p> : null}
+        {anchorError ? <InlineError>{anchorError}</InlineError> : null}
 
-        <p className="text-xs text-graphite">
+        <p className="text-sm text-graphite">
           {(pendingAnchorCount ?? 0) === 0
-            ? "All decisions for this business are anchored onchain."
-            : `${pendingAnchorCount} decision${pendingAnchorCount === 1 ? "" : "s"} waiting to be anchored into the Vault.`}
+            ? "Every decision for this business is anchored onchain."
+            : `${pendingAnchorCount} decision${pendingAnchorCount === 1 ? "" : "s"} waiting to be anchored in the Vault.`}
         </p>
       </section>
 
-      {/* Recent Decisions (S14 / A9) */}
+      {/* Recent decisions */}
       <section aria-labelledby="decisions-heading" className="space-y-4 border-t border-rule pt-8">
         <div>
-          <h2 id="decisions-heading" className="font-display text-2xl">Recent Decisions</h2>
-          <p className="mt-1 text-xs text-graphite">
-            Every decision is cryptographically recorded with its inputs and rules applied.
-          </p>
+          <SectionTitle id="decisions-heading">Recent decisions</SectionTitle>
+          <p className="mt-1 text-sm text-graphite">Every decision is recorded with its inputs and the rule applied.</p>
         </div>
 
         {recentDecisions.length > 0 ? (
-          <ul className="divide-y divide-rule rounded-doc border border-rule text-sm">
+          <ul className="divide-y divide-rule-soft rounded-doc border border-rule text-sm">
             {recentDecisions.map((d) => (
-              <li key={d.id} className="p-4 hover:bg-paper-raised/40 transition-colors">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <Link
-                    href={`/business/decisions/${d.id}`}
-                    className="font-medium text-ink underline decoration-rule underline-offset-2 hover:text-seal"
-                  >
+              <li key={d.id} className="px-5 py-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+                  <Link href={`/business/decisions/${d.id}`} className="min-w-0 font-medium text-ink underline decoration-rule underline-offset-4 hover:text-seal">
                     {d.summary.sentence}
                   </Link>
-                  <span className="text-xs text-graphite">{formatDateTime(new Date(d.createdAt))}</span>
+                  <span className="shrink-0 text-graphite">{formatDateTime(new Date(d.createdAt))}</span>
                 </div>
-                {d.summary.explanation ? (
-                  <p className="mt-1 text-xs italic text-graphite">{d.summary.explanation}</p>
-                ) : null}
-                <div className="mt-2 flex items-center gap-3 text-xs font-mono text-graphite">
-                  <Link
-                    href={`/business/decisions/${d.id}`}
-                    className="underline decoration-rule underline-offset-2 hover:text-ink"
-                  >
-                    record
-                  </Link>
-                  <span>kind: {d.kind}</span>
+                {d.summary.explanation ? <p className="mt-1 text-graphite">{d.summary.explanation}</p> : null}
+                <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-graphite">
+                  <span>{humanKey(d.kind)}</span>
                   {d.subject ? (
-                    <Link
-                      href={`/business/inbox/${d.subject}`}
-                      className="underline decoration-rule underline-offset-2 hover:text-ink"
-                    >
-                      invoice {d.subject.slice(0, 8)}…
+                    <Link href={`/business/inbox/${d.subject}`} className="underline decoration-rule underline-offset-4 hover:text-ink">
+                      Invoice {d.subject.slice(0, 8)}…
                     </Link>
                   ) : null}
                   {d.txHash ? (
                     <TxLink href={`${explorer}/tx/${d.txHash}`} label="View transaction on explorer">
-                      tx {d.txHash.slice(0, 8)}…
+                      Transaction {d.txHash.slice(0, 8)}…
                     </TxLink>
                   ) : null}
                 </div>
@@ -553,125 +511,84 @@ export function StewardClient({
             ))}
           </ul>
         ) : (
-          <p className="text-xs text-graphite">No decisions recorded yet.</p>
+          <EmptyState title="No decisions yet">The Steward records a decision each time it looks at an invoice.</EmptyState>
         )}
       </section>
 
-      {/* Invariant Bounds: What the Steward can't do (§8.2) */}
-      <section aria-labelledby="invariants-heading" className="rounded-doc border border-rule bg-paper-raised/30 p-6 text-sm">
-        <h2 id="invariants-heading" className="font-display text-xl">What the Steward Can’t Do</h2>
-        <p className="mt-1 text-xs text-graphite">Enforced by the Vault contract onchain in every mode:</p>
-        <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-graphite">
-          <li>Cannot withdraw funds or pay unapproved recipient addresses</li>
-          <li>Cannot modify policy limits, cooldown periods, or approval thresholds</li>
-          <li>Cannot add payees, change payout destinations, or register Seals</li>
-          <li>Cannot approve payments exceeding the owner threshold without manual human signature</li>
-          <li>Cannot pay unsigned documents or bypass pay-once cryptographic records</li>
+      {/* What the Steward can't do (spec 8.2) */}
+      <section aria-labelledby="invariants-heading" className="rounded-doc border border-rule px-6 py-5 text-sm">
+        <SectionTitle id="invariants-heading" className="!text-xl">What the Steward can’t do</SectionTitle>
+        <p className="mt-1 text-graphite">The Vault contract enforces this onchain, in every mode:</p>
+        <ul className="mt-3 list-disc space-y-1.5 pl-5 text-graphite">
+          <li>Withdraw funds or pay an address that isn’t an approved payee</li>
+          <li>Change policy limits, cooldown periods or approval thresholds</li>
+          <li>Add payees, change payout destinations or register Seals</li>
+          <li>Approve a payment above the owner threshold without a person’s signature</li>
+          <li>Pay an unsigned document or pay the same invoice twice</li>
         </ul>
       </section>
 
-      {/* Autonomous Mode Confirmation Overlay (S1) */}
+      {/* Autonomous mode confirmation */}
       {autoModalOpen ? (
         <Overlay
-          label="Enable Autonomous Mode"
+          title="Turn on Autonomous mode"
+          description="The Steward will send payments to Arc by itself, within the limits the Vault enforces."
           onClose={() => setAutoModalOpen(false)}
         >
-          <div className="space-y-4 text-sm">
-            <h2 className="font-display text-xl text-ink">Enable Autonomous Mode</h2>
-            <p className="text-graphite">
-              In Autonomous mode, the Steward sends transactions directly to Arc for payments within policy limits.
-              The Vault’s onchain policy governs all actions:
-            </p>
-
-            <div className="rounded-doc border border-rule bg-paper p-3 text-xs space-y-1.5 font-mono">
-              {policyLines.map((line, i) => (
-                <div key={i}>• {line}</div>
-              ))}
+          <div className="space-y-4">
+            <div>
+              <p className="mb-1.5 font-medium text-ink">The Vault's limits that always apply</p>
+              <ul className="space-y-1.5 rounded-doc border border-rule px-4 py-3 text-graphite">
+                {policyLines.map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ul>
             </div>
 
-            <label className="flex items-start gap-3 rounded-doc border border-rule p-3 text-xs cursor-pointer select-none">
+            <label className="flex min-h-11 cursor-pointer select-none items-start gap-3 rounded-doc border border-rule px-4 py-3">
               <input
                 type="checkbox"
                 checked={policyConfirmed}
                 onChange={(e) => setPolicyConfirmed(e.target.checked)}
-                className="mt-0.5 rounded border-rule text-ink"
+                className="mt-0.5 h-4 w-4 accent-[var(--seal)]"
               />
-              <span>
-                I understand that the Steward will autonomously execute payments according to the policy rules above.
-              </span>
+              <span className="text-ink">I understand the Steward will make payments on its own within the rules above.</span>
             </label>
 
-            {modeError ? <p className="text-xs text-red">{modeError}</p> : null}
+            {modeError ? <InlineError>{modeError}</InlineError> : null}
 
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setAutoModalOpen(false)}
-                className="rounded-doc border border-rule px-4 py-2 text-xs font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!policyConfirmed || modePending}
-                onClick={() => void confirmAutoMode()}
-                className="rounded-doc bg-ink px-4 py-2 text-xs font-medium text-paper transition-opacity disabled:opacity-40"
-              >
-                {modePending ? "Enabling…" : "Confirm & Enable"}
-              </button>
-            </div>
+            <Overlay.Footer>
+              <Button variant="secondary" onClick={() => setAutoModalOpen(false)}>Cancel</Button>
+              <Button disabled={!policyConfirmed} busy={modePending} onClick={() => void confirmAutoMode()}>
+                {modePending ? "Turning on…" : "Turn on Autonomous mode"}
+              </Button>
+            </Overlay.Footer>
           </div>
         </Overlay>
       ) : null}
 
-      {/* Fee Funding Overlay (S5) */}
+      {/* Fee funding */}
       {fundingOpen ? (
         <Overlay
-          label="Fund Steward Network Fees"
+          title="Fund the Steward's network fees"
+          description="Arc fees are paid in USDC. Send a small amount from your wallet so the Steward can send its transactions."
           onClose={() => setFundingOpen(false)}
         >
-          <div className="space-y-4 text-sm">
-            <h2 className="font-display text-xl text-ink">Fund Steward Network Fees</h2>
-            <p className="text-graphite">
-              Arc gas is paid in native USDC. Send a small amount from your owner wallet to fund the Steward’s transactions:
-            </p>
+          <div className="space-y-4">
+            <Field label="Amount (USDC)" hint="0.1 USDC is enough for hundreds of transactions.">
+              {(a) => (
+                <input {...a} type="text" inputMode="decimal" value={feeAmount} onChange={(e) => setFeeAmount(e.target.value)} className={controlClass} placeholder="0.1" />
+              )}
+            </Field>
 
-            <div>
-              <label htmlFor="fee-amount-input" className="block text-xs uppercase tracking-wider text-graphite">
-                Amount (USDC)
-              </label>
-              <input
-                id="fee-amount-input"
-                type="text"
-                value={feeAmount}
-                onChange={(e) => setFeeAmount(e.target.value)}
-                className="mt-1 w-full rounded-doc border border-rule bg-transparent px-3 py-2 text-sm font-mono text-ink outline-none focus:border-ink"
-                placeholder="0.1"
-              />
-              <span className="mt-1 block text-[11px] text-graphite">
-                Recommended: 0.1 USDC (covers hundreds of transactions)
-              </span>
-            </div>
+            {fundingError ? <InlineError>{fundingError}</InlineError> : null}
 
-            {fundingError ? <p className="text-xs text-red">{fundingError}</p> : null}
-
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setFundingOpen(false)}
-                className="rounded-doc border border-rule px-4 py-2 text-xs font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={fundingBusy}
-                onClick={() => void handleFundFees()}
-                className="rounded-doc bg-ink px-4 py-2 text-xs font-medium text-paper transition-opacity disabled:opacity-40"
-              >
-                {fundingBusy ? "Signing transfer…" : "Send fees (one signature)"}
-              </button>
-            </div>
+            <Overlay.Footer>
+              <Button variant="secondary" onClick={() => setFundingOpen(false)}>Cancel</Button>
+              <Button busy={fundingBusy} onClick={() => void handleFundFees()}>
+                {fundingBusy ? "Signing…" : "Send fees"}
+              </Button>
+            </Overlay.Footer>
           </div>
         </Overlay>
       ) : null}

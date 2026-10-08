@@ -19,6 +19,7 @@ import {
 } from "@symbolon/chain";
 import { businesses, decisions, type Database } from "@symbolon/db";
 import { hashRecord, type DecisionRecord } from "@symbolon/steward";
+import { displayReleaseNotes } from "../release-notes";
 import { captureUpgradeSnapshot, compareUpgradeSnapshots, upgradeScope, type UpgradeSnapshot } from "./upgrade-snapshot";
 import { requireMember } from "./access";
 import { appendAppDecision } from "./app-decisions";
@@ -67,6 +68,8 @@ export interface ReleaseViewInfo {
     revoked: boolean;
     notesHash: `0x${string}`;
     notes: string | null;
+    /** Internal plan references were left out of `notes` (the hash covers the full published text) */
+    notesTrimmed: boolean;
     notesVerified: boolean;
   };
   scheduled: {
@@ -115,7 +118,8 @@ export async function loadReleaseInfo(
     notesInfo &&
       notesInfo.notesHash.toLowerCase() === latestRelease.notesHash.toLowerCase(),
   );
-  const verifiedNotes = notesVerified ? (notesInfo?.notes ?? null) : null;
+  const shown = notesVerified && notesInfo ? displayReleaseNotes(notesInfo.notes) : null;
+  const verifiedNotes = shown?.text ?? null;
 
   let state: ReleaseLifecycleState = "unknown";
   if (latestRelease.revoked) {
@@ -143,6 +147,7 @@ export async function loadReleaseInfo(
       revoked: latestRelease.revoked,
       notesHash: latestRelease.notesHash,
       notes: verifiedNotes,
+      notesTrimmed: shown?.trimmed ?? false,
       notesVerified,
     },
     scheduled: {

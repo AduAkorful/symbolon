@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { explorerAddressUrl } from "@symbolon/chain";
-import Link from "next/link";
-import { Wordmark } from "@/components/Marks";
 import { Reveal } from "@/components/Reveal";
 import { PublicFooter } from "@/components/public/PublicFooter";
+import { PublicHeader } from "@/components/public/PublicHeader";
+import { CONTAINER } from "@/components/shell/container";
 import { getClient } from "@/lib/server/chain";
 import { readChainStatus } from "@/lib/server/chain-status";
 import { getConfig } from "@/lib/server/config";
@@ -25,22 +25,10 @@ export default async function StatusPage() {
 
   return (
     <div className="min-h-screen flex flex-col justify-between">
-      <Reveal className="mx-auto w-full max-w-[760px] px-6 py-14 md:px-10">
-        <div data-reveal className="flex items-center justify-between">
-          <Link href="/" aria-label="Symbolon home">
-            <Wordmark />
-          </Link>
-          <span className="flex items-center gap-4">
-            <span className="rounded-full border border-rule px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-graphite">
-              {config.testnet ? "Arc testnet" : "Arc mainnet"} · {config.chainId}
-            </span>
-            <Link href="/signin" className="text-sm underline decoration-rule underline-offset-4 hover:text-ink">
-              Sign in
-            </Link>
-          </span>
-        </div>
-
-        <h1 data-reveal className="mt-14 font-display text-4xl leading-tight">
+      <PublicHeader />
+      <main id="main-content" className={`${CONTAINER} w-full flex-1 pb-14 pt-14`}>
+      <Reveal>
+        <h1 data-reveal className="font-display text-4xl leading-tight md:text-5xl">
           {status.ok ? "Connected to the deployed contracts." : "Can’t confirm the chain right now."}
         </h1>
         <p data-reveal className="mt-3 text-graphite">
@@ -49,7 +37,7 @@ export default async function StatusPage() {
             : `${failed.length} of ${status.checks.length} checks failed. Nothing on this page should be trusted until they pass.`}
         </p>
 
-        <ul data-reveal className="mt-10 border-t border-rule" aria-label="Contract health checks">
+        <ul data-reveal className="mt-10 max-w-3xl border-t border-rule" aria-label="Contract health checks">
           {status.checks.map((c) => (
             <li key={c.name} className="grid grid-cols-[1.25rem_10rem_1fr] items-baseline gap-x-3 border-b border-rule-soft py-3 text-sm">
               <span className={c.ok ? "text-seal" : "text-red"} aria-label={c.ok ? "Passed" : "Failed"}>
@@ -59,7 +47,7 @@ export default async function StatusPage() {
               <span className={`flex flex-wrap items-baseline gap-x-3 ${c.ok ? "text-graphite" : "text-red"}`}>
                 <span>{c.detail}</span>
                 {c.address ? (
-                  <a href={explorerAddressUrl(config.chainId, c.address)} className="font-mono text-xs underline decoration-rule underline-offset-4">
+                  <a href={explorerAddressUrl(config.chainId, c.address)} className="font-mono text-sm underline decoration-rule underline-offset-4">
                     {short(c.address)}
                   </a>
                 ) : null}
@@ -68,6 +56,7 @@ export default async function StatusPage() {
           ))}
         </ul>
       </Reveal>
+      </main>
       <PublicFooter />
     </div>
   );

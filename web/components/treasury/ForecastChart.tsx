@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+import { Segmented } from "@/components/ui/Segmented";
 
 export interface ForecastEvent {
   day: number;
+  /** Change in the balance, in thousands */
   delta: number;
   label: string;
   kind: "bill" | "redeem";
@@ -14,12 +17,22 @@ export interface ForecastDate {
   label: string;
 }
 
-const W = 1000;
 const H = 300;
-const PAD = { l: 16, r: 120, t: 28, b: 36 };
-const plotW = W - PAD.l - PAD.r;
-const plotH = H - PAD.t - PAD.b;
+const PAD_T = 32;
+const PAD_B = 44;
+const plotH = H - PAD_T - PAD_B;
 
+/** A balance in thousands as "$20.0k" or "−$23.0k" */
+const k = (v: number) => `${v < 0 ? "−" : ""}$${Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}k`;
+
+/** A label cut to `max` characters with an ellipsis, so it can't run out of the plot */
+const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+
+/**
+ * The operating balance over the forecast as one stepped line (plan 05zb A3). Drawn at the width it is shown at, so its text is
+ * a real 12 px at every screen size instead of shrinking with the picture. The vertical scale always includes zero and the
+ * lowest balance, so a forecast that goes negative stays inside the plot with the zero line marked.
+ */
 export function ForecastChart({
   start,
   days = 35,
@@ -42,197 +55,167 @@ export function ForecastChart({
   }[];
 }) {
   const [viewMode, setViewMode] = useState<"chart" | "table">("chart");
+  const box = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(720);
 
-  // Determine vertical scale dynamically
-  let minVal = Math.min(start, buffer);
-  let maxVal = Math.max(start, buffer);
-  let running = start;
-  for (const e of events) {
-    running += e.delta;
-    if (running < minVal) minVal = running;
-    if (running > maxVal) maxVal = running;
-  }
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const measure = () => setWidth(Math.max(280, Math.round(el.getBoundingClientRect().width)));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [viewMode]);
 
-  // Margin around limits
-  const yMin = Math.max(0, Math.floor(minVal * 0.85));
-  const yMax = Math.max(10, Math.ceil(maxVal * 1.15));
-
-  const x = (d: number) => PAD.l + (Math.max(0, Math.min(d, days)) / days) * plotW;
-  const y = (v: number) => {
-    if (yMax <= yMin) return PAD.t + plotH / 2;
-    return PAD.t + (1 - (v - yMin) / (yMax - yMin)) * plotH;
-  };
-
-  // Stepped path
-  let bal = start;
-  let d = `M ${x(0)} ${y(bal)}`;
-  const points: { e: ForecastEvent; before: number; after: number }[] = [];
+  const narrow = width < 520;
+  const padL = 12;
+  const padR = narrow ? 76 : 104;
+  const plotW = width - padL - padR;
 
   const sortedEvents = [...events].sort((a, b) => a.day - b.day);
+  let low = Math.min(start, buffer, 0);
+  let high = Math.max(start, buffer, 0);
+  let running = start;
   for (const e of sortedEvents) {
-    d += ` H ${x(e.day)}`;
+    running += e.delta;
+    low = Math.min(low, running);
+    high = Math.max(high, running);
+  }
+  const span = Math.max(high - low, 10);
+  const yMin = low - span * 0.08;
+  const yMax = high + span * 0.12;
+
+  const x = (d: number) => padL + (Math.max(0, Math.min(d, days)) / days) * plotW;
+  const y = (v: number) => PAD_T + (1 - (v - yMin) / (yMax - yMin)) * plotH;
+
+  let bal = start;
+  let path = `M ${x(0)} ${y(bal)}`;
+  const points: { e: ForecastEvent; before: number; after: number }[] = [];
+  for (const e of sortedEvents) {
+    path += ` H ${x(e.day)}`;
     const before = bal;
     bal += e.delta;
-    d += ` V ${y(bal)}`;
+    path += ` V ${y(bal)}`;
     points.push({ e, before, after: bal });
   }
-  d += ` H ${x(days)}`;
+  path += ` H ${x(days)}`;
   const end = bal;
 
   const redeem = points.find((p) => p.e.kind === "redeem");
   const biggestBill = points.filter((p) => p.e.kind === "bill").sort((a, b) => a.e.delta - b.e.delta)[0];
+  const axisY = H - PAD_B + 6;
+  const zeroVisible = yMin < 0;
 
   return (
     <div className="mt-6">
-      <div className="flex items-center justify-end gap-2 mb-2">
-        <button
-          type="button"
-          onClick={() => setViewMode("chart")}
-          className={`text-xs px-2.5 py-1 rounded ${
-            viewMode === "chart" ? "bg-ink text-paper font-medium" : "text-graphite hover:text-ink"
-          }`}
-        >
-          Visual
-        </button>
-        <button
-          type="button"
-          onClick={() => setViewMode("table")}
-          className={`text-xs px-2.5 py-1 rounded ${
-            viewMode === "table" ? "bg-ink text-paper font-medium" : "text-graphite hover:text-ink"
-          }`}
-        >
-          Data table
-        </button>
+      <div className="mb-3 flex justify-end">
+        <Segmented
+          label="Show the forecast as"
+          hideLabel
+          value={viewMode}
+          options={[
+            { value: "chart", label: "Chart" },
+            { value: "table", label: "Table" },
+          ]}
+          onChange={setViewMode}
+          className="w-48"
+        />
       </div>
 
       {viewMode === "chart" ? (
-        <figure className="relative">
-          <svg
-            viewBox={`0 0 ${W} ${H}`}
-            className="w-full overflow-visible"
-            role="img"
-            aria-label="Operating balance over the forecast period"
-          >
-            {/* Buffer zone */}
-            {buffer > yMin && (
+        <figure ref={box} className="relative">
+          <svg width={width} height={H} viewBox={`0 0 ${width} ${H}`} className="block max-w-full" role="img" aria-label="Operating balance over the forecast period">
+            {/* below the buffer */}
+            {buffer > yMin ? (
               <>
-                <rect
-                  x={PAD.l}
-                  y={y(buffer)}
-                  width={plotW}
-                  height={Math.max(0, y(yMin) - y(buffer))}
-                  fill="var(--red, #ef4444)"
-                  opacity="0.06"
-                />
-                <line
-                  x1={PAD.l}
-                  x2={PAD.l + plotW}
-                  y1={y(buffer)}
-                  y2={y(buffer)}
-                  stroke="var(--red, #ef4444)"
-                  strokeWidth="1"
-                  strokeDasharray="4 4"
-                  opacity="0.8"
-                />
-                <text x={PAD.l + 6} y={y(buffer) + 16} fontSize="12" fill="var(--graphite, #666)">
-                  Buffer {buffer.toLocaleString("en-US", { maximumFractionDigits: 1 })}k
+                <rect x={padL} y={y(buffer)} width={plotW} height={Math.max(0, y(yMin) - y(buffer))} fill="var(--red)" opacity="0.07" />
+                <line x1={padL} x2={padL + plotW} y1={y(buffer)} y2={y(buffer)} stroke="var(--red)" strokeWidth="1" strokeDasharray="4 4" opacity="0.8" />
+                <text x={padL + 6} y={y(buffer) - 6} fontSize="12" fill="var(--graphite)">
+                  Buffer {k(buffer)}
                 </text>
               </>
-            )}
+            ) : null}
 
-            {/* Time axis */}
-            <line x1={PAD.l} x2={PAD.l + plotW} y1={y(yMin)} y2={y(yMin)} stroke="var(--rule, #e5e5e5)" />
-            {dates.map((t) => (
-              <g key={t.day + t.label}>
-                <line x1={x(t.day)} x2={x(t.day)} y1={y(yMin)} y2={y(yMin) + 5} stroke="var(--rule, #e5e5e5)" />
-                <text x={x(t.day)} y={H - 8} fontSize="12" textAnchor="middle" fill="var(--graphite, #666)">
-                  {t.label}
+            {/* zero, when the balance goes below it */}
+            {zeroVisible ? (
+              <>
+                <line x1={padL} x2={padL + plotW} y1={y(0)} y2={y(0)} stroke="var(--graphite)" strokeWidth="1" opacity="0.6" />
+                <text x={padL + plotW - 4} y={y(0) - 6} fontSize="12" textAnchor="end" fill="var(--graphite)">
+                  $0
                 </text>
-              </g>
-            ))}
+              </>
+            ) : null}
 
-            {/* Stepped line */}
-            <path d={d} fill="none" stroke="var(--ink, #111)" strokeWidth="2" strokeLinejoin="round" />
+            {/* time axis */}
+            <line x1={padL} x2={padL + plotW} y1={axisY - 6} y2={axisY - 6} stroke="var(--rule)" />
+            {dates
+              .filter((_, i) => !narrow || i % 2 === 0)
+              .map((t) => (
+                <g key={t.day + t.label}>
+                  <line x1={x(t.day)} x2={x(t.day)} y1={axisY - 6} y2={axisY} stroke="var(--rule)" />
+                  <text x={Math.min(Math.max(x(t.day), padL + 20), padL + plotW)} y={axisY + 16} fontSize="12" textAnchor="middle" fill="var(--graphite)">
+                    {t.label}
+                  </text>
+                </g>
+              ))}
 
-            {/* Event annotations */}
-            {redeem && (
+            <path d={path} fill="none" stroke="var(--ink)" strokeWidth="2" strokeLinejoin="round" />
+
+            {redeem ? (
               <g>
-                <line
-                  x1={x(redeem.e.day)}
-                  x2={x(redeem.e.day)}
-                  y1={y(redeem.before)}
-                  y2={y(redeem.after)}
-                  stroke="var(--seal, #0f766e)"
-                  strokeWidth="3"
-                />
-                <text x={x(redeem.e.day) - 10} y={y(redeem.after) - 10} fontSize="12" textAnchor="end" fill="var(--ink, #111)">
-                  <tspan fontWeight="600">+{redeem.e.delta.toFixed(1)}k from reserve</tspan>
+                <line x1={x(redeem.e.day)} x2={x(redeem.e.day)} y1={y(redeem.before)} y2={y(redeem.after)} stroke="var(--seal)" strokeWidth="3" />
+                <text x={x(redeem.e.day) - 10} y={y(redeem.after) - 10} fontSize="12" textAnchor="end" fill="var(--ink)" fontWeight="600">
+                  +{k(redeem.e.delta)} from reserve
                 </text>
               </g>
-            )}
+            ) : null}
 
-            {biggestBill && (
-              <text
-                x={x(biggestBill.e.day) + 8}
-                y={(y(biggestBill.before) + y(biggestBill.after)) / 2}
-                fontSize="12"
-                fill="var(--ink, #111)"
-              >
-                <tspan fontWeight="600">{biggestBill.e.label}</tspan>
-                <tspan dx="4" fill="var(--graphite, #666)">
-                  −{Math.abs(biggestBill.e.delta).toFixed(1)}k
-                </tspan>
+            {biggestBill && !narrow ? (
+              <text x={x(biggestBill.e.day) + 8} y={(y(biggestBill.before) + y(biggestBill.after)) / 2} fontSize="12" fill="var(--ink)">
+                <tspan fontWeight="600">{clip(biggestBill.e.label, Math.max(12, Math.floor((padL + plotW - x(biggestBill.e.day) - 90) / 7)))}</tspan>
+                <tspan dx="6" fill="var(--graphite)">{k(biggestBill.e.delta)}</tspan>
               </text>
-            )}
+            ) : null}
 
-            {/* End point and start point */}
-            <circle cx={x(days)} cy={y(end)} r="4" fill="var(--ink, #111)" />
-            <text x={PAD.l + plotW + 10} y={y(end) + 4} fontSize="13" fontWeight="600" fill="var(--ink, #111)">
-              {end.toLocaleString("en-US", { maximumFractionDigits: 1 })}k
+            <circle cx={x(days)} cy={y(end)} r="4" fill="var(--ink)" />
+            <text x={padL + plotW + 10} y={y(end) + 4} fontSize="13" fontWeight="600" fill="var(--ink)">
+              {k(end)}
             </text>
-            <text x={x(0)} y={y(start) - 10} fontSize="12" fill="var(--graphite, #666)">
-              Today {start.toLocaleString("en-US", { maximumFractionDigits: 1 })}k
+            <text x={x(0) + 2} y={Math.max(PAD_T - 8, y(start) - 10)} fontSize="12" fill="var(--graphite)">
+              Today {k(start)}
             </text>
 
-            {/* Tooltips */}
             {points.map((p) => (
-              <g key={p.e.day + p.e.label}>
-                <rect
-                  x={x(p.e.day) - 12}
-                  y={Math.min(y(p.before), y(p.after)) - 8}
-                  width="24"
-                  height={Math.abs(y(p.before) - y(p.after)) + 16}
-                  fill="transparent"
-                >
-                  <title>{`${p.e.label}: ${p.e.delta > 0 ? "+" : "−"}${Math.abs(p.e.delta).toFixed(2)}k → ${p.after.toFixed(2)}k`}</title>
-                </rect>
-              </g>
+              <rect key={p.e.day + p.e.label} x={x(p.e.day) - 12} y={Math.min(y(p.before), y(p.after)) - 8} width="24" height={Math.abs(y(p.before) - y(p.after)) + 16} fill="transparent">
+                <title>{`${p.e.label}: ${p.e.delta > 0 ? "+" : "−"}${k(Math.abs(p.e.delta)).replace("$", "$")} → ${k(p.after)}`}</title>
+              </rect>
             ))}
           </svg>
           <figcaption className="sr-only">
-            Operating balance starts at {start.toFixed(1)}k and ends at {end.toFixed(1)}k over {days} days.
+            Operating balance starts at {k(start)} and ends at {k(end)} over {days} days.
           </figcaption>
         </figure>
       ) : (
-        <div className="overflow-x-auto max-h-[300px] border border-rule rounded-doc">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-paper-raised border-b border-rule sticky top-0">
+        <div ref={box} className="max-h-80 overflow-auto rounded-doc border border-rule">
+          <table className="w-full text-left text-sm">
+            <thead className="sticky top-0 border-b border-rule bg-paper-raised">
               <tr>
-                <th className="px-3 py-2 font-medium">Day</th>
-                <th className="px-3 py-2 font-medium">Date</th>
-                <th className="px-3 py-2 font-medium text-right">Outflows</th>
-                <th className="px-3 py-2 font-medium text-right">Inflows</th>
-                <th className="px-3 py-2 font-medium text-right">Balance</th>
+                <th scope="col" className="px-3 py-2 font-medium">Day</th>
+                <th scope="col" className="px-3 py-2 font-medium">Date</th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">Outflows</th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">Inflows</th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">Balance</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-rule font-mono tabular-nums">
+            <tbody className="divide-y divide-rule-soft">
               {tableRows.map((r) => (
-                <tr key={r.day} className="hover:bg-paper-raised/50">
+                <tr key={r.day}>
                   <td className="px-3 py-1.5">{r.day}</td>
-                  <td className="px-3 py-1.5 font-sans">{r.date}</td>
-                  <td className="px-3 py-1.5 text-right">{r.outflows !== "0" ? `-${r.outflows}` : "—"}</td>
-                  <td className="px-3 py-1.5 text-right">{r.inflows !== "0" ? `+${r.inflows}` : "—"}</td>
-                  <td className="px-3 py-1.5 text-right font-medium">{r.balance}</td>
+                  <td className="whitespace-nowrap px-3 py-1.5">{r.date}</td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-right">{r.outflows !== "0" ? `−${r.outflows}` : "—"}</td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-right">{r.inflows !== "0" ? `+${r.inflows}` : "—"}</td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-right font-medium">{r.balance}</td>
                 </tr>
               ))}
             </tbody>

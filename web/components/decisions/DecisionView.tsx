@@ -4,21 +4,23 @@ import { TxLink } from "@/components/TxLink";
 import type { DecisionDetailView } from "@/lib/server/decisions";
 import { AnchorProof } from "./AnchorProof";
 import { formatDateTime } from "@/lib/format";
+import { StatusPill, type Tone } from "@/components/ui/StatusPill";
+import { Eyebrow, PageTitle } from "@/components/ui/Type";
 
-const outcomeTone: Record<string, string> = {
-  paid: "text-seal bg-seal/10 border-seal/20",
-  paying: "text-seal bg-seal/10 border-seal/20",
-  proposed: "text-ink bg-ink/10 border-rule",
-  scheduled: "text-ink bg-ink/10 border-rule",
-  awaiting_approval: "text-seal bg-seal/10 border-seal/20",
-  request_approval: "text-seal bg-seal/10 border-seal/20",
-  approval_granted: "text-seal bg-seal/10 border-seal/20",
-  approval_rejected: "text-red bg-red/10 border-red/20",
-  held: "text-red bg-red/10 border-red/20",
-  refused: "text-red bg-red/10 border-red/20",
-  rejected: "text-red bg-red/10 border-red/20",
-  skip: "text-graphite bg-paper border-rule-soft",
-  already_settled: "text-graphite bg-paper border-rule-soft",
+const outcomeTone: Record<string, Tone> = {
+  paid: "ok",
+  paying: "ok",
+  proposed: "neutral",
+  scheduled: "neutral",
+  awaiting_approval: "info",
+  request_approval: "info",
+  approval_granted: "ok",
+  approval_rejected: "danger",
+  held: "danger",
+  refused: "danger",
+  rejected: "danger",
+  skip: "neutral",
+  already_settled: "neutral",
 };
 
 interface Props {
@@ -27,51 +29,34 @@ interface Props {
 }
 
 export function DecisionView({ decision: d, explorerUrl }: Props) {
-  const toneClass = outcomeTone[d.outcome] ?? "text-ink bg-paper border-rule";
+  const tone = outcomeTone[d.outcome] ?? "neutral";
 
   return (
-    <div className="max-w-[1080px] space-y-10 pb-24">
+    <div className="space-y-10 pb-24">
       {/* Navigation & Status header */}
       <div>
-        <p className="text-xs uppercase tracking-wider text-graphite">
+        <Eyebrow>
           <Link href="/business/steward" className="hover:text-ink">
             Steward
           </Link>
           <span className="mx-2">/</span>
           <span>Decision record</span>
-        </p>
+        </Eyebrow>
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <span className={`rounded-full border px-3 py-1 font-mono text-xs uppercase tracking-wider ${toneClass}`}>
-            {d.outcome}
+          <StatusPill tone={tone}>{d.outcome.replace(/_/g, " ")}</StatusPill>
+          <span className="text-sm text-graphite">{formatDateTime(new Date(d.at))}</span>
+          {d.mode ? <StatusPill tone="neutral">{d.mode} mode</StatusPill> : null}
+          <span className="sm:ml-auto">
+            <StatusPill tone={d.hashMatches ? "ok" : "danger"}>{d.hashMatches ? "Hash verified" : "Hash doesn’t match"}</StatusPill>
           </span>
-          <span className="text-xs text-graphite">
-            {formatDateTime(new Date(d.at))}
-          </span>
-          {d.mode ? (
-            <span className="rounded bg-paper px-2 py-0.5 font-mono text-xs uppercase text-graphite border border-rule-soft">
-              {d.mode} mode
-            </span>
-          ) : null}
-
-          {d.hashMatches ? (
-            <span className="ml-auto rounded bg-seal/10 px-2 py-0.5 font-mono text-xs text-seal">
-              Hash verified ✓
-            </span>
-          ) : (
-            <span className="ml-auto rounded bg-red/10 px-2 py-0.5 font-mono text-xs text-red">
-              Hash mismatch ✕
-            </span>
-          )}
         </div>
 
-        <h1 className="mt-4 font-display text-[clamp(1.9rem,3.2vw,2.8rem)] leading-[1.12] text-ink">
-          {d.sentence}
-        </h1>
+        <PageTitle className="mt-4">{d.sentence}</PageTitle>
 
         {d.explanation ? (
-          <p className="mt-3 text-base text-graphite border-l-2 border-seal/50 pl-4 py-1 italic">
-            "{d.explanation}"
+          <p className="mt-3 border-l-2 border-seal/50 py-1 pl-4 text-base text-graphite">
+            {d.explanation}
           </p>
         ) : null}
       </div>
@@ -81,9 +66,9 @@ export function DecisionView({ decision: d, explorerUrl }: Props) {
         <div className="space-y-10">
           {/* Trigger */}
           <section aria-labelledby="trigger-title">
-            <h2 id="trigger-title" className="text-xs uppercase tracking-[0.14em] text-graphite font-medium">
+            <Eyebrow id="trigger-title" as="h2">
               What started it
-            </h2>
+            </Eyebrow>
             <div className="mt-3 rounded-doc border border-rule-soft bg-paper-raised p-4 text-sm">
               <p className="text-ink">
                 Triggered by <span className="font-mono text-xs uppercase font-medium">{d.kind}</span>
@@ -100,9 +85,9 @@ export function DecisionView({ decision: d, explorerUrl }: Props) {
 
           {/* Inputs */}
           <section aria-labelledby="inputs-title">
-            <h2 id="inputs-title" className="text-xs uppercase tracking-[0.14em] text-graphite font-medium">
+            <Eyebrow id="inputs-title" as="h2">
               What it saw (inputs)
-            </h2>
+            </Eyebrow>
             <dl className="mt-3 divide-y divide-rule-soft rounded-doc border border-rule bg-paper-raised text-sm">
               {Object.entries(d.inputs).map(([k, v]) => (
                 <div key={k} className="grid gap-1 p-3.5 sm:grid-cols-[11rem_1fr]">
@@ -118,9 +103,9 @@ export function DecisionView({ decision: d, explorerUrl }: Props) {
           {/* Options Considered */}
           {d.options.length > 0 ? (
             <section aria-labelledby="options-title">
-              <h2 id="options-title" className="text-xs uppercase tracking-[0.14em] text-graphite font-medium">
+              <Eyebrow id="options-title" as="h2">
                 What it weighed (options evaluated)
-              </h2>
+              </Eyebrow>
               <div className="mt-3 space-y-2">
                 {d.options.map((opt, idx) => (
                   <div
@@ -169,20 +154,20 @@ export function DecisionView({ decision: d, explorerUrl }: Props) {
         <aside className="space-y-8">
           {/* Rule */}
           <section className="rounded-doc border border-rule bg-paper-raised p-5">
-            <h2 className="text-xs uppercase tracking-[0.14em] text-graphite font-medium">
+            <Eyebrow as="h2">
               The rule applied
-            </h2>
+            </Eyebrow>
             <p className="mt-2 text-sm text-ink font-medium">{d.rule || "Standard pipeline check"}</p>
-            <p className="mt-3 text-xs text-graphite">
+            <p className="mt-3 text-sm text-graphite">
               Symbolon Vault contracts verify limits and invariants onchain before funds move. The Steward cannot circumvent onchain policy.
             </p>
           </section>
 
           {/* Outcome & Transaction */}
           <section className="rounded-doc border border-rule bg-paper-raised p-5 space-y-3">
-            <h2 className="text-xs uppercase tracking-[0.14em] text-graphite font-medium">
+            <Eyebrow as="h2">
               What happened
-            </h2>
+            </Eyebrow>
             <p className="text-sm text-ink">{d.outcome}</p>
 
             {d.txHash ? (
@@ -199,16 +184,16 @@ export function DecisionView({ decision: d, explorerUrl }: Props) {
                 </p>
               </div>
             ) : (
-              <p className="text-xs text-graphite">No onchain transaction submitted for this decision.</p>
+              <p className="text-sm text-graphite">No onchain transaction submitted for this decision.</p>
             )}
           </section>
 
           {/* Human Responses */}
           {d.humanResponses.length > 0 ? (
             <section className="rounded-doc border border-rule bg-paper-raised p-5 space-y-3">
-              <h2 className="text-xs uppercase tracking-[0.14em] text-graphite font-medium">
+              <Eyebrow as="h2">
                 Human response
-              </h2>
+              </Eyebrow>
               {d.humanResponses.map((hr) => (
                 <div key={hr.id} className="text-xs space-y-1">
                   <div className="flex items-center gap-2">
@@ -248,7 +233,7 @@ export function DecisionView({ decision: d, explorerUrl }: Props) {
                 </div>
                 <div>
                   <span className="text-graphite">Canonical JSON:</span>
-                  <pre className="mt-1 max-h-60 overflow-auto rounded bg-paper p-3 text-[11px] text-ink">
+                  <pre className="mt-1 max-h-60 overflow-auto rounded bg-paper p-3 text-xs text-ink">
                     {d.canonicalJson}
                   </pre>
                 </div>

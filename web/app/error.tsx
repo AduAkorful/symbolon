@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect } from "react";
 import { PublicHeader } from "@/components/public/PublicHeader";
 import { PublicFooter } from "@/components/public/PublicFooter";
+import { buttonClass } from "@/components/ui/button";
+import { PageTitle } from "@/components/ui/Type";
 
 export default function ErrorBoundary({
   error,
@@ -24,9 +26,9 @@ export default function ErrorBoundary({
       <PublicHeader />
       <main id="main-content" className="mx-auto max-w-[640px] px-6 py-20 text-center md:px-10">
         <p className="font-mono text-xs uppercase tracking-[0.2em] text-red">System Notice</p>
-        <h1 className="mt-4 font-display text-4xl leading-tight md:text-5xl">
+        <PageTitle className="mt-4">
           Something went wrong on our side.
-        </h1>
+        </PageTitle>
         <p className="mt-4 text-graphite text-lg">
           Nothing was changed. No funds moved and no records were updated.
         </p>
@@ -39,13 +41,13 @@ export default function ErrorBoundary({
           <button
             type="button"
             onClick={reset}
-            className="rounded-doc bg-ink px-5 py-2.5 font-medium text-paper hover:bg-ink/90 focus:outline-none focus:ring-2 focus:ring-seal"
+            className={buttonClass()}
           >
             Try again
           </button>
           <Link
             href="/"
-            className="rounded-doc border border-rule px-5 py-2.5 font-medium hover:bg-paper-raised focus:outline-none focus:ring-2 focus:ring-seal"
+            className={buttonClass({ variant: "secondary" })}
           >
             Go home
           </Link>

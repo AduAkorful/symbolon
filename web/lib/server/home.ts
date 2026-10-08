@@ -191,7 +191,7 @@ export async function loadNeedsYou(
       .orderBy(desc(decisions.createdAt))
       .limit(1);
 
-    const reason = String((latestDec?.record as any)?.rule ?? "Held by Steward pass");
+    const reason = String((latestDec?.record as any)?.rule ?? "No reason was recorded for this hold");
 
     stewardHeldItems.push({
       fingerprint: row.fingerprint,

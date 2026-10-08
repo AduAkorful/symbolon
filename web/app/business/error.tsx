@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
+import { buttonClass } from "@/components/ui/button";
+import { SectionTitle } from "@/components/ui/Type";
 
 export default function BusinessSegmentError({
   error,
@@ -19,7 +21,7 @@ export default function BusinessSegmentError({
   return (
     <div className="mx-auto max-w-[640px] px-6 py-16 text-center">
       <p className="font-mono text-xs uppercase tracking-[0.2em] text-red">Business Section Notice</p>
-      <h2 className="mt-3 font-display text-3xl">Unable to load this section right now.</h2>
+      <SectionTitle className="mt-3">Unable to load this section right now.</SectionTitle>
       <p className="mt-3 text-graphite text-base">
         Nothing was changed. Your Vault and records remain secure.
       </p>
@@ -32,13 +34,13 @@ export default function BusinessSegmentError({
         <button
           type="button"
           onClick={reset}
-          className="rounded-doc bg-ink px-4 py-2 text-sm font-medium text-paper hover:bg-ink/90 focus:outline-none focus:ring-2 focus:ring-seal"
+          className={buttonClass()}
         >
           Try again
         </button>
         <Link
           href="/business"
-          className="rounded-doc border border-rule px-4 py-2 text-sm font-medium hover:bg-paper-raised focus:outline-none focus:ring-2 focus:ring-seal"
+          className={buttonClass({ variant: "secondary" })}
         >
           Business overview
         </Link>

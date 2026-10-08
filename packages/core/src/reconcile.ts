@@ -4,6 +4,9 @@ import type { Hex } from "viem";
 import { invoiceStatus, type SymbolonContracts } from "@symbolon/chain";
 import { decisions, invoices, type Database } from "@symbolon/db";
 
+/** How many ledger reads run at once: enough to hide the round trips, few enough not to trip a public RPC's rate limit. */
+const RECONCILE_READS = 6;
+
 export interface Mismatch {
   fingerprint: string;
   invoiceNumber: string;
@@ -18,18 +21,26 @@ export interface Mismatch {
  */
 export async function reconcile(db: Database, contracts: SymbolonContracts, businessId: string): Promise<Mismatch[]> {
   const rows = await db.select().from(invoices).where(eq(invoices.businessId, businessId));
-  const out: Mismatch[] = [];
-  for (const row of rows) {
-    const s = await invoiceStatus(contracts, row.fingerprint as Hex);
-    if (s.credited !== row.credited) {
-      out.push({ fingerprint: row.fingerprint, invoiceNumber: row.invoiceNumber, field: "credited", database: row.credited.toString(), ledger: s.credited.toString() });
+  // The reads are independent, so they run a few at a time (a page used to wait for one round trip per invoice); each worker
+  // writes into its own slot, so the mismatches still come out in invoice order.
+  const found: Mismatch[][] = rows.map(() => []);
+  let next = 0;
+  const worker = async () => {
+    for (let i = next++; i < rows.length; i = next++) {
+      const row = rows[i]!;
+      const s = await invoiceStatus(contracts, row.fingerprint as Hex);
+      if (s.credited !== row.credited) {
+        found[i]!.push({ fingerprint: row.fingerprint, invoiceNumber: row.invoiceNumber, field: "credited", database: row.credited.toString(), ledger: s.credited.toString() });
+      }
+      const ledgerStatus = s.cancelled ? "cancelled" : s.paid ? "paid" : s.credited > 0n ? "partially_paid" : "open";
+      const dbSettled = ["paid", "partially_paid", "cancelled"].includes(row.status);
+      if ((dbSettled || ledgerStatus !== "open") && row.status !== ledgerStatus) {
+        found[i]!.push({ fingerprint: row.fingerprint, invoiceNumber: row.invoiceNumber, field: "status", database: row.status, ledger: ledgerStatus });
+      }
     }
-    const ledgerStatus = s.cancelled ? "cancelled" : s.paid ? "paid" : s.credited > 0n ? "partially_paid" : "open";
-    const dbSettled = ["paid", "partially_paid", "cancelled"].includes(row.status);
-    if ((dbSettled || ledgerStatus !== "open") && row.status !== ledgerStatus) {
-      out.push({ fingerprint: row.fingerprint, invoiceNumber: row.invoiceNumber, field: "status", database: row.status, ledger: ledgerStatus });
-    }
-  }
+  };
+  await Promise.all(Array.from({ length: Math.min(RECONCILE_READS, rows.length) }, worker));
+  const out = found.flat();
   return out;
 }
 

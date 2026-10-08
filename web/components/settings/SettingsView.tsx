@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { TxLink } from "@/components/TxLink";
 import { QueuedChangeList } from "@/components/QueuedChange";
@@ -13,6 +12,10 @@ import { Rename } from "./Rename";
 import { ReleaseCard } from "./ReleaseCard";
 import { ReleaseNudge } from "./ReleaseNudge";
 import { Address } from "@/components/Address";
+import { Button, LinkButton } from "@/components/ui/button";
+import { EmptyState, InlineError } from "@/components/ui/States";
+import { StatusPill } from "@/components/ui/StatusPill";
+import { Lead, PageTitle, SectionTitle, SmallTitle } from "@/components/ui/Type";
 
 interface SettingsViewProps {
   initialData: SettingsViewData & {
@@ -98,224 +101,126 @@ export function SettingsView({
     }
   }
 
+  const zero = "0x0000000000000000000000000000000000000000";
   return (
-    <div className="max-w-5xl space-y-10">
+    <div className="space-y-12">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="mt-1 text-sm text-graphite">
-          Organization name, Vault parameters, implementation upgrades, and role links.
-        </p>
+        <PageTitle>Settings</PageTitle>
+        <Lead className="mt-3">Your business’s name, the Vault’s details, upgrades and the links to roles and rules.</Lead>
       </div>
 
       <ReleaseNudge nudge={nudge} />
 
-      {/* Organization Section */}
-      <section className="rounded-doc border border-rule bg-paper p-6">
-        <h2 className="text-base font-semibold">Organization</h2>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="block text-xs text-graphite mb-1">Business Name</label>
-            <Rename
-              businessId={business.id}
-              initialName={business.name}
-              isOwner={isOwner}
-              onRenamed={(newName) => {
-                setData((prev) => ({
-                  ...prev,
-                  business: { ...prev.business, name: newName },
-                }));
-              }}
-            />
+      <section aria-labelledby="org-heading">
+        <SectionTitle id="org-heading">Organization</SectionTitle>
+        <dl className="mt-4 divide-y divide-rule-soft rounded-doc border border-rule px-5 text-sm">
+          <div className="grid gap-1 py-4 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4">
+            <dt className="text-graphite">Business name</dt>
+            <dd>
+              <Rename
+                businessId={business.id}
+                initialName={business.name}
+                isOwner={isOwner}
+                onRenamed={(newName) => setData((prev) => ({ ...prev, business: { ...prev.business, name: newName } }))}
+              />
+            </dd>
           </div>
-          <div>
-            <label className="block text-xs text-graphite mb-1">Your Role</label>
-            <p className="font-mono text-sm uppercase">{userRole}</p>
+          <div className="grid gap-1 py-4 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4">
+            <dt className="text-graphite">Your role</dt>
+            <dd className="capitalize text-ink">{userRole}</dd>
           </div>
-        </div>
-
-        <div className="mt-6 border-t border-rule pt-4 flex flex-wrap gap-4 text-xs">
-          <Link
-            href="/business/team"
-            className="rounded-doc border border-rule px-3 py-1.5 hover:border-ink"
-          >
-            Manage Team & Roles →
-          </Link>
-          <Link
-            href="/business/policy"
-            className="rounded-doc border border-rule px-3 py-1.5 hover:border-ink"
-          >
-            Policy & Rules Editor →
-          </Link>
-          <Link
-            href="/business/treasury"
-            className="rounded-doc border border-rule px-3 py-1.5 hover:border-ink"
-          >
-            Treasury & Early Pay →
-          </Link>
+        </dl>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <LinkButton href="/business/team" variant="secondary">Team and roles</LinkButton>
+          <LinkButton href="/business/policy" variant="secondary">Policy and rules</LinkButton>
+          <LinkButton href="/business/treasury" variant="secondary">Treasury and Early Pay</LinkButton>
         </div>
       </section>
 
-      {/* Vault Details Section */}
       {vaultDetails ? (
-        <section className="rounded-doc border border-rule bg-paper p-6">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-base font-semibold">Vault Details</h2>
-            <TxLink
-              href={`${explorer}/address/${vaultDetails.address}`}
-              label="View Vault on explorer"
-              className="text-xs font-sans"
-            >
-              View on Explorer
-            </TxLink>
-
+        <section aria-labelledby="vault-heading">
+          <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <SectionTitle id="vault-heading">Vault</SectionTitle>
+            <TxLink href={`${explorer}/address/${vaultDetails.address}`} label="View the Vault on the Arc explorer">View on the explorer</TxLink>
           </div>
 
-          <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-2 border-t border-rule pt-4">
-            <div>
-              <dt className="text-graphite">Vault Contract</dt>
-              <dd className="mt-0.5 text-ink"><Address value={vaultDetails.address} full /></dd>
-            </div>
-            <div>
-              <dt className="text-graphite">Current Implementation (EIP-1967)</dt>
-              <dd className="mt-0.5 text-ink">
-                {vaultDetails.currentImplementation ? <Address value={vaultDetails.currentImplementation} full /> : "Can't read it right now"}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-graphite">Vault Owner</dt>
-              <dd className="mt-0.5 text-ink"><Address value={vaultDetails.owner} full /></dd>
-            </div>
-            <div>
-              <dt className="text-graphite">Steward Wallet</dt>
-              <dd className="mt-0.5 text-ink">
-                {vaultDetails.steward === "0x0000000000000000000000000000000000000000"
-                  ? "No Steward is set on this Vault"
-                  : <Address value={vaultDetails.steward} full />}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-graphite">Compliance Screener</dt>
-              <dd className="mt-0.5 text-ink">
-                {vaultDetails.screener === "0x0000000000000000000000000000000000000000"
-                  ? "None (internal checks only)"
-                  : <Address value={vaultDetails.screener} full />}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-graphite">Accounting Decimals</dt>
-              <dd className="font-mono text-ink mt-0.5">{vaultDetails.accountingDecimals}</dd>
-            </div>
+          <dl className="mt-4 divide-y divide-rule-soft rounded-doc border border-rule px-5 text-sm">
+            {[
+              ["Vault contract", <Address key="a" value={vaultDetails.address} full />],
+              ["Implementation", vaultDetails.currentImplementation ? <Address key="i" value={vaultDetails.currentImplementation} full /> : "Can’t read it right now"],
+              ["Owner", <Address key="o" value={vaultDetails.owner} full />],
+              ["Steward wallet", vaultDetails.steward === zero ? "No Steward is set in this Vault" : <Address key="s" value={vaultDetails.steward} full />],
+              ["Compliance screener", vaultDetails.screener === zero ? "None; only the built-in checks apply" : <Address key="c" value={vaultDetails.screener} full />],
+              ["Accounting decimals", vaultDetails.accountingDecimals],
+            ].map(([label, value]) => (
+              <div key={String(label)} className="grid gap-1 py-3.5 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4">
+                <dt className="text-graphite">{label}</dt>
+                <dd className="min-w-0 text-ink">{value}</dd>
+              </div>
+            ))}
           </dl>
 
-          {/* Supported Tokens */}
-          <div className="mt-6 border-t border-rule pt-4">
-            <h3 className="text-xs font-medium text-graphite uppercase tracking-wider mb-2">
-              Supported Tokens
-            </h3>
-            <div className="flex flex-wrap gap-2">
+          <div className="mt-6">
+            <SmallTitle as="h3">Currencies the Vault pays in</SmallTitle>
+            <ul className="mt-3 flex flex-wrap gap-2">
               {vaultDetails.supportedTokens.map((t) => (
-                <div
-                  key={t.address}
-                  className="flex items-center gap-2 rounded-doc border border-rule px-3 py-1 text-xs"
-                >
-                  <span className="font-medium">{t.symbol}</span>
-                  <span className="font-mono text-[10px] text-graphite">{t.address.slice(0, 6)}…</span>
-                  <span
-                    className={`rounded px-1.5 py-0.2 text-[10px] ${
-                      t.supported ? "bg-seal-wash text-seal" : "bg-rule-soft text-graphite"
-                    }`}
-                  >
-                    {t.supported ? "Active" : "Disabled"}
-                  </span>
-                </div>
+                <li key={t.address} className="flex items-center gap-3 rounded-doc border border-rule px-3 py-2 text-sm">
+                  <span className="font-medium text-ink">{t.symbol}</span>
+                  <span className="text-graphite">{t.address.slice(0, 6)}…{t.address.slice(-4)}</span>
+                  <StatusPill tone={t.supported ? "ok" : "neutral"}>{t.supported ? "On" : "Off"}</StatusPill>
+                </li>
               ))}
-            </div>
+            </ul>
           </div>
 
-          {/* Automatic Updates Toggle Card */}
-          <div className="mt-6 rounded-doc border border-rule/70 bg-paper-raised p-4">
-            <div className="flex flex-wrap items-baseline justify-between gap-3">
-              <div>
-                <p className="font-medium text-sm">Automatic Updates</p>
-                <p className="mt-1 text-xs text-graphite max-w-xl">
+          <div className="mt-6 rounded-doc border border-rule px-5 py-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <SmallTitle as="h3">Automatic updates</SmallTitle>
+                <p className="mt-1 max-w-[62ch] text-sm text-graphite">
                   {vaultDetails.autoUpdate
-                    ? "Enabled. Published releases from the Symbolon Release Registry apply automatically after your loosening delay."
-                    : "Off by default. Your Vault only changes when you explicitly schedule and apply releases."}
+                    ? "On. Releases published in the Symbolon release registry apply by themselves once your loosening delay has passed."
+                    : "Off, which is the default. The Vault only changes when you schedule and apply a release yourself."}
                 </p>
               </div>
-              <span
-                className={`font-mono text-xs uppercase px-2 py-0.5 rounded ${
-                  vaultDetails.autoUpdate ? "bg-seal-wash text-seal" : "bg-rule-soft text-graphite"
-                }`}
-              >
-                {vaultDetails.autoUpdate ? "On" : "Off"}
-              </span>
+              <StatusPill tone={vaultDetails.autoUpdate ? "info" : "neutral"}>{vaultDetails.autoUpdate ? "On" : "Off"}</StatusPill>
             </div>
 
-            <p className="mt-3 text-xs text-graphite italic">
-              "Your Vault will apply any release the Symbolon release registry publishes, after your
-              Vault's delay, unless you switch this off or cancel. The registry's owner is trusted for this."
+            <p className="mt-3 max-w-[62ch] text-sm text-graphite">
+              With this on, your Vault applies any release the registry publishes after your Vault’s delay, unless you switch it off or cancel. You trust the registry’s owner for this.
             </p>
 
-            {isOwner && (
-              <div className="mt-3 flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => handleToggleAutoUpdate(!vaultDetails.autoUpdate)}
-                  disabled={autoBusy}
-                  className="rounded-doc border border-rule px-3 py-1.5 text-xs hover:border-ink disabled:opacity-50"
-                >
-                  {autoBusy
-                    ? "Updating..."
-                    : vaultDetails.autoUpdate
-                      ? "Turn off (immediate)"
-                      : "Turn on (waits loosening delay)"}
-                </button>
+            {isOwner ? (
+              <div className="mt-4">
+                <Button variant="secondary" busy={autoBusy} onClick={() => handleToggleAutoUpdate(!vaultDetails.autoUpdate)}>
+                  {autoBusy ? "Updating…" : vaultDetails.autoUpdate ? "Turn off (at once)" : "Turn on (after the loosening delay)"}
+                </Button>
               </div>
-            )}
+            ) : null}
 
-            {autoSuccess && <p className="mt-2 text-xs text-seal">{autoSuccess}</p>}
-            {autoError && <p className="mt-2 text-xs text-red">{autoError}</p>}
+            {autoSuccess ? <p role="status" className="mt-3 text-sm text-ok">{autoSuccess}</p> : null}
+            {autoError ? <InlineError className="mt-3">{autoError}</InlineError> : null}
           </div>
         </section>
       ) : (
-        <section className="rounded-doc border border-rule bg-paper p-6 text-sm text-graphite">
-          No Vault deployed for this business yet.
-        </section>
+        <EmptyState title="No Vault yet">This business hasn’t deployed its Vault.</EmptyState>
       )}
 
-      {/* Upgrades Section */}
-      <section id="upgrades" className="rounded-doc border border-rule bg-paper p-6 scroll-mt-6">
-        <h2 className="text-base font-semibold">Vault Implementation Upgrades</h2>
-        <p className="mt-1 text-xs text-graphite">
-          Your Vault is an upgradeable UUPS proxy. Upgrades are owned by you: you schedule them, wait out your
-          delay, then apply them. No release changes your state without your explicit wallet signature.
+      <section id="upgrades" aria-labelledby="upgrades-heading" className="scroll-mt-6">
+        <SectionTitle id="upgrades-heading">Vault upgrades</SectionTitle>
+        <p className="mt-1 max-w-[64ch] text-sm text-graphite">
+          Your Vault is an upgradeable proxy and the upgrades are yours: you schedule one, wait out your delay, then apply it. No release changes your Vault without your wallet’s signature.
         </p>
-
-        <ReleaseCard
-          businessId={business.id}
-          release={release}
-          signer={signer}
-          isOwner={isOwner}
-          onRefresh={handleRefresh}
-        />
+        <ReleaseCard businessId={business.id} release={release} signer={signer} isOwner={isOwner} onRefresh={handleRefresh} />
       </section>
 
-      {/* Queued Loosening Changes Section */}
-      <section className="rounded-doc border border-rule bg-paper p-6">
-        <h2 className="text-base font-semibold">Queued Changes & Delay Pipeline</h2>
-        <p className="mt-1 text-xs text-graphite">
-          Every loosening change (policy relaxation, budget increases, token approvals, auto-update)
-          is queued onchain and waits your delay before applying.
+      <section aria-labelledby="queued-heading">
+        <SectionTitle id="queued-heading">Changes waiting</SectionTitle>
+        <p className="mt-1 max-w-[64ch] text-sm text-graphite">
+          Every change that loosens a limit (a relaxed policy, a bigger budget, a new currency, automatic updates) is queued onchain and waits your delay before it applies.
         </p>
-
         <div className="mt-4">
-          <QueuedChangeList
-            businessId={business.id}
-            signer={signer}
-            explorer={explorer}
-            onRefresh={handleRefresh}
-          />
+          <QueuedChangeList businessId={business.id} signer={signer} explorer={explorer} onRefresh={handleRefresh} />
         </div>
       </section>
     </div>

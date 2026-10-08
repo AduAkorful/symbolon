@@ -1,7 +1,7 @@
 "use client";
 
 import { type SignerPlan } from "@/components/setup/owner-signer";
-import { TxLink } from "@/components/TxLink";
+import { Address } from "@/components/Address";
 import { PauseControl } from "./PauseControl";
 
 export function StewardSwitch(props: {
@@ -16,16 +16,16 @@ export function StewardSwitch(props: {
 
   return (
     <>
-      <span className={paused ? "text-red" : "text-ink"}>{paused ? "Paused" : "Active"}</span>
-      <span className="ml-2 text-xs text-graphite">
-        {paused ? "It can’t pay anything until you resume it. " : "It can act within the Vault’s rules. "}
-        Read from Arc at block {props.block}.
-      </span>
-      <span className="mt-1 block">
-        <TxLink href={`${props.explorer}/address/${props.steward}`} label="View the Steward's wallet on the Arc explorer" className="break-all">
-          {props.steward}
-        </TxLink>
-      </span>
+      <p>
+        <span className={`font-medium ${paused ? "text-red" : "text-ink"}`}>{paused ? "Paused" : "Active"}</span>
+        <span className="ml-2 text-graphite">
+          {paused ? "It can’t pay anything until you resume it. " : "It can act within the Vault’s rules. "}
+          Read from Arc at block {props.block}.
+        </span>
+      </p>
+      <div className="mt-2">
+        <Address value={props.steward} full explorer={props.explorer} copy />
+      </div>
       <PauseControl
         businessId={props.businessId}
         paused={paused}

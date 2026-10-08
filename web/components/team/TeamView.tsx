@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { TxLink } from "@/components/TxLink";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Overlay } from "@/components/Overlay";
 import { QueuedChangeList } from "@/components/QueuedChange";
 import { sendWithWallet, type SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
@@ -10,6 +10,12 @@ import { postJson } from "@/lib/client/api";
 import type { TeamMemberView, TeamViewData } from "@/lib/server/team";
 import { formatDay, shortAddress } from "@/lib/format";
 import { Address } from "@/components/Address";
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/Callout";
+import { controlClass, Field } from "@/components/ui/Field";
+import { InlineError } from "@/components/ui/States";
+import { StatusPill } from "@/components/ui/StatusPill";
+import { Lead, PageTitle, SectionTitle } from "@/components/ui/Type";
 
 interface TeamInvitationRow {
   id: string;
@@ -41,6 +47,9 @@ export function TeamView({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{ kind: "revoke"; invitation: TeamInvitationRow } | { kind: "remove"; member: TeamMemberView } | null>(null);
 
   // Role action modals
   const [onchainTarget, setOnchainTarget] = useState<TeamMemberView | null>(null);
@@ -86,44 +95,37 @@ export function TeamView({
   }
 
   async function handleRevokeInvite(invitationId: string) {
-    if (!confirm("Revoke this invitation? The secret link will immediately stop working.")) return;
     setBusy(true);
+    setNotice(null);
     try {
-      await postJson(`/api/business/${business.id}/team`, {
-        action: "revoke-invite",
-        invitationId,
-      });
+      await postJson(`/api/business/${business.id}/team`, { action: "revoke-invite", invitationId });
       setInvitations(invitations.filter((i) => i.id !== invitationId));
+      setConfirm(null);
     } catch (err: any) {
-      alert(err?.message || "Failed to revoke invitation.");
+      setConfirm(null);
+      setProblem(err?.message || "Couldn’t withdraw that invitation.");
     } finally {
       setBusy(false);
     }
   }
 
-  async function handleRemoveMember(m: TeamMemberView) {
+  function askRemoveMember(m: TeamMemberView) {
     if (m.appRole === "owner") return;
-    if (
-      m.onchainRole !== "none" &&
-      m.onchainRole !== "unknown" &&
-      m.onchainRole !== "owner"
-    ) {
-      alert(
-        "This member currently holds onchain rights on the Vault. Revoke their onchain role first before removing them.",
-      );
+    if (m.onchainRole !== "none" && m.onchainRole !== "unknown" && m.onchainRole !== "owner") {
+      setProblem("This person holds a role in the Vault. Revoke their onchain role first, then remove them.");
       return;
     }
-    if (!confirm(`Are you sure you want to remove ${m.email || m.wallet} from the team?`)) return;
+    setConfirm({ kind: "remove", member: m });
+  }
 
+  async function handleRemoveMember(m: TeamMemberView) {
     setBusy(true);
     try {
-      await postJson(`/api/business/${business.id}/team`, {
-        action: "remove",
-        targetUserId: m.userId,
-      });
+      await postJson(`/api/business/${business.id}/team`, { action: "remove", targetUserId: m.userId });
       window.location.reload();
     } catch (err: any) {
-      alert(err?.message || "Failed to remove member.");
+      setConfirm(null);
+      setProblem(err?.message || "Couldn’t remove that person.");
     } finally {
       setBusy(false);
     }
@@ -131,9 +133,10 @@ export function TeamView({
 
   async function handleExecuteOnchain(m: TeamMemberView, role: "approver" | "requester", enabled: boolean, budgetId?: string) {
     if (signer.kind !== "wallet") {
-      alert("Please connect the business owner's wallet to execute this onchain change.");
+      setProblem("Connect the owner’s wallet to make this change onchain.");
       return;
     }
+    setProblem(null);
     setBusy(true);
     setOnchainStatus("Preparing onchain transaction...");
     try {
@@ -163,14 +166,9 @@ export function TeamView({
         txHash,
       });
 
-      alert(
-        enabled
-          ? "Onchain role submitted! Loosening changes may be queued onchain per your Vault's delay."
-          : "Onchain role revoked immediately.",
-      );
       window.location.reload();
     } catch (err: any) {
-      alert(err?.message || "Onchain transaction failed.");
+      setProblem(err?.message || "The onchain change didn’t go through.");
     } finally {
       setBusy(false);
       setOnchainStatus(null);
@@ -178,278 +176,180 @@ export function TeamView({
     }
   }
 
+  const nameOf = (m: TeamMemberView) => m.displayName || m.email || (m.wallet ? shortAddress(m.wallet) : "Member");
+  const onchainLabel = (m: TeamMemberView) =>
+    m.onchainRole === "owner" ? { text: "Vault owner", tone: "neutral" as const }
+    : m.onchainRole === "approver_all" ? { text: "Approver, all budgets", tone: "ok" as const }
+    : m.onchainRole === "approver_scoped" ? { text: "Approver, some budgets", tone: "ok" as const }
+    : m.onchainRole === "requester" ? { text: "Requester", tone: "ok" as const }
+    : m.onchainRole === "unknown" ? { text: "Can’t confirm", tone: "warn" as const }
+    : { text: "No role in the Vault", tone: "neutral" as const };
+
   return (
     <div className="pb-24">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="font-display text-4xl sm:text-5xl font-medium tracking-tight text-ink">Team</h1>
-          <p className="mt-2 max-w-[64ch] text-graphite text-sm leading-relaxed">
-            Roles are enforced by the Vault. Giving someone more power is a loosening change, so it waits
-            for your Vault's loosening delay. The Steward can never hold a role or count as an approver.
-          </p>
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+        <div className="min-w-0">
+          <PageTitle>Team</PageTitle>
+          <Lead className="mt-3">
+            The Vault enforces these roles. Giving someone more power is a loosening change, so it waits for your Vault’s delay. The Steward can never hold a role or count as an approver.
+          </Lead>
         </div>
-        {isOwner && (
-          <button
-            onClick={() => {
-              setInviting(!inviting);
-              setCreatedInviteUrl(null);
-              setError(null);
-            }}
-            className="rounded-doc bg-ink px-4 py-2.5 text-sm font-medium text-paper hover:bg-ink/90 transition-colors"
-          >
-            {inviting ? "Close invite" : "Invite someone"}
-          </button>
-        )}
+        {isOwner ? (
+          <Button onClick={() => { setInviting(true); setCreatedInviteUrl(null); setError(null); }}>Invite someone</Button>
+        ) : null}
       </div>
 
-      {/* Invite Modal / Box */}
-      {inviting && (
-        <div className="mt-6 max-w-3xl rounded-doc border border-rule bg-surface p-6 shadow-sm">
-          <h2 className="text-lg font-medium text-ink">Invite a team member</h2>
-          <p className="mt-1 text-xs text-graphite">
-            Send a single-use secret link. The invitee must have a connected wallet to accept.
-          </p>
+      {problem ? <Callout tone="danger" onDismiss={() => setProblem(null)} className="mt-6">{problem}</Callout> : null}
+      {notice ? <Callout tone="info" onDismiss={() => setNotice(null)} className="mt-6">{notice}</Callout> : null}
 
-          {!createdInviteUrl ? (
-            <form onSubmit={handleCreateInvite} className="mt-4 grid gap-4 sm:grid-cols-[1fr_12rem_auto]">
-              <div>
-                <label className="block text-xs font-mono uppercase text-graphite mb-1">
-                  Private Note (optional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Ama (Finance Lead)"
-                  value={inviteLabel}
-                  onChange={(e) => setInviteLabel(e.target.value)}
-                  className="w-full rounded-doc border border-rule bg-paper px-3 py-2 text-sm text-ink placeholder:text-graphite/50 focus:border-ink focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-mono uppercase text-graphite mb-1">Role</label>
-                <select
-                  value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value as any)}
-                  className="w-full rounded-doc border border-rule bg-paper px-3 py-2 text-sm text-ink focus:border-ink focus:outline-none"
-                >
-                  <option value="approver">Approver</option>
-                  <option value="requester">Requester</option>
-                  <option value="viewer">Viewer (Read-only)</option>
-                </select>
-              </div>
-
-              <div className="flex items-end">
-                <button
-                  type="submit"
-                  disabled={busy}
-                  className="w-full sm:w-auto rounded-doc bg-ink px-5 py-2 text-sm font-medium text-paper hover:bg-ink/90 disabled:opacity-50"
-                >
-                  {busy ? "Creating..." : "Create Link"}
-                </button>
-              </div>
-            </form>
-          ) : (
-            <div className="mt-4 rounded-doc border border-brass/40 bg-paper p-4">
-              <span className="text-xs font-mono uppercase tracking-wider text-brass font-medium">
-                Single-use invite link created
-              </span>
-              <p className="mt-1 text-xs text-graphite">
-                This secret link is shown once. Send it directly to your team member over a channel you trust.
-              </p>
-              <div className="mt-3 flex items-center gap-2">
-                <input
-                  readOnly
-                  value={createdInviteUrl}
-                  className="flex-1 rounded-doc border border-rule bg-surface px-3 py-2 text-xs font-mono text-ink"
-                />
-                <button
+      {/* Invite */}
+      {inviting ? (
+        <Overlay
+          title={createdInviteUrl ? "Send this link" : "Invite a team member"}
+          description={createdInviteUrl ? "It is shown once. Send it over a channel you trust; it works once." : "They get a single-use secret link, and need a connected wallet to accept it."}
+          onClose={() => { if (!busy) setInviting(false); }}
+        >
+          {createdInviteUrl ? (
+            <>
+              <Field label="Invitation link">
+                {(a) => <input {...a} readOnly value={createdInviteUrl} onFocus={(e) => e.currentTarget.select()} className={`${controlClass} font-mono`} />}
+              </Field>
+              <Overlay.Footer>
+                <Button
+                  variant="secondary"
                   onClick={() => {
                     navigator.clipboard.writeText(createdInviteUrl);
                     setCopied(true);
                     setTimeout(() => setCopied(false), 2000);
                   }}
-                  className="rounded-doc border border-rule bg-paper px-3 py-2 text-xs font-medium text-ink hover:border-ink"
                 >
-                  {copied ? "Copied" : "Copy"}
-                </button>
-              </div>
-            </div>
+                  {copied ? "Copied" : "Copy the link"}
+                </Button>
+                <Button onClick={() => setInviting(false)}>Done</Button>
+              </Overlay.Footer>
+            </>
+          ) : (
+            <form onSubmit={handleCreateInvite} className="space-y-4">
+              {error ? <InlineError>{error}</InlineError> : null}
+              <Field label="Their role">
+                {(a) => (
+                  <select {...a} value={inviteRole} onChange={(e) => setInviteRole(e.target.value as any)} className={controlClass}>
+                    <option value="approver">Approver: can approve payments</option>
+                    <option value="requester">Requester: can ask for payments</option>
+                    <option value="viewer">Viewer: read only</option>
+                  </select>
+                )}
+              </Field>
+              <Field label="Note to yourself" optional hint="Only you see this, for example “Ama, finance lead”.">
+                {(a) => <input {...a} type="text" value={inviteLabel} onChange={(e) => setInviteLabel(e.target.value)} className={controlClass} />}
+              </Field>
+              <Overlay.Footer>
+                <Button variant="secondary" onClick={() => setInviting(false)}>Cancel</Button>
+                <Button type="submit" busy={busy}>{busy ? "Creating…" : "Create the link"}</Button>
+              </Overlay.Footer>
+            </form>
           )}
+        </Overlay>
+      ) : null}
 
-          {error && <p className="mt-3 text-xs text-crimson">{error}</p>}
-        </div>
-      )}
-
-      {/* Pending Invitations */}
-      {invitations.length > 0 && (
-        <section className="mt-8">
-          <h2 className="text-xs font-mono uppercase tracking-wider text-graphite">Pending Invitations</h2>
-          <div className="mt-3 divide-y divide-rule border-y border-rule">
+      {/* Pending invitations */}
+      {invitations.length > 0 ? (
+        <section className="mt-10" aria-labelledby="pending-heading">
+          <SectionTitle id="pending-heading">Open invitations</SectionTitle>
+          <ul className="mt-3 divide-y divide-rule-soft border-y border-rule">
             {invitations.map((inv) => (
-              <div key={inv.id} className="flex flex-wrap items-center justify-between gap-4 py-3 text-sm">
+              <li key={inv.id} className="flex flex-wrap items-center justify-between gap-4 py-3">
                 <div>
-                  <span className="font-medium text-ink capitalize">{inv.role}</span>
-                  {inv.label && <span className="ml-2 text-xs text-graphite font-mono">({inv.label})</span>}
-                  <span className="block text-xs text-graphite">
-                    Expires {formatDay(new Date(inv.expiresAt))}
-                  </span>
+                  <p className="font-medium capitalize text-ink">{inv.role}{inv.label ? <span className="ml-2 font-normal text-graphite">{inv.label}</span> : null}</p>
+                  <p className="text-sm text-graphite">Expires {formatDay(new Date(inv.expiresAt))}</p>
                 </div>
-                {isOwner && (
-                  <button
-                    onClick={() => handleRevokeInvite(inv.id)}
-                    className="text-xs text-crimson hover:underline"
-                  >
-                    Revoke
-                  </button>
-                )}
-              </div>
+                {isOwner ? <Button variant="danger" size="sm" onClick={() => setConfirm({ kind: "revoke", invitation: inv })}>Withdraw</Button> : null}
+              </li>
             ))}
-          </div>
+          </ul>
         </section>
-      )}
+      ) : null}
 
-      {/* Members List */}
-      <section className="mt-8">
-        <h2 className="text-xs font-mono uppercase tracking-wider text-graphite mb-2">Team Members</h2>
-        <ul className="divide-y divide-rule border-y border-ink">
-          {members.map((m) => (
-            <li key={m.userId} className="py-4">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-ink">
-                      {m.email || (m.wallet ? shortAddress(m.wallet) : "Member")}
-                    </span>
-                    <span className="rounded bg-surface px-2 py-0.5 text-xs font-mono capitalize text-graphite border border-rule">
-                      {m.appRole}
-                    </span>
-                    {m.appRole === "owner" && (
-                      <span className="rounded bg-ink/10 px-2 py-0.5 text-xs font-mono text-ink">
-                        Primary Owner
-                      </span>
-                    )}
+      {/* Members */}
+      <section className="mt-10" aria-labelledby="members-heading">
+        <SectionTitle id="members-heading">Members</SectionTitle>
+        <ul className="mt-3 divide-y divide-rule-soft border-y border-ink">
+          {members.map((m) => {
+            const onchain = onchainLabel(m);
+            return (
+              <li key={m.userId} className="py-5">
+                <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+                  <div className="min-w-0">
+                    <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="font-medium text-ink">{nameOf(m)}</span>
+                      <StatusPill tone="neutral" className="capitalize">{m.appRole}</StatusPill>
+                    </p>
+                    {m.displayName && m.email ? <p className="mt-0.5 text-sm text-graphite">{m.email}</p> : null}
+                    {m.wallet ? <div className="mt-1 text-sm text-graphite"><Address value={m.wallet} full /></div> : null}
+                    <p className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                      <span className="text-graphite">In the Vault:</span>
+                      <StatusPill tone={onchain.tone}>{onchain.text}</StatusPill>
+                    </p>
+                    {m.onchainMismatch ? (
+                      <Callout tone="warn" title="The app and the Vault disagree" className="mt-3">{m.mismatchReason}</Callout>
+                    ) : null}
                   </div>
 
-                  {m.wallet && (
-                    <span className="mt-1 block text-xs text-graphite">
-                      <Address value={m.wallet} full />
-                    </span>
-                  )}
-
-                  {/* Onchain Role Badge */}
-                  <div className="mt-2 flex items-center gap-2 text-xs">
-                    <span className="text-graphite">Vault Onchain Status:</span>
-                    {m.onchainRole === "owner" ? (
-                      <span className="font-mono text-ink font-medium">Vault Owner</span>
-                    ) : m.onchainRole === "approver_all" ? (
-                      <span className="font-mono text-emerald font-medium">Approver (all budgets)</span>
-                    ) : m.onchainRole === "approver_scoped" ? (
-                      <span className="font-mono text-emerald font-medium">Approver (scoped)</span>
-                    ) : m.onchainRole === "requester" ? (
-                      <span className="font-mono text-emerald font-medium">Requester</span>
-                    ) : m.onchainRole === "unknown" ? (
-                      <span className="font-mono text-graphite">Can't confirm onchain</span>
-                    ) : (
-                      <span className="font-mono text-graphite">Not granted onchain</span>
-                    )}
-                  </div>
-
-                  {/* Mismatch Warning */}
-                  {m.onchainMismatch && (
-                    <div className="mt-2 rounded bg-amber-500/10 border border-amber-500/20 p-2 text-xs text-amber-700 dark:text-amber-300">
-                      <p className="font-medium">Role Discrepancy:</p>
-                      <p>{m.mismatchReason}</p>
+                  {isOwner && m.appRole !== "owner" ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {m.appRole === "approver" && m.onchainRole !== "approver_all" && m.onchainRole !== "approver_scoped" ? (
+                        <Button variant="secondary" size="sm" disabled={busy} onClick={() => handleExecuteOnchain(m, "approver", true)}>Make approver in the Vault</Button>
+                      ) : null}
+                      {m.appRole === "requester" && m.onchainRole !== "requester" ? (
+                        <Button variant="secondary" size="sm" disabled={busy} onClick={() => handleExecuteOnchain(m, "requester", true)}>Make requester in the Vault</Button>
+                      ) : null}
+                      {m.activeApproverBudgets?.map((budgetId) => (
+                        <Button key={budgetId} variant="secondary" size="sm" disabled={busy} onClick={() => handleExecuteOnchain(m, "approver", false, budgetId)}>Revoke approval grant {budgetId.slice(0, 8)}…</Button>
+                      ))}
+                      {m.onchainRole === "requester" ? (
+                        <Button variant="secondary" size="sm" disabled={busy} onClick={() => handleExecuteOnchain(m, "requester", false)}>Revoke requester role</Button>
+                      ) : null}
+                      <Button variant="danger" size="sm" disabled={busy} onClick={() => askRemoveMember(m)}>Remove</Button>
                     </div>
-                  )}
+                  ) : null}
                 </div>
-
-                {/* Actions */}
-                {isOwner && m.appRole !== "owner" && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    {/* Grant or Revoke onchain button */}
-                    {m.appRole === "approver" && m.onchainRole !== "approver_all" && m.onchainRole !== "approver_scoped" && (
-                      <button
-                        onClick={() => handleExecuteOnchain(m, "approver", true)}
-                        disabled={busy}
-                        className="rounded-doc border border-ink bg-paper px-3 py-1.5 text-xs font-medium text-ink hover:bg-surface"
-                      >
-                        Set Approver Onchain
-                      </button>
-                    )}
-                    {m.appRole === "requester" && m.onchainRole !== "requester" && (
-                      <button
-                        onClick={() => handleExecuteOnchain(m, "requester", true)}
-                        disabled={busy}
-                        className="rounded-doc border border-ink bg-paper px-3 py-1.5 text-xs font-medium text-ink hover:bg-surface"
-                      >
-                        Set Requester Onchain
-                      </button>
-                    )}
-                    {m.activeApproverBudgets?.map((budgetId) => (
-                      <button
-                        key={budgetId}
-                        onClick={() => handleExecuteOnchain(m, "approver", false, budgetId)}
-                        disabled={busy}
-                        className="rounded-doc border border-rule px-3 py-1.5 text-xs font-medium text-crimson hover:border-crimson"
-                      >
-                        Revoke approval grant {budgetId}
-                      </button>
-                    ))}
-                    {m.onchainRole === "requester" && (
-                      <button
-                        onClick={() => handleExecuteOnchain(m, "requester", false)}
-                        disabled={busy}
-                        className="rounded-doc border border-rule px-3 py-1.5 text-xs font-medium text-crimson hover:border-crimson"
-                      >
-                        Revoke Requester Onchain
-                      </button>
-                    )}
-
-                    <button
-                      onClick={() => handleRemoveMember(m)}
-                      disabled={busy}
-                      className="rounded-doc border border-rule px-3 py-1.5 text-xs font-medium text-graphite hover:text-crimson hover:border-crimson"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                )}
-              </div>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
 
-        {members.length === 1 && (
-          <p className="mt-4 text-xs text-graphite">
-            It's just you right now. Invite an approver or a requester when your business needs multi-person signoff.
-          </p>
-        )}
+        {members.length === 1 ? (
+          <p className="mt-4 text-sm text-graphite">It’s just you for now. Invite an approver or a requester when your business needs more than one signature.</p>
+        ) : null}
       </section>
 
-      {/* Queued Changes for Role Updates */}
-      <section className="mt-14 max-w-3xl">
-        <h2 className="font-display text-2xl font-medium text-ink">Role Loosening Changes</h2>
-        <p className="mt-1 text-xs text-graphite">
-          Any change granting more onchain power waits for the Vault's loosening delay. Once the wait expires,
-          the owner applies it with a matching signature.
+      {/* Waiting role changes */}
+      <section className="mt-14" aria-labelledby="loosening-heading">
+        <SectionTitle id="loosening-heading">Role changes waiting</SectionTitle>
+        <p className="mt-1 max-w-[64ch] text-sm text-graphite">
+          Any change that gives someone more onchain power waits for the Vault’s delay. When it is over, the owner applies it with a matching signature.
         </p>
         <div className="mt-4">
-          <QueuedChangeList
-            businessId={business.id}
-            signer={signer}
-            onRefresh={() => window.location.reload()}
-          />
+          <QueuedChangeList businessId={business.id} signer={signer} onRefresh={() => window.location.reload()} />
         </div>
       </section>
 
-      {onchainStatus && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="rounded-doc bg-paper border border-rule p-6 max-w-sm w-full text-center shadow-lg">
-            <h3 className="font-medium text-ink">Executing Onchain Change</h3>
-            <p className="mt-2 text-xs text-graphite">{onchainStatus}</p>
-          </div>
-        </div>
-      )}
+      {confirm?.kind === "revoke" ? (
+        <ConfirmDialog title="Withdraw this invitation?" confirmLabel="Withdraw it" destructive busy={busy} onConfirm={() => handleRevokeInvite(confirm.invitation.id)} onClose={() => setConfirm(null)}>
+          The secret link stops working at once. You can invite them again with a new one.
+        </ConfirmDialog>
+      ) : null}
+      {confirm?.kind === "remove" ? (
+        <ConfirmDialog title={`Remove ${nameOf(confirm.member)}?`} confirmLabel="Remove them" destructive busy={busy} onConfirm={() => handleRemoveMember(confirm.member)} onClose={() => setConfirm(null)}>
+          They lose access to this business in Symbolon. You can invite them again later.
+        </ConfirmDialog>
+      ) : null}
+
+      {onchainStatus ? (
+        <Overlay title="Sending the change to Arc" dismissible={false} onClose={() => undefined}>
+          <p role="status" className="text-graphite">{onchainStatus}</p>
+        </Overlay>
+      ) : null}
     </div>
   );
 }

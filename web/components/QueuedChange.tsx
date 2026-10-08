@@ -7,6 +7,7 @@ import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { postJson } from "@/lib/client/api";
 import { applyQueuedChange, recordQueuedChange } from "@/lib/client/queued-actions";
 import { formatDateTime } from "@/lib/format";
+import { buttonClass } from "@/components/ui/button";
 
 export interface QueuedChangeRow {
   id: string;
@@ -125,7 +126,7 @@ export function QueuedChangeList({
         <h3 className="font-display text-sm font-medium text-ink">
           Queued loosening changes ({activeChanges.length})
         </h3>
-        <span className="text-[11px] text-graphite">Delayed by Vault policy</span>
+        <span className="text-xs text-graphite">Delayed by Vault policy</span>
       </div>
 
       {error ? (
@@ -147,7 +148,7 @@ export function QueuedChangeList({
                 <div className="font-medium text-ink">
                   {change.summary.title || "Vault policy change"}
                 </div>
-                <div className="mt-0.5 font-mono text-[10px] text-graphite">
+                <div className="mt-0.5 font-mono text-xs text-graphite">
                   ID: {change.changeId.slice(0, 10)}…{change.changeId.slice(-8)}
                   {" · "}
                   {isReady ? (
@@ -170,7 +171,7 @@ export function QueuedChangeList({
                     type="button"
                     disabled={isBusy || signer.kind !== "wallet"}
                     onClick={() => handleApply(change)}
-                    className="rounded bg-ink px-2.5 py-1 text-[11px] font-medium text-paper hover:opacity-90 disabled:opacity-50"
+                    className={buttonClass({ size: "sm" })}
                   >
                     {isBusy ? "Applying…" : "Apply now"}
                   </button>
@@ -180,7 +181,7 @@ export function QueuedChangeList({
                   type="button"
                   disabled={isBusy || signer.kind !== "wallet"}
                   onClick={() => handleCancel(change)}
-                  className="rounded border border-rule px-2 py-1 text-[11px] text-graphite hover:text-ink disabled:opacity-50"
+                  className={buttonClass({ variant: "secondary", size: "sm" })}
                 >
                   Cancel
                 </button>
@@ -255,7 +256,7 @@ export function QueuedChange({
   }
 
   return (
-    <div className="rounded border border-amber-300 bg-paper p-4 text-xs">
+    <div className="rounded border border-warn/40 bg-paper p-4 text-xs">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="font-medium text-ink">{summary?.title || "Queued change"}</div>
@@ -275,7 +276,7 @@ export function QueuedChange({
             type="button"
             disabled={busy || signer.kind !== "wallet"}
             onClick={handleCancel}
-            className="rounded border border-rule px-2.5 py-1 text-graphite hover:text-ink disabled:opacity-50"
+            className={buttonClass({ variant: "secondary" })}
           >
             {busy ? "Cancelling…" : "Cancel"}
           </button>

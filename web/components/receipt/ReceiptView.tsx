@@ -9,6 +9,8 @@ import { TxLink } from "@/components/TxLink";
 import type { PublicReceiptResult } from "@/lib/server/receipt";
 import { formatDateTime, showMoney } from "@/lib/format";
 import { Address } from "@/components/Address";
+import { buttonClass } from "@/components/ui/button";
+import { Eyebrow } from "@/components/ui/Type";
 
 interface Props {
   data: Extract<PublicReceiptResult, { state: "settled" }>;
@@ -95,9 +97,9 @@ export function ReceiptView({ data, explorerUrl }: Props) {
 
         {/* Settlements list */}
         <section aria-labelledby="settlements-title" className="mt-10 space-y-4">
-          <h2 id="settlements-title" className="text-xs uppercase tracking-[0.14em] text-graphite font-medium">
+          <Eyebrow id="settlements-title" as="h2">
             Onchain settlements ({data.settlements.length})
-          </h2>
+          </Eyebrow>
 
           <div className="divide-y divide-rule-soft rounded-doc border border-rule bg-paper-raised">
             {data.settlements.map((s, idx) => (
@@ -146,21 +148,21 @@ export function ReceiptView({ data, explorerUrl }: Props) {
         <div className="mt-8 flex flex-wrap gap-3 print:hidden">
           <Link
             href="/verify"
-            className="rounded-doc bg-ink px-4 py-2.5 text-sm font-medium text-paper hover:bg-ink/90"
+            className={buttonClass()}
           >
             Check it yourself on Arc
           </Link>
           <button
             type="button"
             onClick={copyLink}
-            className="rounded-doc border border-rule px-4 py-2.5 text-sm font-medium text-ink hover:border-ink"
+            className={buttonClass({ variant: "secondary" })}
           >
             {copied ? "Link copied ✓" : "Copy link"}
           </button>
           <button
             type="button"
             onClick={printReceipt}
-            className="rounded-doc border border-rule px-4 py-2.5 text-sm font-medium text-ink hover:border-ink"
+            className={buttonClass({ variant: "secondary" })}
           >
             Print receipt
           </button>

@@ -9,8 +9,13 @@ import { getDb } from "@/lib/server/db";
 import { myInvoice } from "@/lib/server/invoice-send";
 import { signerPlanFor } from "@/lib/server/signer-plan";
 import { requireVendorPage } from "@/lib/server/vendor-page";
-import { toneClass, vendorStatus } from "@/lib/invoice-status";
+import { vendorStatus } from "@/lib/invoice-status";
+import { pillTone } from "@/lib/status-tone";
+import { Callout } from "@/components/ui/Callout";
+import { StatusPill } from "@/components/ui/StatusPill";
 import { formatDay } from "@/lib/format";
+import { buttonClass } from "@/components/ui/button";
+import { Eyebrow, PageTitle } from "@/components/ui/Type";
 
 export const dynamic = "force-dynamic";
 
@@ -32,11 +37,11 @@ export default async function VendorInvoice({ params }: { params: Promise<{ fing
       <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <InvoiceDoc document={found.sealed.document} fingerprint={found.row.fingerprint} handle={seal.handle} sealed={found.row.status !== "rejected"} />
         <section className="lg:pt-6">
-          <p className={`font-mono text-xs uppercase tracking-[0.16em] ${toneClass[st.tone]}`}>{st.label}</p>
-          <h1 className="mt-2 font-display text-4xl leading-none">Invoice {found.row.invoiceNumber}</h1>
+          <StatusPill tone={pillTone[st.tone]}>{st.label}</StatusPill>
+          <PageTitle className="mt-2">Invoice {found.row.invoiceNumber}</PageTitle>
           <p className="mt-3 max-w-[52ch] text-graphite">To {found.sealed.document.payer.name}. Send them this link; anyone who has it can open the invoice and check it.</p>
           {found.sealed.document.replaces ? (
-            <p className="mt-2 text-xs font-mono text-seal">
+            <p className="mt-2 text-sm text-seal">
               Replaces invoice {found.sealed.document.replaces.slice(0, 10)}… (original cancels when settled)
             </p>
           ) : null}
@@ -45,11 +50,8 @@ export default async function VendorInvoice({ params }: { params: Promise<{ fing
           {/* Early pay and cancel actions for unpaid invoices */}
           {!isSettled && !isCancelled ? (
             <div className="mt-6 flex flex-wrap items-center gap-3">
-              <Link
-                href={`/vendor/invoices/${found.row.fingerprint}/early`}
-                className="rounded-doc bg-ink px-4 py-2 text-xs font-medium text-paper hover:opacity-90"
-              >
-                Get paid early →
+              <Link href={`/vendor/invoices/${found.row.fingerprint}/early`} className={buttonClass()}>
+                Get paid early
               </Link>
               <CancelInvoiceAction
                 fingerprint={found.row.fingerprint}
@@ -59,30 +61,21 @@ export default async function VendorInvoice({ params }: { params: Promise<{ fing
             </div>
           ) : null}
 
-          {/* Public receipt link if settled onchain (Fact 4 / Decision A11 / A12) */}
           {isSettled ? (
-            <div className="mt-6 rounded-doc border border-seal/40 bg-seal/5 p-4 text-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="font-mono text-xs uppercase tracking-wider text-seal font-medium">
-                    {found.row.status === "paid" ? "Settled onchain" : "Partially settled"}
-                  </span>
-                  <p className="mt-0.5 text-xs text-graphite">Recorded on the Arc InvoiceLedger</p>
-                </div>
-                <Link
-                  href={`/receipt/${found.row.fingerprint}`}
-                  className="font-medium text-seal underline decoration-seal/40 underline-offset-4 hover:text-ink"
-                >
-                  View receipt →
-                </Link>
-              </div>
-            </div>
+            <Callout
+              tone="ok"
+              title={found.row.status === "paid" ? "Settled onchain" : "Partly settled"}
+              className="mt-6"
+              actions={<Link href={`/receipt/${found.row.fingerprint}`} className={buttonClass({ variant: "secondary", size: "sm" })}>View the receipt</Link>}
+            >
+              Recorded in the Arc invoice ledger.
+            </Callout>
           ) : null}
 
           {/* Factual timeline (Decision A12: ledger and creation facts only) */}
           <div className="mt-8 border-t border-ink pt-6">
-            <h2 className="font-mono text-xs uppercase tracking-wider text-graphite">Timeline</h2>
-            <ol className="mt-4 space-y-4 text-xs">
+            <Eyebrow as="h2">Timeline</Eyebrow>
+            <ol className="mt-4 space-y-4 text-sm">
               <li className="flex items-start gap-3">
                 <span className="mt-1 h-2 w-2 rounded-full bg-seal flex-shrink-0" />
                 <div>

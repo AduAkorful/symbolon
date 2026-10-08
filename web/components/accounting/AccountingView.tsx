@@ -5,6 +5,12 @@ import { useState, useTransition } from "react";
 import type { AccountingViewData } from "@/lib/server/accounting";
 import { TxLink } from "@/components/TxLink";
 import { formatDateTime, showMoney } from "@/lib/format";
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/Callout";
+import { DataTable } from "@/components/ui/DataTable";
+import { Money } from "@/components/ui/Money";
+import { EmptyState } from "@/components/ui/States";
+import { Eyebrow, Lead, PageTitle, SectionTitle } from "@/components/ui/Type";
 
 export function AccountingView({
   initialData,
@@ -92,239 +98,135 @@ export function AccountingView({
 
   return (
     <div className="pb-24">
-      <div className="flex flex-wrap items-baseline justify-between gap-4">
-        <div>
-          <h1 className="font-display text-4xl md:text-5xl">Accounting</h1>
-          <p className="mt-2 max-w-[68ch] text-sm text-graphite">
-            Every payment exports with its invoice fingerprint, order, delivery, transaction, and decision record. A payment in a currency we do not recognise shows its amount without a currency and is left out of the totals.
-            The Vault is the bank, so the books reconcile to the chain line by line. Re-sync records the comparison used by exports; otherwise exports remain unverified.
-          </p>
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+        <div className="min-w-0">
+          <PageTitle>Accounting</PageTitle>
+          <Lead className="mt-3">
+            Every payment exports with its invoice fingerprint, order, delivery, transaction and decision record. The Vault is the bank, so the books reconcile to the chain line by line.
+            Re-sync records the comparison the exports use; without it an export is marked unverified.
+          </Lead>
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={isExporting !== null}
-            onClick={() => handleExport("csv")}
-            className="rounded-sm border border-rule bg-paper px-3 py-1.5 text-xs md:text-sm font-medium text-ink transition-colors hover:border-ink disabled:opacity-50"
-          >
-            {isExporting === "csv" ? "Exporting CSV…" : "Export CSV"}
-          </button>
-          <button
-            type="button"
-            disabled={isExporting !== null}
-            onClick={() => handleExport("beancount")}
-            className="rounded-sm border border-rule bg-paper px-3 py-1.5 text-xs md:text-sm font-medium text-ink transition-colors hover:border-ink disabled:opacity-50"
-          >
-            {isExporting === "beancount" ? "Exporting Beancount…" : "Export Beancount"}
-          </button>
+          <Button variant="secondary" disabled={isExporting !== null} busy={isExporting === "csv"} onClick={() => handleExport("csv")}>
+            {isExporting === "csv" ? "Exporting…" : "Export CSV"}
+          </Button>
+          <Button variant="secondary" disabled={isExporting !== null} busy={isExporting === "beancount"} onClick={() => handleExport("beancount")}>
+            {isExporting === "beancount" ? "Exporting…" : "Export Beancount"}
+          </Button>
         </div>
       </div>
 
       {lastExportHash ? (
-        <div className="mt-4 rounded-sm border border-rule bg-paper-soft p-3 text-xs">
-          <span className="font-medium text-ink">Last Export Integrity (SHA-256): </span>
-          <span className="font-mono text-graphite">{lastExportHash}</span>
-        </div>
+        <Callout tone="neutral" title="Last export, SHA-256" className="mt-4">
+          <span className="break-all text-graphite">{lastExportHash}</span>
+        </Callout>
       ) : null}
 
-      {error ? (
-        <div className="mt-4 rounded-sm border border-red/40 bg-red/10 p-3 text-xs text-red">
-          {error}
-        </div>
-      ) : null}
+      {error ? <Callout tone="danger" className="mt-4">{error}</Callout> : null}
 
-      {/* Ledger Reconciliation Card (Flow 11, K17) */}
-      <section
-        aria-labelledby="rec-heading"
-        className={`mt-8 rounded-sm border p-5 transition-colors ${
-          hasMismatches || unavailable ? "border-red/60 bg-red/5" : "border-seal/40 bg-paper"
-        }`}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 id="rec-heading" className="font-display text-xl text-ink">
-              Ledger Reconciliation
-            </h2>
-            <p className="mt-1 text-xs text-graphite">
-              Ledger copy through block <span className="font-mono">{data.reconciliation.syncedBlock}</span> · Comparison block <span className="font-mono">{data.reconciliation.comparedBlock}</span> ·{" "}
-              {data.reconciliation.totalCompared} invoices compared ·{" "}
-              {unavailable ? "Ledger comparison unavailable. Re-sync to retry." : hasMismatches
-                ? `${data.reconciliation.mismatches.length} mismatch(es) found`
-                : "Every line matches"}
+      {/* Reconciliation with the ledger (Flow 11, K17) */}
+      <section aria-labelledby="rec-heading" className={`mt-8 rounded-doc border px-5 py-5 ${hasMismatches || unavailable ? "border-red/50 bg-red-wash" : "border-rule"}`}>
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+          <div className="min-w-0">
+            <SectionTitle id="rec-heading">Ledger reconciliation</SectionTitle>
+            <p className="mt-1 text-sm text-graphite">
+              Copy through block {data.reconciliation.syncedBlock} · compared at block {data.reconciliation.comparedBlock} · {data.reconciliation.totalCompared} invoices compared ·{" "}
+              {unavailable ? "the comparison is unavailable; re-sync to retry" : hasMismatches ? `${data.reconciliation.mismatches.length} ${data.reconciliation.mismatches.length === 1 ? "mismatch" : "mismatches"} found` : "every line matches"}
             </p>
           </div>
-
-          <button
-            type="button"
-            onClick={handleResync}
-            disabled={isResyncing}
-            className="rounded-sm border border-rule bg-paper px-3 py-1.5 text-xs font-medium text-ink hover:border-ink disabled:opacity-50"
-          >
-            {isResyncing ? "Syncing ledger…" : "Re-sync ledger"}
-          </button>
+          <Button variant="secondary" busy={isResyncing} onClick={handleResync}>
+            {isResyncing ? "Syncing…" : "Re-sync with the ledger"}
+          </Button>
         </div>
 
         {hasMismatches ? (
-          <div className="mt-4 border-t border-red/20 pt-4">
-            <p className="text-xs font-medium text-red">
-              The ledger is right. Symbolon&apos;s copy differs — this is a fault in Symbolon; nothing was changed onchain.
-            </p>
-            <ul className="mt-3 space-y-2 text-xs">
+          <div className="mt-4 border-t border-red/30 pt-4">
+            <p className="font-medium text-red">The ledger is right and Symbolon’s copy differs. This is a fault in Symbolon; nothing was changed onchain.</p>
+            <ul className="mt-3 space-y-2 text-sm">
               {data.reconciliation.mismatches.map((m, idx) => (
-                <li key={idx} className="rounded border border-red/30 bg-paper p-2 font-mono">
-                  <div>
-                    Invoice {m.invoiceNumber} ({m.fingerprint.slice(0, 10)}…) — field &quot;{m.field}&quot;
-                  </div>
-                  <div className="text-graphite">
-                    Database: <span className="text-red">{m.database}</span> | Ledger:{" "}
-                    <span className="text-seal">{m.ledger}</span>
-                  </div>
+                <li key={idx} className="rounded-doc border border-red/30 bg-paper px-3 py-2">
+                  <p>Invoice {m.invoiceNumber} ({m.fingerprint.slice(0, 10)}…), field “{m.field}”</p>
+                  <p className="break-all text-graphite">
+                    Database: <span className="text-red">{m.database}</span> · Ledger: <span className="text-seal">{m.ledger}</span>
+                  </p>
                 </li>
               ))}
             </ul>
           </div>
         ) : unavailable ? (
-          <p className="mt-3 text-xs text-red">Cannot confirm whether the stored payments match the ledger. Exports include this warning.</p>
+          <p className="mt-3 text-sm text-red">Symbolon can’t confirm whether the stored payments match the ledger. Exports carry this warning.</p>
         ) : (
-          <p className="mt-3 text-xs text-seal font-medium">
-            ✓ 0 mismatches. All stored payments and statuses match the canonical ledger exactly.
-          </p>
+          <p className="mt-3 text-sm font-medium text-ok">✓ No mismatches. Every stored payment and status matches the ledger.</p>
         )}
       </section>
 
-      {/* Totals Summary Cards (K14: per-token only, never cross-token) */}
+      {/* Totals, per token and never across tokens (K14) */}
       <div className="mt-8 grid gap-4 sm:grid-cols-2">
-        <div className="rounded-sm border border-rule p-4">
-          <span className="text-xs text-graphite uppercase tracking-wider">Settled USDC Volume</span>
-          <div className="mt-1 font-mono text-2xl font-medium text-ink">
-            {showMoney(data.totals.usdcTotal, "USDC")}
-          </div>
+        <div className="rounded-doc border border-rule px-5 py-4">
+          <Eyebrow as="p">Settled USDC</Eyebrow>
+          <Money className="mt-1 block font-display text-3xl text-ink">{showMoney(data.totals.usdcTotal, "USDC")}</Money>
         </div>
-
-        <div className="rounded-sm border border-rule p-4">
-          <span className="text-xs text-graphite uppercase tracking-wider">Settled EURC Volume</span>
-          <div className="mt-1 font-mono text-2xl font-medium text-ink">
-            {showMoney(data.totals.eurcTotal, "EURC")}
-          </div>
+        <div className="rounded-doc border border-rule px-5 py-4">
+          <Eyebrow as="p">Settled EURC</Eyebrow>
+          <Money className="mt-1 block font-display text-3xl text-ink">{showMoney(data.totals.eurcTotal, "EURC")}</Money>
         </div>
       </div>
 
-      {/* Payments List Table (K14) */}
-      <section aria-labelledby="payments-heading" className="mt-10">
-        <h2 id="payments-heading" className="font-display text-2xl md:text-3xl text-ink">
-          Settled Payments
-        </h2>
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[960px] border-t border-ink text-sm">
-            <thead>
-              <tr className="text-left text-xs text-graphite">
-                <th className="py-3 pr-4 font-normal">Date</th>
-                <th className="py-3 pr-4 font-normal">Vendor</th>
-                <th className="py-3 pr-4 font-normal">Invoice</th>
-                <th className="py-3 pr-4 font-normal">Fingerprint</th>
-                <th className="py-3 pr-4 font-normal">Order</th>
-                <th className="py-3 pr-4 font-normal">Delivery</th>
-                <th className="py-3 pr-4 font-normal text-right">Amount</th>
-                <th className="py-3 pr-4 font-normal">Transaction</th>
-                <th className="py-3 pr-4 font-normal">Record</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.payments.map((p, idx) => (
-                <tr key={idx} className="border-t border-rule">
-                  <td className="py-3 pr-4 font-mono text-xs">{p.date}</td>
-                  <td className="pr-4 font-medium">{p.vendor}</td>
-                  <td className="pr-4 font-mono text-xs">{p.invoice}</td>
-                  <td className="pr-4 font-mono text-xs text-graphite">{p.fp}</td>
-                  <td className="pr-4 text-xs font-mono">{p.po}</td>
-                  <td className="pr-4 text-xs text-graphite">{p.delivery}</td>
-                  <td className="pr-4 text-right font-mono text-xs tabular-nums font-medium">
-                    {p.token === "UNKNOWN" ? `${p.amount} (currency unavailable)` : showMoney(p.amount, p.token)}
-                  </td>
-                  <td className="pr-4">
-                    <TxLink
-                      href={`${explorer}/tx/${p.tx}`}
-                      label={`Transaction ${p.tx}`}
-                      className="text-graphite hover:text-ink"
-                    >
-                      {`${p.tx.slice(0, 6)}…${p.tx.slice(-4)}`}
-                    </TxLink>
-                  </td>
-                  <td className="pr-4 text-xs">
-                    {p.decision ? (
-                      <Link
-                        href={`/business/decisions/${p.decision}`}
-                        className="underline decoration-rule underline-offset-4 hover:decoration-ink"
-                      >
-                        Record
-                      </Link>
-                    ) : (
-                      <span className="text-graphite">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {!data.payments.length ? (
-            <div className="border-t border-rule p-8 text-center text-sm text-graphite">
-              No settled payments recorded for this business yet.
-            </div>
-          ) : null}
-        </div>
+      {/* Payments (K14) */}
+      <section aria-labelledby="payments-heading" className="mt-12">
+        <SectionTitle id="payments-heading">Settled payments</SectionTitle>
+        {data.payments.length ? (
+          <DataTable
+            className="mt-4"
+            caption="Settled payments"
+            rows={data.payments}
+            rowKey={(p, i) => `${p.tx}:${i}`}
+            columns={[
+              { key: "vendor", header: "Vendor", primary: true, cell: (p) => p.vendor },
+              { key: "amount", header: "Amount", amount: true, cell: (p) => (p.token === "UNKNOWN" ? `${p.amount} (currency unavailable)` : showMoney(p.amount, p.token)) },
+              { key: "date", header: "Date", nowrap: true, cell: (p) => p.date },
+              { key: "invoice", header: "Invoice", cell: (p) => p.invoice },
+              { key: "po", header: "Order", cell: (p) => p.po },
+              { key: "delivery", header: "Delivery", cell: (p) => p.delivery },
+              { key: "tx", header: "Transaction", nowrap: true, cell: (p) => <TxLink href={`${explorer}/tx/${p.tx}`} label={`Transaction ${p.tx}`} className="text-graphite hover:text-ink">{`${p.tx.slice(0, 6)}…${p.tx.slice(-4)}`}</TxLink> },
+              { key: "record", header: "Record", cell: (p) => (p.decision ? <Link href={`/business/decisions/${p.decision}`} className="underline decoration-rule underline-offset-4 hover:decoration-ink">Decision</Link> : <span className="text-graphite">—</span>) },
+            ]}
+          />
+        ) : (
+          <EmptyState title="No settled payments yet" className="mt-4">Payments the Vault makes on Arc appear here with their invoice and decision record.</EmptyState>
+        )}
       </section>
 
-      {/* Export Records (K19) */}
+      {/* Exports (K19) */}
       {data.recentExports.length > 0 ? (
         <section aria-labelledby="exports-heading" className="mt-12">
-          <h2 id="exports-heading" className="font-display text-xl text-ink">
-            Export Records
-          </h2>
-          <p className="mt-1 text-xs text-graphite">
-            Every export is registered as an unalterable decision record with the file&apos;s SHA-256 hash.
-          </p>
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[640px] border-t border-rule text-xs">
-              <thead>
-                <tr className="text-left text-graphite">
-                  <th className="py-2 pr-4 font-normal">Format</th>
-                  <th className="py-2 pr-4 font-normal">Date</th>
-                  <th className="py-2 pr-4 font-normal">Entries</th>
-                  <th className="py-2 pr-4 font-normal">SHA-256 Fingerprint</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.recentExports.map((exp) => (
-                  <tr key={exp.id} className="border-t border-rule">
-                    <td className="py-2 pr-4 font-medium uppercase">{exp.format}</td>
-                    <td className="pr-4 font-mono text-graphite">
-                      {formatDateTime(exp.createdAt)}
-                    </td>
-                    <td className="pr-4">{exp.rowCount ?? "—"}</td>
-                    <td className="pr-4 font-mono text-graphite">{exp.sha256}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <SectionTitle id="exports-heading">Exports</SectionTitle>
+          <p className="mt-1 text-sm text-graphite">Each export is registered as a decision record with the file’s SHA-256 hash.</p>
+          <DataTable
+            className="mt-4"
+            caption="Exports"
+            rows={data.recentExports}
+            rowKey={(e) => e.id}
+            columns={[
+              { key: "format", header: "Format", primary: true, cell: (e) => <span className="uppercase">{e.format}</span> },
+              { key: "date", header: "Date", nowrap: true, cell: (e) => formatDateTime(e.createdAt) },
+              { key: "rows", header: "Entries", cell: (e) => e.rowCount ?? "—" },
+              { key: "sha", header: "SHA-256", cell: (e) => <span className="break-all text-graphite">{e.sha256}</span> },
+            ]}
+          />
         </section>
       ) : null}
 
-      {/* Connectors section (spec §7.8: no fake connects) */}
+      {/* Accounting software (spec 7.8: no fake connects) */}
       <section aria-labelledby="connect-heading" className="mt-12">
-        <h2 id="connect-heading" className="font-display text-xl text-ink">
-          Connect your books
-        </h2>
-        <p className="mt-1 text-xs text-graphite">
-          Direct accounting integrations are in development. Exports can be imported into your ledger today.
-        </p>
+        <SectionTitle id="connect-heading">Connect your books</SectionTitle>
+        <p className="mt-1 text-sm text-graphite">Direct connections are in development. Today, import an export into your accounting software.</p>
         <ul className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {["Xero", "QuickBooks", "Odoo", "ERPNext"].map((connector) => (
-            <li key={connector} className="rounded-sm border border-rule bg-paper p-3">
-              <span className="text-sm font-medium text-ink">{connector}</span>
-              <span className="mt-1 block text-[11px] text-graphite">Not available yet</span>
+            <li key={connector} className="rounded-doc border border-rule px-4 py-3">
+              <span className="font-medium text-ink">{connector}</span>
+              <span className="mt-1 block text-sm text-graphite">Not available yet</span>
             </li>
           ))}
         </ul>

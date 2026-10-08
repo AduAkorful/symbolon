@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Overlay } from "@/components/Overlay";
+import { Button, buttonClass } from "@/components/ui/button";
+import { InlineError } from "@/components/ui/States";
 import { ensureChain, findWalletFor, wrongWalletMessage, type SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { signTypedData } from "@/components/vendor/seal-signer";
@@ -91,55 +93,30 @@ export function CancelInvoiceAction({ fingerprint, invoiceNumber, signer }: Prop
           setError(null);
           setOpen(true);
         }}
-        className="rounded-doc border border-red/50 px-3 py-1.5 text-xs text-red hover:bg-red-wash"
+        className={buttonClass({ variant: "danger", size: "sm" })}
       >
-        Cancel invoice…
+        Cancel this invoice…
       </button>
 
       {open ? (
         <Overlay
-          label={{ id: "cancel-invoice-title" }}
+          title={`Cancel invoice ${invoiceNumber}`}
+          description="Cancelling is recorded on the Arc ledger and can't be undone."
           onClose={() => {
             if (!busy) setOpen(false);
           }}
         >
-          <div className="p-7">
-            <h2 id="cancel-invoice-title" className="font-display text-2xl text-red">
-              Cancel Invoice {invoiceNumber}
-            </h2>
-            <p className="mt-3 text-sm text-graphite">
-              Cancelling marks this invoice cancelled on the Arc InvoiceLedger.
-              Once cancelled, this fingerprint can <strong>never</strong> be paid by any Vault.
-            </p>
-            <p className="mt-3 text-xs text-graphite">
-              Your wallet will ask for an EIP-712 Cancel signature, and then submit the cancel transaction to the ledger.
-            </p>
+          <p className="text-graphite">
+            Once cancelled, this invoice can <strong className="text-ink">never</strong> be paid by any Vault.
+          </p>
+          <p className="text-graphite">Your wallet will ask you to sign the cancellation, and then send it to the ledger.</p>
 
-            {error ? (
-              <div role="alert" className="mt-4 rounded-doc border border-red/40 bg-red-wash p-3 text-xs text-red">
-                {error}
-              </div>
-            ) : null}
+          {error ? <InlineError>{error}</InlineError> : null}
 
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => setOpen(false)}
-                className="rounded-doc border border-rule px-4 py-2 text-sm"
-              >
-                Keep Invoice
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={handleCancel}
-                className="rounded-doc bg-red px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-              >
-                {busy ? "Cancelling..." : "Cancel on Ledger"}
-              </button>
-            </div>
-          </div>
+          <Overlay.Footer>
+            <Button variant="secondary" disabled={busy} onClick={() => setOpen(false)}>Keep invoice</Button>
+            <Button variant="destructive" busy={busy} onClick={handleCancel}>{busy ? "Cancelling…" : "Cancel invoice"}</Button>
+          </Overlay.Footer>
         </Overlay>
       ) : null}
     </>

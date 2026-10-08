@@ -2,6 +2,7 @@ export * from "./facts.js";
 export * from "./invoices.js";
 export * from "./approvals.js";
 export * from "./sync.js";
+export * from "./protocol-events.js";
 export * from "./history.js";
 export * from "./steward.js";
 export { createInvoiceInputReader, type InvoiceInputsEnv } from "./invoice-inputs.js";

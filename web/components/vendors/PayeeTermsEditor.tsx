@@ -7,6 +7,8 @@ import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { postJson } from "@/lib/client/api";
 import { moneyDraft, moneyInput } from "@/lib/money-draft";
 import { duration } from "@/lib/format";
+import { buttonClass } from "@/components/ui/button";
+import { controlClass } from "@/components/ui/Field";
 
 
 
@@ -71,7 +73,7 @@ export function PayeeTermsEditor({
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (signer.kind !== "wallet") {
-      alert("Please connect the business owner's wallet to update terms.");
+      setError("Connect the owner’s wallet to update the terms.");
       return;
     }
 
@@ -129,7 +131,7 @@ export function PayeeTermsEditor({
       <div className="mt-4">
         <button
           onClick={() => setEditing(true)}
-          className="rounded-doc border border-rule px-3 py-1.5 text-xs font-medium hover:bg-paper"
+          className={buttonClass({ variant: "secondary", size: "sm" })}
         >
           Edit payee terms
         </button>
@@ -149,7 +151,7 @@ export function PayeeTermsEditor({
       ) : null}
 
       {error ? (
-        <p className="mt-3 rounded border border-red-300 bg-red-50 p-2 text-xs text-red-800">{error}</p>
+        <p className="mt-3 rounded border border-red/40 bg-red-wash p-2 text-xs text-red">{error}</p>
       ) : null}
 
       <div className="mt-4 space-y-3">
@@ -161,7 +163,7 @@ export function PayeeTermsEditor({
             id="termsBudget"
             value={draftBudget}
             onChange={(e) => setDraftBudget(e.target.value)}
-            className="mt-1 w-full rounded border border-rule bg-paper px-2.5 py-1.5 text-xs"
+            className={controlClass}
           >
             {budgets.map((b) => (
               <option key={b.id} value={b.id}>
@@ -181,7 +183,7 @@ export function PayeeTermsEditor({
             step="any"
             value={draftMonthlyCapUsd}
             onChange={(e) => setDraftMonthlyCapUsd(e.target.value)}
-            className="mt-1 w-full rounded border border-rule bg-paper px-2.5 py-1.5 text-xs"
+            className={controlClass}
             required
           />
         </div>
@@ -212,11 +214,11 @@ export function PayeeTermsEditor({
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-rule pt-3">
         <p className="text-xs">
           {isLooser ? (
-            <span className="text-amber-700 font-medium">
+            <span className="text-warn font-medium">
               Looser terms: will be queued for {duration(BigInt(looseningDelaySeconds))}.
             </span>
           ) : (
-            <span className="text-emerald-700 font-medium">
+            <span className="text-ok font-medium">
               Stricter terms: applies immediately upon signature.
             </span>
           )}
@@ -227,14 +229,14 @@ export function PayeeTermsEditor({
             type="button"
             onClick={() => setEditing(false)}
             disabled={busy}
-            className="rounded border border-rule px-3 py-1 text-xs text-graphite hover:bg-paper"
+            className={buttonClass({ variant: "secondary", size: "sm" })}
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={busy}
-            className="rounded bg-ink px-3 py-1 text-xs font-medium text-paper hover:opacity-90 disabled:opacity-50"
+            className={buttonClass({ size: "sm" })}
           >
             {busy ? "Saving..." : isLooser ? "Queue update" : "Apply now"}
           </button>

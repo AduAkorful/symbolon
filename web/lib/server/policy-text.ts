@@ -20,7 +20,9 @@ const NAMES: Record<PolicyTemplate, { name: string; blurb: string }> = {
 
 export function describePolicyLines(p: VaultPolicy, decimals = 6): string[] {
   const lines = [
-    `Auto-pay up to ${usd(p.autoPayLimit, decimals)} to vendors with ${p.newVendorMinPaid} or more paid ${p.newVendorMinPaid === 1 ? "invoice" : "invoices"}`,
+    p.newVendorMinPaid === 0
+      ? `Auto-pay up to ${usd(p.autoPayLimit, decimals)} to any payee on the list`
+      : `Auto-pay up to ${usd(p.autoPayLimit, decimals)} to vendors with ${p.newVendorMinPaid} or more paid ${p.newVendorMinPaid === 1 ? "invoice" : "invoices"}`,
     `Owner signs above ${usd(p.ownerThreshold, decimals)}`,
     `No single payment above ${usd(p.perTxCap, decimals)}`,
     p.screeningMaxAge === 0n ? "Payees aren’t required to be screened" : `Payees screened within ${duration(p.screeningMaxAge)}`,

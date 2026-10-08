@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { postJson } from "@/lib/client/api";
+import { buttonClass } from "@/components/ui/button";
 
 export function ManageVendorBlock({ businessId, seal, blocked, canUnblock }: { businessId: string; seal: string; blocked: boolean; canUnblock: boolean }) {
   const [busy, setBusy] = useState(false);
@@ -24,7 +25,7 @@ export function ManageVendorBlock({ businessId, seal, blocked, canUnblock }: { b
 
   if (blocked && !canUnblock) return <p className="text-sm text-graphite">Only an owner can unblock this Seal.</p>;
   return <div>
-    <button type="button" onClick={() => setStatus(blocked ? "unblock" : "block")} disabled={busy} className="rounded border border-rule px-3 py-2 text-sm hover:border-ink disabled:opacity-60">
+    <button type="button" onClick={() => setStatus(blocked ? "unblock" : "block")} disabled={busy} className={buttonClass({ variant: "secondary" })}>
       {busy ? "Saving…" : blocked ? "Unblock this Seal" : "Block this Seal"}
     </button>
     {message ? <p role="alert" className="mt-2 text-sm text-red">{message}</p> : null}

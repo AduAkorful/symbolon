@@ -81,3 +81,19 @@ export function getReleaseNotes(implementation: string): ReleaseInfo | undefined
   }
 }
 
+
+/**
+ * Every Vault factory the registry's releases have used on a chain, with the block it was published at. A factory's implementation is
+ * immutable, so each release has its own, and Vaults made by an older one still exist: counting Vaults means reading all of them.
+ */
+export function vaultFactories(chainId: number): { factory: Address; startBlock: bigint }[] {
+  const seen = new Map<string, { factory: Address; startBlock: bigint }>();
+  for (const r of Object.values(releases) as ReleaseInfo[]) {
+    if (r.chainId !== chainId) continue;
+    const key = r.factory.toLowerCase();
+    const known = seen.get(key);
+    const startBlock = BigInt(r.startBlock);
+    if (!known || startBlock < known.startBlock) seen.set(key, { factory: getAddress(r.factory), startBlock });
+  }
+  return [...seen.values()];
+}

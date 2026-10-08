@@ -1,7 +1,7 @@
 import type { InvoiceDocument } from "@symbolon/seal";
 import { Half } from "@/components/Chirograph";
 import { SealStamp } from "@/components/Marks";
-import { discounted, showAmount, showBps, showDate } from "@/lib/format";
+import { checksum, discounted, showAmount, showBps, showDate } from "@/lib/format";
 
 /**
  * An invoice, drawn from the canonical document and nothing else (plan 05i, V2): what a person confirms before signing, and
@@ -54,7 +54,7 @@ export function InvoiceDoc({ document: d, fingerprint, handle, sealed = false }:
                     {l.quantity} × {showAmount(l.unitPrice)}
                   </span>
                 </span>
-                <span className="shrink-0 tabular-nums">{showAmount(l.amount)}</span>
+                <span className="shrink-0">{showAmount(l.amount)}</span>
               </li>
             ))}
             {d.taxes.map((t, i) => (
@@ -63,13 +63,13 @@ export function InvoiceDoc({ document: d, fingerprint, handle, sealed = false }:
                   {t.label}
                   {t.rateBps !== undefined ? ` ${showBps(t.rateBps)}%` : ""}
                 </span>
-                <span className="tabular-nums">{showAmount(t.amount)}</span>
+                <span className="">{showAmount(t.amount)}</span>
               </li>
             ))}
             {d.discounts.map((t, i) => (
               <li key={`d${i}`} className="flex justify-between border-b border-rule-soft py-2 text-graphite">
                 <span>{t.label}</span>
-                <span className="tabular-nums">−{showAmount(t.amount)}</span>
+                <span className="">−{showAmount(t.amount)}</span>
               </li>
             ))}
           </ul>
@@ -95,13 +95,13 @@ export function InvoiceDoc({ document: d, fingerprint, handle, sealed = false }:
           ) : null}
 
           <p className="mt-3 break-all text-xs text-graphite">
-            Paid in {sym} on Arc to <span className="font-mono">{d.payout.address}</span>
+            Paid in {sym} on Arc to <span data-wrap-ok className="font-mono">{checksum(d.payout.address)}</span>
           </p>
           {d.terms ? <p className="mt-3 whitespace-pre-line text-xs text-graphite">{d.terms}</p> : null}
           {d.notes ? <p className="mt-3 whitespace-pre-line text-xs text-graphite">{d.notes}</p> : null}
         </article>
       </Half>
-      <p className="mt-3 break-all font-mono text-[11px] text-graphite">
+      <p className="mt-3 break-all font-mono text-xs text-graphite">
         Fingerprint {fingerprint.slice(0, 10)}…{fingerprint.slice(-6)}
       </p>
     </div>

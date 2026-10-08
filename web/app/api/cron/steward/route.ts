@@ -1,4 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
 import { isNotNull } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
@@ -6,6 +5,7 @@ import { businesses } from "@symbolon/db";
 
 import { getClient } from "@/lib/server/chain";
 import { getConfig } from "@/lib/server/config";
+import { refuseUnlessScheduler } from "@/lib/server/cron-auth";
 import { getDb } from "@/lib/server/db";
 import { runForBusiness } from "@/lib/server/steward-runtime";
 
@@ -13,17 +13,9 @@ export const maxDuration = 60;
 
 const TIME_BUDGET_MS = 50_000;
 
-export async function POST(request: Request) {
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) {
-    return NextResponse.json({ error: "Scheduler is not configured." }, { status: 503 });
-  }
-
-  const given = Buffer.from(request.headers.get("authorization") ?? "");
-  const expected = Buffer.from(`Bearer ${secret}`);
-  if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
-    return NextResponse.json({ error: "Not authorized." }, { status: 401 });
-  }
+async function run(request: Request) {
+  const refused = refuseUnlessScheduler(request, "Scheduler");
+  if (refused) return refused;
 
   const cfg = getConfig();
   const db = await getDb();
@@ -53,3 +45,7 @@ export async function POST(request: Request) {
     businesses: results,
   });
 }
+
+// POST for GitHub Actions and cron services; GET because Vercel Cron only sends GET (same secret, same work)
+export const POST = run;
+export const GET = run;

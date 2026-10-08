@@ -2,5 +2,15 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm --filter \"@symbolon/app^...\" build && if [ \"$VERCEL_ENV\" = production ]; then DATABASE_URL=\"$DATABASE_URL_UNPOOLED\" pnpm --filter @symbolon/db migrate; fi && pnpm build"
+  "buildCommand": "pnpm --filter \"@symbolon/app^...\" build && if [ \"$VERCEL_ENV\" = production ]; then DATABASE_URL=\"$DATABASE_URL_UNPOOLED\" pnpm --filter @symbolon/db migrate; fi && pnpm build",
+  "crons": [
+    {
+      "path": "/api/cron/sync",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/steward",
+      "schedule": "30 4 * * *"
+    }
+  ]
 }

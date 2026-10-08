@@ -2,3 +2,5 @@ node_modules
 .next
 next-env.d.ts
 *.tsbuildinfo
+scripts/ui-audit/out/
+scripts/ui-audit/tokens.json

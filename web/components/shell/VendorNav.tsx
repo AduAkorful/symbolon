@@ -18,7 +18,7 @@ const isActive = (path: string, href: string) => (href === "/vendor" ? path === 
 export function VendorNav() {
   const path = usePathname();
   return (
-    <nav aria-label="Vendor" className="order-3 w-full overflow-x-auto md:order-none md:w-auto">
+    <nav aria-label="Vendor" className="order-3 w-full overflow-x-auto lg:order-none lg:w-auto">
       <ul className="flex gap-1">
         {nav.map((n) => {
           const active = isActive(path, n.href);
@@ -27,7 +27,7 @@ export function VendorNav() {
               <Link
                 href={n.href}
                 aria-current={active ? "page" : undefined}
-                className={`block rounded-sm px-3 py-1.5 text-[15px] transition-colors duration-[var(--dur-quick)] ${active ? "bg-ink text-paper" : "text-ink/80 hover:bg-rule-soft/70"}`}
+                className={`flex min-h-10 items-center rounded-doc px-3 py-2 text-sm transition-colors duration-[var(--dur-quick)] ${active ? "bg-ink text-paper" : "text-ink/80 hover:bg-rule-soft/70"}`}
               >
                 {n.name}
               </Link>

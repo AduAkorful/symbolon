@@ -3,6 +3,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { businessOffers } from "@/lib/server/offers";
 import { formatDateTime } from "@/lib/format";
+import { Eyebrow } from "@/components/ui/Type";
 
 type View = Awaited<ReturnType<typeof businessOffers>>;
 function exact(raw: bigint) { const digits = raw.toString().padStart(7, "0"); return `${digits.slice(0, -6)}.${digits.slice(-6)}`; }
@@ -24,7 +25,7 @@ export function BusinessOffers({ businessId, fingerprint, view, symbol }: { busi
     finally { setBusy(false); }
   }
   return <section className="mt-6 rounded-doc border border-rule p-4" aria-label="Vendor Early Pay offers">
-    <h2 className="font-mono text-xs uppercase tracking-wider">Vendor Early Pay offers</h2>
+    <Eyebrow as="h2">Vendor Early Pay offers</Eyebrow>
     <p className="mt-2 text-xs text-graphite">Accepting an offer means paying the invoice. Review the Steward’s timing assessment before paying.</p>
     {open.map((offer) => <div key={offer.id} className="mt-3 text-sm">
       <p>{offer.discountPercent}% discount · saving {exact(BigInt(view.remaining) * BigInt(offer.discountBps) / 10_000n)} {symbol} · valid until {formatDateTime(new Date(offer.validUntil))}</p>

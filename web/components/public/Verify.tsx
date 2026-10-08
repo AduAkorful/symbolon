@@ -4,8 +4,10 @@ import { useState } from "react";
 import { createArcClient, getDeployment } from "@symbolon/chain";
 import { showAmount, showDate } from "@/lib/format";
 import { runCheck, type CheckResult } from "@/lib/verify-check";
+import { buttonClass } from "@/components/ui/button";
+import { controlClass } from "@/components/ui/Field";
 
-const box = "rounded-doc border border-rule bg-paper px-3 py-2 text-[15px] focus:border-ink focus:outline-none";
+const box = controlClass;
 const LINK = /\/invoice\/(0x[0-9a-f]{64})\/?$/i;
 
 /**
@@ -94,7 +96,7 @@ export function Verify({ chainId, explorer }: { chainId: number; explorer: strin
             Or paste an invoice link from this site, or the contents of the file
           </label>
           <textarea id="paste" className={`${box} w-full font-mono text-xs`} rows={5} value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} />
-          <button disabled={busy || !text.trim()} className="rounded-doc bg-ink px-5 py-2.5 font-medium text-paper disabled:opacity-40">
+          <button disabled={busy || !text.trim()} className={buttonClass()}>
             {busy ? "Checking…" : "Check it"}
           </button>
         </form>

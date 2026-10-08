@@ -4,6 +4,8 @@ import { AcceptTeamInvitation } from "@/components/team/AcceptTeamInvitation";
 import { getDb } from "@/lib/server/db";
 import { getSession } from "@/lib/server/http";
 import { getInvitationByToken } from "@/lib/server/team-invitations";
+import { buttonClass } from "@/components/ui/button";
+import { Eyebrow, PageTitle } from "@/components/ui/Type";
 
 export const dynamic = "force-dynamic";
 
@@ -27,13 +29,13 @@ export default async function JoinTeamPage({
 
   return (
     <main className="mx-auto min-h-screen max-w-[720px] px-6 py-16 md:px-10">
-      <p className="font-mono text-xs uppercase tracking-[0.16em] text-graphite">
+      <Eyebrow>
         Symbolon · Team invitation
-      </p>
+      </Eyebrow>
 
-      <h1 className="mt-8 font-display text-4xl leading-tight font-medium text-ink">
+      <PageTitle className="mt-8">
         Join {invite.businessName}
-      </h1>
+      </PageTitle>
 
       <p className="mt-4 text-graphite text-sm leading-relaxed">
         You have been invited to join <span className="text-ink font-medium">{invite.businessName}</span> with the role of{" "}
@@ -47,14 +49,14 @@ export default async function JoinTeamPage({
       {!session?.user ? (
         <div className="mt-8">
           <Link
-            className="inline-block rounded-doc bg-ink px-6 py-3 text-sm font-medium text-paper hover:bg-ink/90 transition-colors"
+            className={buttonClass()}
             href={`/signin?next=${encodeURIComponent(`/join/${token}`)}`}
           >
             Sign in to continue
           </Link>
         </div>
       ) : !hasWallet ? (
-        <div className="mt-8 rounded-doc border border-amber-500/30 bg-amber-500/5 p-4 text-xs text-amber-700 dark:text-amber-300">
+        <div className="mt-8 rounded-doc border border-warn/40 bg-warn-wash p-4 text-xs text-warn ">
           <p className="font-medium">Wallet required</p>
           <p className="mt-1">
             Your account must have an active wallet to join a Symbolon business team. Please link a wallet to your account.

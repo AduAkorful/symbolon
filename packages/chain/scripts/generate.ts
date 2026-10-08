@@ -54,6 +54,8 @@ export function generateReleases(): string {
     chainId: number;
     version: number;
     implementation: string;
+    factory: string;
+    startBlock: number;
     notesHash: string;
     notes: string;
   }> = {};
@@ -79,12 +81,15 @@ export function generateReleases(): string {
       chainId,
       version,
       implementation,
+      // each release has its own factory (a factory's implementation is immutable), and Vaults made by an older one still exist
+      factory: getAddress(content.VaultFactory),
+      startBlock: Number(content.startBlock),
       notesHash: content.notesHash,
       notes: notesText,
     };
   }
 
-  return `${HEADER}\nexport interface ReleaseInfo {\n  chainId: number;\n  version: number;\n  implementation: \`0x\${string}\`;\n  notesHash: \`0x\${string}\`;\n  notes: string;\n}\n\nexport const releases = ${JSON.stringify(rels, null, 2)} as const;\n`;
+  return `${HEADER}\nexport interface ReleaseInfo {\n  chainId: number;\n  version: number;\n  implementation: \`0x\${string}\`;\n  factory: \`0x\${string}\`;\n  startBlock: number;\n  notesHash: \`0x\${string}\`;\n  notes: string;\n}\n\nexport const releases = ${JSON.stringify(rels, null, 2)} as const;\n`;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

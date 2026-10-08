@@ -376,7 +376,8 @@ describe("policy text comes from the code that builds the policy", () => {
     expect(text).toContain(`Owner signs above ${usd(p.ownerThreshold)}`);
     expect(text).toContain(`No single payment above ${usd(p.perTxCap)}`);
     expect(text).toContain(`Loosening changes wait ${duration(p.looseningDelay)}`);
-    expect(text).toContain(`${p.newVendorMinPaid} or more paid`);
+    if (p.newVendorMinPaid === 0) expect(text).toContain("to any payee on the list");
+    else expect(text).toContain(`${p.newVendorMinPaid} or more paid`);
   });
 
   it("formats money and time exactly", () => {

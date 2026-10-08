@@ -5,11 +5,11 @@ import { useEffect, useState } from "react";
 
 import { sendCall, wasRejected, type SignerPlan } from "@/components/setup/owner-signer";
 import { TxLink } from "@/components/TxLink";
+import { Button } from "@/components/ui/button";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { postJson } from "@/lib/client/api";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const btnBase = "rounded-doc text-xs font-medium transition-colors disabled:opacity-40";
 
 export interface PauseControlProps {
   businessId: string;
@@ -81,25 +81,21 @@ export function PauseControl({ businessId, paused, block, known = true, signer, 
     return (
       <div className="flex items-center gap-2">
         {curPaused ? (
-          <button
-            disabled={busy !== null}
-            onClick={() => void toggle("resume")}
-            className={`${btnBase} bg-paper/20 px-2.5 py-1 text-paper hover:bg-paper/30`}
-            title="Resume the Steward and payments"
-          >
-            {busy ?? "Resume payments"}
-          </button>
+          <Button size="sm" busy={busy !== null} onClick={() => void toggle("resume")} title="Resume the Steward and payments">
+            {busy ?? (<><span className="sm:hidden">Resume</span><span className="hidden sm:inline">Resume payments</span></>)}
+          </Button>
         ) : (
-          <button
-            disabled={busy !== null}
+          <Button
+            size="sm"
+            variant="danger"
+            busy={busy !== null}
             onClick={() => void toggle("pause")}
-            className={`${btnBase} border border-red/60 px-2.5 py-1 text-red hover:bg-red-wash`}
             title={known ? "Pause payments and the Steward" : "Pause payments and the Steward. We can't confirm the Vault's current state."}
           >
-            {busy ?? "Pause payments"}
-          </button>
+            {busy ?? (<><span className="sm:hidden">Pause</span><span className="hidden sm:inline">Pause payments</span></>)}
+          </Button>
         )}
-        {problem ? <span className="text-[11px] text-red" role="alert">{problem}</span> : null}
+        {problem ? <span className="max-w-[30ch] text-xs text-red" role="alert">{problem}</span> : null}
       </div>
     );
   }
@@ -111,39 +107,22 @@ export function PauseControl({ businessId, paused, block, known = true, signer, 
           <div className="max-w-[56ch] rounded-doc border border-rule p-4 text-sm">
             <p>Resuming lets the Steward act again on this Vault, within the rules the Vault enforces.</p>
             <p className="mt-2 text-graphite">Its mode is shadow: it records what it would do and the app sends nothing, until you change that.</p>
-            <div className="mt-3 flex gap-3">
-              <button
-                disabled={busy !== null}
-                onClick={() => void toggle("resume")}
-                className={`${btnBase} bg-ink px-3.5 py-1.5 text-sm text-paper`}
-              >
+            <div className="mt-4 flex flex-wrap gap-3">
+              <Button busy={busy !== null} onClick={() => void toggle("resume")}>
                 {busy ?? "Resume the Steward (one signature)"}
-              </button>
-              <button
-                disabled={busy !== null}
-                onClick={() => setConfirming(false)}
-                className={`${btnBase} border border-rule px-3.5 py-1.5 text-sm`}
-              >
+              </Button>
+              <Button variant="secondary" disabled={busy !== null} onClick={() => setConfirming(false)}>
                 Not now
-              </button>
+              </Button>
             </div>
           </div>
         ) : (
-          <button
-            onClick={() => setConfirming(true)}
-            className={`${btnBase} bg-ink px-3.5 py-1.5 text-sm text-paper`}
-          >
-            Resume the Steward
-          </button>
+          <Button onClick={() => setConfirming(true)}>Resume the Steward</Button>
         )
       ) : (
-        <button
-          disabled={busy !== null}
-          onClick={() => void toggle("pause")}
-          className={`${btnBase} border border-red/60 px-3.5 py-1.5 text-sm text-red hover:bg-red-wash`}
-        >
+        <Button variant="danger" busy={busy !== null} onClick={() => void toggle("pause")}>
           {busy ?? "Pause the Steward (one signature)"}
-        </button>
+        </Button>
       )}
       {!known && !curPaused ? <p className="mt-2 text-xs text-graphite">We can't confirm whether the Vault is paused right now. You can still pause it.</p> : null}
 

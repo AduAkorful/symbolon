@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useWallets } from "@privy-io/react-auth";
 import type { Hex } from "viem";
+import { buttonClass } from "@/components/ui/button";
+import { controlClass } from "@/components/ui/Field";
 
 type Step = "idle" | "signing" | "recording" | "done" | "error";
 
@@ -100,7 +102,7 @@ export function DeliveryActions({
             id={`btn-reject-delivery-${fingerprint.slice(2, 10)}`}
             onClick={() => setRejecting(true)}
             disabled={step === "signing" || step === "recording"}
-            className="rounded-doc border border-red/60 px-3 py-2 text-sm text-red hover:bg-red-wash disabled:opacity-50"
+            className={buttonClass({ variant: "danger" })}
           >
             Reject delivery
           </button>
@@ -155,21 +157,21 @@ export function DeliveryActions({
             maxLength={500}
             required
             minLength={3}
-            className="w-full rounded-doc border border-rule bg-paper px-3 py-2 text-sm"
+            className={controlClass}
           />
           <div className="flex gap-2">
             <button
               id={`btn-reject-confirm-${fingerprint.slice(2, 10)}`}
               type="submit"
               disabled={!reason.trim() || reason.trim().length < 3 || step === "signing" || step === "recording"}
-              className="rounded-doc bg-ink px-3 py-2 text-sm text-paper disabled:opacity-40"
+              className={buttonClass()}
             >
               {step === "signing" ? "Waiting for wallet…" : step === "recording" ? "Recording…" : "Reject delivery"}
             </button>
             <button
               type="button"
               onClick={() => { setRejecting(false); setMsg(null); setStep("idle"); }}
-              className="rounded-doc border border-rule px-3 py-2 text-sm"
+              className={buttonClass({ variant: "secondary" })}
             >
               Back
             </button>
@@ -235,7 +237,7 @@ function ConfirmButton({
       id={`btn-confirm-delivery-${fingerprint.slice(2, 10)}`}
       onClick={handleConfirm}
       disabled={step === "signing" || step === "recording"}
-      className="rounded-doc bg-ink px-3 py-2 text-sm font-medium text-paper disabled:opacity-50"
+      className={buttonClass()}
     >
       {step === "signing" ? "Waiting for wallet…" : step === "recording" ? "Recording…" : "Confirm delivery"}
     </button>

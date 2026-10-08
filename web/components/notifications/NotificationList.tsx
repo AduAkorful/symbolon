@@ -6,6 +6,9 @@ import { useState, useTransition } from "react";
 import { postJson } from "@/lib/client/api";
 import type { FormattedNotification } from "@/lib/server/notifications";
 import { formatDateTime } from "@/lib/format";
+import { Button, LinkButton } from "@/components/ui/button";
+import { EmptyState, InlineError } from "@/components/ui/States";
+import { Lead, PageTitle } from "@/components/ui/Type";
 
 export function NotificationList({ initialItems, initialUnreadCount }: { initialItems: FormattedNotification[]; initialUnreadCount: number }) {
   const router = useRouter();
@@ -52,90 +55,42 @@ export function NotificationList({ initialItems, initialUnreadCount }: { initial
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-rule pb-4">
-        <div>
-          <h1 className="font-display text-4xl">Notifications</h1>
-          <p className="mt-1 text-sm text-graphite">
-            Notices from your businesses and your Seal. In-app is currently the active channel.
-          </p>
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4 border-b border-rule pb-6">
+        <div className="min-w-0">
+          <PageTitle>Notifications</PageTitle>
+          <Lead className="mt-3">Notices from your businesses and your Seal. They appear here; email and push delivery aren’t available yet.</Lead>
         </div>
         {unreadCount > 0 ? (
-          <button
-            onClick={handleMarkAllRead}
-            disabled={isPending}
-            className="rounded-doc border border-rule px-3 py-1.5 text-xs font-medium text-ink transition hover:border-ink/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-seal disabled:opacity-50"
-          >
-            Mark all read
-          </button>
+          <Button variant="secondary" busy={isPending} onClick={handleMarkAllRead}>Mark all as read</Button>
         ) : null}
       </div>
 
-      {problem ? (
-        <div role="alert" className="rounded-doc border border-red/30 bg-red-wash px-4 py-2.5 text-sm text-red">
-          {problem}
-        </div>
-      ) : null}
+      {problem ? <InlineError>{problem}</InlineError> : null}
 
       {items.length === 0 ? (
-        <div className="py-16 text-center">
-          <p className="font-display text-2xl text-ink">Nothing needs you.</p>
-          <p className="mt-1 text-sm text-graphite">When an invoice needs approval or an onchain settlement completes, you'll see it here.</p>
-        </div>
+        <EmptyState title="Nothing needs you">When an invoice needs approval or a payment settles on Arc, you’ll see it here.</EmptyState>
       ) : (
-        <ol className="divide-y divide-rule border-b border-rule" aria-label="Notifications list">
+        <ol className="divide-y divide-rule-soft border-y border-rule" aria-label="Notifications">
           {items.map((item) => {
             const isRead = item.readAt !== null;
             return (
-              <li
-                key={item.id}
-                className={`flex flex-col gap-2 py-4 transition sm:flex-row sm:items-start sm:justify-between ${
-                  isRead ? "opacity-75" : "bg-paper-raised/30"
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <span
-                    className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${
-                      isRead ? "bg-transparent" : "bg-seal"
-                    }`}
-                    aria-label={isRead ? "Read" : "Unread"}
-                  />
-                  <div>
-                    <h2 className="font-medium text-ink">
-                      {item.href ? (
-                        <Link href={item.href} className="hover:underline">
-                          {item.title}
-                        </Link>
-                      ) : (
-                        item.title
-                      )}
+              <li key={item.id} className={`flex flex-col gap-3 px-1 py-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6 ${isRead ? "" : "bg-paper-raised/40"}`}>
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className={`mt-2 h-2 w-2 shrink-0 rounded-full ${isRead ? "bg-transparent" : "bg-seal"}`} role="img" aria-label={isRead ? "Read" : "Unread"} />
+                  <div className="min-w-0">
+                    <h2 className={`${isRead ? "text-graphite" : "font-medium text-ink"}`}>
+                      {item.href ? <Link href={item.href} className="hover:underline">{item.title}</Link> : item.title}
                     </h2>
                     <p className="mt-0.5 text-sm text-graphite">{item.body}</p>
-                    <time
-                      dateTime={item.createdAt}
-                      className="mt-1 block font-mono text-xs text-graphite/80"
-                    >
-                      {formatDateTime(item.createdAt)}
-                    </time>
+                    <time dateTime={item.createdAt} className="mt-1 block text-sm text-graphite">{formatDateTime(item.createdAt)}</time>
                   </div>
                 </div>
 
-                <div className="ml-5 flex items-center gap-3 sm:ml-0">
-                  {item.href ? (
-                    <Link
-                      href={item.href}
-                      className="rounded-doc border border-rule px-2.5 py-1 text-xs text-graphite hover:border-ink/50 hover:text-ink"
-                    >
-                      View
-                    </Link>
-                  ) : null}
-                  <button
-                    onClick={() => handleToggleRead(item.id, isRead)}
-                    disabled={isPending}
-                    aria-label={isRead ? "Mark as unread" : "Mark as read"}
-                    className="text-xs text-graphite underline decoration-rule underline-offset-4 hover:text-ink disabled:opacity-50"
-                  >
+                <div className="ml-5 flex shrink-0 items-center gap-2 sm:ml-0">
+                  {item.href ? <LinkButton href={item.href} variant="secondary" size="sm">View</LinkButton> : null}
+                  <Button variant="quiet" size="sm" disabled={isPending} aria-label={isRead ? "Mark as unread" : "Mark as read"} onClick={() => handleToggleRead(item.id, isRead)}>
                     {isRead ? "Mark unread" : "Mark read"}
-                  </button>
+                  </Button>
                 </div>
               </li>
             );
