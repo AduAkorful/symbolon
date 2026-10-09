@@ -14,30 +14,7 @@ import {
 } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
-const chainState = vi.hoisted(() => ({
-  isRequester: vi.fn(),
-  deliveryConfirmed: vi.fn(),
-  invoiceStatus: vi.fn(),
-}));
-
-vi.mock("server-only", () => ({}));
-vi.mock("@symbolon/chain", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@symbolon/chain")>()),
-  invoiceStatus: chainState.invoiceStatus,
-  symbolonContracts: () => ({
-    lens: {
-      read: {
-        isRequester: chainState.isRequester,
-        deliveryConfirmed: chainState.deliveryConfirmed,
-      },
-    },
-    ledger: {
-      read: {
-        invoiceStatus: chainState.invoiceStatus,
-      },
-    },
-  }),
-}));
+import { chainDouble, chainState } from "./setup-shared";
 
 import { prepareDelivery, recordDelivery } from "@/lib/server/delivery";
 
@@ -47,6 +24,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  chainDouble.enabled = true;
   chainState.isRequester.mockReset();
   chainState.deliveryConfirmed.mockReset();
   chainState.invoiceStatus.mockReset();

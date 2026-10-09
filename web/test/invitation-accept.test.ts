@@ -1,19 +1,19 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { arcTestnet, getDeployment } from "@symbolon/chain";
 import { businesses, createTestDb, members, payees, seals, users, vendorInvitations, vendorVerifications } from "@symbolon/db";
 import { eq } from "drizzle-orm";
 import type { PublicClient } from "viem";
 
-vi.mock("server-only", () => ({}));
-vi.mock("@symbolon/chain", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@symbolon/chain")>()),
-  symbolonContracts: () => ({ lens: { read: { getVaultState: async () => ({ policy: { ownerThreshold: 100n } }) } } }),
-}));
+import { chainDouble, chainState } from "./setup-shared";
 
 import { acceptInvitation, createInvitation } from "@/lib/server/invitations";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => { db = await createTestDb(); });
+beforeEach(() => {
+  chainDouble.enabled = true;
+  chainState.getVaultState.mockResolvedValue({ policy: { ownerThreshold: 100n } });
+});
 
 const deployment = getDeployment(arcTestnet.id);
 const client = {} as PublicClient;

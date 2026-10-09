@@ -15,63 +15,7 @@ import {
 } from "@symbolon/db";
 import { eq } from "drizzle-orm";
 
-const chainState = vi.hoisted(() => ({
-  getBlockNumber: vi.fn(),
-  readContract: vi.fn(),
-  getVaultState: vi.fn(),
-  getBudget: vi.fn(),
-  reserveStatus: vi.fn(),
-  previewDepositData: vi.fn(),
-  subscriptionLimitRemaining: vi.fn(),
-  todayTimestamp: vi.fn(),
-  previewRedeemData: vi.fn(),
-  redemptionLimitRemaining: vi.fn(),
-  getTransactionReceipt: vi.fn(),
-  oracleLatestRoundData: vi.fn(),
-  oracleGetRoundData: vi.fn(),
-}));
-
-vi.mock("server-only", () => ({}));
-vi.mock("@symbolon/chain", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@symbolon/chain")>()),
-  symbolonContracts: () => ({
-    lens: {
-      read: {
-        getVaultState: chainState.getVaultState,
-        getBudget: chainState.getBudget,
-        reserveStatus: chainState.reserveStatus,
-      },
-    },
-    teller: {
-      read: {
-        todayTimestamp: chainState.todayTimestamp,
-        subscriptionLimitRemaining: chainState.subscriptionLimitRemaining,
-        redemptionLimitRemaining: chainState.redemptionLimitRemaining,
-        previewDepositData: chainState.previewDepositData,
-        previewRedeemData: chainState.previewRedeemData,
-      },
-    },
-  }),
-  previewSubscribe: async (_c: any, _v: any, assets: bigint) => ({
-    out: assets * 95n / 100n,
-    fee: 0n,
-    price: 1_000_000_000_000_000_000n,
-    limitRemaining: 100_000_000_000n,
-  }),
-  previewRedeem: async (_c: any, _v: any, shares: bigint) => ({
-    out: shares * 105n / 100n,
-    fee: 0n,
-    price: 1_000_000_000_000_000_000n,
-    limitRemaining: 100_000_000_000n,
-  }),
-  reserveYield: async () => ({
-    bps: 320,
-    fromPrice: 1_000_000_000_000_000_000n,
-    toPrice: 1_032_000_000_000_000_000n,
-    fromTime: 1000n,
-    toTime: 1000n + 365n * 86400n,
-  }),
-}));
+import { chainDouble, chainState } from "./setup-shared";
 
 import {
   loadTreasury,
@@ -121,8 +65,28 @@ describe("Treasury Service", () => {
   let mockClient: PublicClient;
 
   beforeEach(() => {
+    chainDouble.enabled = true;
     vi.clearAllMocks();
 
+    chainState.previewSubscribe.mockImplementation(async (_c: unknown, _v: unknown, assets: bigint) => ({
+      out: assets * 95n / 100n,
+      fee: 0n,
+      price: 1_000_000_000_000_000_000n,
+      limitRemaining: 100_000_000_000n,
+    }));
+    chainState.previewRedeem.mockImplementation(async (_c: unknown, _v: unknown, shares: bigint) => ({
+      out: shares * 105n / 100n,
+      fee: 0n,
+      price: 1_000_000_000_000_000_000n,
+      limitRemaining: 100_000_000_000n,
+    }));
+    chainState.reserveYield.mockResolvedValue({
+      bps: 320,
+      fromPrice: 1_000_000_000_000_000_000n,
+      toPrice: 1_032_000_000_000_000_000n,
+      fromTime: 1000n,
+      toTime: 1000n + 365n * 86400n,
+    });
     chainState.getBlockNumber.mockResolvedValue(64_060_500n);
     chainState.readContract.mockImplementation(async ({ functionName, address }: any) => {
       if (functionName === "decimals") return 6;

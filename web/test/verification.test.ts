@@ -1,19 +1,19 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { arcTestnet, getDeployment } from "@symbolon/chain";
 import { createTestDb, businesses, invoices, members, payees, seals, users, vendorVerifications } from "@symbolon/db";
 import { eq } from "drizzle-orm";
 
-vi.mock("server-only", () => ({}));
-vi.mock("@symbolon/chain", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@symbolon/chain")>()),
-  symbolonContracts: () => ({ lens: { read: { getVaultState: async () => ({ policy: { ownerThreshold: 100n } }) } } }),
-}));
+import { chainDouble, chainState } from "./setup-shared";
 
 import { confirmSecond, showCodeToSeal, startCodeVerification, submitCode } from "@/lib/server/verification";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 const oldKey = process.env.VERIFICATION_CODE_KEY;
 beforeAll(async () => { process.env.VERIFICATION_CODE_KEY = "ab".repeat(32); db = await createTestDb(); });
+beforeEach(() => {
+  chainDouble.enabled = true;
+  chainState.getVaultState.mockResolvedValue({ policy: { ownerThreshold: 100n } });
+});
 afterAll(() => { if (oldKey === undefined) delete process.env.VERIFICATION_CODE_KEY; else process.env.VERIFICATION_CODE_KEY = oldKey; });
 
 const address = (n: number) => `0x${n.toString(16).padStart(40, "0")}`;

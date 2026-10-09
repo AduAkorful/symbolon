@@ -16,27 +16,7 @@ import {
 } from "@symbolon/db";
 import { sealDomain, signSealMessage, typedData } from "@symbolon/seal";
 
-vi.mock("server-only", () => ({}));
-
-const chainState = vi.hoisted(() => ({
-  getPayee: vi.fn(),
-  waitForTransactionReceipt: vi.fn(),
-  getTransaction: vi.fn(),
-}));
-
-vi.mock("@symbolon/chain", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@symbolon/chain")>();
-  return {
-    ...actual,
-    symbolonContracts: () => ({
-      lens: {
-        read: {
-          getPayee: chainState.getPayee,
-        },
-      },
-    }),
-  };
-});
+import { chainDouble, chainState } from "./setup-shared";
 
 import { and, eq } from "drizzle-orm";
 
@@ -70,6 +50,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  chainDouble.enabled = true;
   chainState.getPayee.mockReset().mockResolvedValue({
     exists: true,
     lastChangeNonce: 100n,

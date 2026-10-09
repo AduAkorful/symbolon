@@ -1,12 +1,8 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { arcTestnet, getDeployment } from "@symbolon/chain";
 import { createTestDb, businesses, members, payees, seals, users, vendorVerifications } from "@symbolon/db";
 
-vi.mock("server-only", () => ({}));
-vi.mock("@symbolon/chain", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@symbolon/chain")>()),
-  symbolonContracts: () => ({ lens: { read: { getPayee: async () => { throw new Error("not expected without a Vault"); } } } }),
-}));
+import { chainDouble, chainState } from "./setup-shared";
 
 import { vendorDetail } from "@/lib/server/vendors";
 import { blockSeal } from "@/lib/server/inbox";
@@ -14,6 +10,10 @@ import { AuthError } from "@/lib/server/errors";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => { db = await createTestDb(); });
+beforeEach(() => {
+  chainDouble.enabled = true;
+  chainState.getPayee.mockRejectedValue(new Error("not expected without a Vault"));
+});
 const address = (n: number) => "0x" + n.toString(16).padStart(40, "0");
 
 async function business(name: string, role: "owner" | "approver" = "owner") {

@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PublicClient } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { arcTestnet, getDeployment } from "@symbolon/chain";
@@ -22,24 +22,7 @@ import {
   typedData,
 } from "@symbolon/seal";
 
-vi.mock("server-only", () => ({}));
-
-vi.mock("@symbolon/chain", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@symbolon/chain")>();
-  return {
-    ...actual,
-    symbolonContracts: () => ({
-      ledger: {
-        read: {
-          status: vi.fn().mockResolvedValue({
-            credited: 0n,
-            cancelled: false,
-          }),
-        },
-      },
-    }),
-  };
-});
+import { chainDouble, chainState } from "./setup-shared";
 
 import { AuthError } from "@/lib/server/errors";
 import {
@@ -65,6 +48,10 @@ const randAddr = () => privateKeyToAccount(generatePrivateKey()).address.toLower
 
 beforeAll(async () => {
   db = await createTestDb();
+});
+beforeEach(() => {
+  chainDouble.enabled = true;
+  chainState.ledgerStatus.mockResolvedValue({ credited: 0n, cancelled: false });
 });
 
 async function setupTestScenario() {

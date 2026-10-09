@@ -5,23 +5,7 @@ import { poRef as computePoRef } from "@symbolon/seal";
 import { eq } from "drizzle-orm";
 import { encodeAbiParameters, encodeEventTopics, getAddress, type Hex, type PublicClient } from "viem";
 
-const chainState = vi.hoisted(() => ({
-  getPurchaseOrder: vi.fn(),
-  getVaultState: vi.fn(),
-}));
-
-vi.mock("server-only", () => ({}));
-vi.mock("@symbolon/chain", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@symbolon/chain")>()),
-  symbolonContracts: () => ({
-    lens: {
-      read: {
-        getPurchaseOrder: chainState.getPurchaseOrder,
-        getVaultState: chainState.getVaultState,
-      },
-    },
-  }),
-}));
+import { chainDouble, chainState } from "./setup-shared";
 
 import { listOrders, prepareOpenPo, recordOpenPo, prepareClosePo, recordClosePo } from "@/lib/server/orders";
 import { AuthError } from "@/lib/server/errors";
@@ -32,6 +16,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  chainDouble.enabled = true;
   chainState.getPurchaseOrder.mockReset();
   chainState.getVaultState.mockReset();
 });

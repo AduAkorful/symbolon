@@ -7,19 +7,7 @@ import { symbolonVaultAbi } from "@symbolon/chain";
 
 // Plan 05zb A2: the Treasury's "Change reserve policy" dialog prepares an owner-signed setReservePolicy call.
 
-const chainState = vi.hoisted(() => ({
-  getVaultState: vi.fn(),
-  queuedChangeEta: vi.fn(),
-  reserveStatus: vi.fn(),
-}));
-
-vi.mock("server-only", () => ({}));
-vi.mock("@symbolon/chain", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@symbolon/chain")>()),
-  symbolonContracts: () => ({
-    lens: { read: { getVaultState: chainState.getVaultState, queuedChangeEta: chainState.queuedChangeEta, reserveStatus: chainState.reserveStatus } },
-  }),
-}));
+import { chainDouble, chainState } from "./setup-shared";
 
 import { percentToBps, prepareReservePolicy } from "@/lib/server/reserve-policy";
 import { AuthError } from "@/lib/server/errors";
@@ -29,6 +17,7 @@ beforeAll(async () => {
   db = await createTestDb();
 });
 beforeEach(() => {
+  chainDouble.enabled = true;
   chainState.getVaultState.mockReset();
   chainState.queuedChangeEta.mockReset();
   chainState.reserveStatus.mockReset();

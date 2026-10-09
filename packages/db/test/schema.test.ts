@@ -41,7 +41,25 @@ describe("schema", () => {
 
   it("applies every migration to an empty database", async () => {
     const tables = await db.execute(sql`select count(*)::int as n from information_schema.tables where table_schema = 'public'`);
-    expect((tables.rows[0] as { n: number }).n).toBeGreaterThanOrEqual(15);
+    expect((tables as { rows: { n: number }[] }).rows[0]!.n).toBeGreaterThanOrEqual(15);
+  });
+
+  it("returns a fresh empty database on the next createTestDb, without remigrating", async () => {
+    await db.insert(users).values({ email: "reuse@test.example" });
+    const again = await createTestDb();
+    expect(await again.select().from(users)).toEqual([]);
+  });
+
+  it("reloads from the migrated snapshot after the client is closed", async () => {
+    await db.insert(users).values({ email: "closed@test.example" });
+    await (db as unknown as { $client: { close: () => Promise<void> } }).$client.close();
+    const again = await createTestDb();
+    expect(await again.select().from(users)).toEqual([]);
+    db = again;
+  });
+
+  it("keeps that snapshot on the process so a later isolated file can load it", async () => {
+    expect((globalThis as { __symbolonPgliteSnapshot?: Blob | File }).__symbolonPgliteSnapshot).toBeTruthy();
   });
 
   it("stores amounts exactly as bigint, far beyond float precision", async () => {

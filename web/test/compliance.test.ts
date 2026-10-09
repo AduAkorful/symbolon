@@ -5,25 +5,7 @@ import { Risk } from "@symbolon/steward";
 import { and, eq } from "drizzle-orm";
 import { encodeAbiParameters, encodeEventTopics, getAddress, type Hex, type PublicClient } from "viem";
 
-const chainState = vi.hoisted(() => ({
-  getPayee: vi.fn(),
-  getVaultState: vi.fn(),
-  getBlock: vi.fn(),
-}));
-
-vi.mock("server-only", () => ({}));
-vi.mock("@symbolon/chain", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@symbolon/chain")>()),
-  symbolonContracts: () => ({
-    lens: {
-      read: {
-        getPayee: chainState.getPayee,
-        getVaultState: chainState.getVaultState,
-      },
-    },
-    ledger: { read: { localDomain: async () => 26 } },
-  }),
-}));
+import { chainDouble, chainState } from "./setup-shared";
 
 import {
   complianceReport,
@@ -41,6 +23,7 @@ beforeAll(async () => {
   db = await createTestDb();
 });
 beforeEach(() => {
+  chainDouble.enabled = true;
   chainState.getPayee.mockReset();
   chainState.getVaultState.mockReset();
   chainState.getBlock.mockReset();

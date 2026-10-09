@@ -14,39 +14,7 @@ import {
 } from "@symbolon/db";
 import { completeTotals, encodeSealedInvoice, sealDomain, sealInvoice } from "@symbolon/seal";
 
-vi.mock("server-only", () => ({}));
-
-const chainState = vi.hoisted(() => ({
-  isApprover: vi.fn(),
-  getPolicy: vi.fn(),
-  getVaultState: vi.fn(),
-  readContract: vi.fn(),
-  call: vi.fn(),
-  getTransactionReceipt: vi.fn(),
-}));
-
-vi.mock("@symbolon/chain", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@symbolon/chain")>();
-  return {
-    ...actual,
-    symbolonContracts: () => ({
-      lens: {
-        read: {
-          isApprover: chainState.isApprover,
-          getPolicy: chainState.getPolicy,
-          getVaultState: chainState.getVaultState,
-        },
-      },
-      ledger: {
-        read: {
-          status: vi.fn().mockResolvedValue({ seen: true, cancelled: false }),
-          remaining: vi.fn().mockResolvedValue(100_000_000n),
-          invoiceStatus: vi.fn().mockResolvedValue({ paid: 0n, remaining: 100_000_000n, status: 1 }),
-        },
-      },
-    }),
-  };
-});
+import { chainDouble, chainState } from "./setup-shared";
 
 import {
   listApprovals,
@@ -65,15 +33,18 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
-  chainState.isApprover.mockReset().mockResolvedValue(true);
-  chainState.getPolicy.mockReset().mockResolvedValue({
+  chainDouble.enabled = true;
+  chainState.isApprover.mockResolvedValue(true);
+  chainState.getPolicy.mockResolvedValue({
     autoPayLimit: 50_000_000n,
     ownerThreshold: 500_000_000n,
     screeningMaxAge: 0n,
     paused: false,
   });
-  chainState.call.mockReset().mockResolvedValue({ data: "0x" });
-  chainState.getTransactionReceipt.mockReset();
+  chainState.call.mockResolvedValue({ data: "0x" });
+  chainState.ledgerStatus.mockResolvedValue({ seen: true, cancelled: false });
+  chainState.remaining.mockResolvedValue(100_000_000n);
+  chainState.invoiceStatus.mockResolvedValue({ paid: 0n, remaining: 100_000_000n, status: 1 });
 });
 
 const cfg = {

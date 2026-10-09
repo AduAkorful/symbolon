@@ -3,7 +3,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["test/**/*.test.ts"],
-    // each test boots an in-process Postgres (PGlite) and applies every migration
+    // one PGlite, emptied between tests (this package has a single test file)
     testTimeout: 30_000,
     hookTimeout: 60_000,
   },

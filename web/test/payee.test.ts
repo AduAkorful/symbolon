@@ -4,20 +4,14 @@ import { createTestDb, businesses, decisions, members, payees, seals, users } fr
 import { eq } from "drizzle-orm";
 import { decodeFunctionData, encodeAbiParameters, encodeEventTopics, getAddress, type Hex, type PublicClient } from "viem";
 
-const chainState = vi.hoisted(() => ({ getPayee: vi.fn(), getVaultState: vi.fn() }));
-
-vi.mock("server-only", () => ({}));
-vi.mock("@symbolon/chain", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@symbolon/chain")>()),
-  symbolonContracts: () => ({ lens: { read: { getPayee: chainState.getPayee, getVaultState: chainState.getVaultState } }, ledger: { read: { localDomain: async () => 26 } } }),
-}));
+import { chainDouble, chainState } from "./setup-shared";
 
 import { preparePayee, recordPayee } from "@/lib/server/payee";
 import { AuthError } from "@/lib/server/errors";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => { db = await createTestDb(); });
-beforeEach(() => { chainState.getPayee.mockReset(); chainState.getVaultState.mockReset(); });
+beforeEach(() => { chainDouble.enabled = true; chainState.getPayee.mockReset(); chainState.getVaultState.mockReset(); chainState.localDomain.mockResolvedValue(26); });
 
 const address = (n: number) => "0x" + n.toString(16).padStart(40, "0");
 const hash = (n: number) => ("0x" + n.toString(16).padStart(64, "0")) as Hex;

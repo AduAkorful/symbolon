@@ -4,32 +4,7 @@ import { businesses, createTestDb, decisions, members, queuedChanges, users } fr
 import { eq } from "drizzle-orm";
 import { encodeAbiParameters, encodeEventTopics, getAddress, keccak256, type Hex, type PublicClient } from "viem";
 
-const chainState = vi.hoisted(() => ({
-  getVaultState: vi.fn(),
-  queuedChangeEta: vi.fn(),
-  getBudget: vi.fn(),
-  getPayee: vi.fn(),
-  reserveStatus: vi.fn(),
-  getBlock: vi.fn(),
-  getTransactionReceipt: vi.fn(),
-  getTransaction: vi.fn(),
-}));
-
-vi.mock("server-only", () => ({}));
-vi.mock("@symbolon/chain", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@symbolon/chain")>()),
-  symbolonContracts: () => ({
-    lens: {
-      read: {
-        getVaultState: chainState.getVaultState,
-        queuedChangeEta: chainState.queuedChangeEta,
-        getBudget: chainState.getBudget,
-        getPayee: chainState.getPayee,
-        reserveStatus: chainState.reserveStatus,
-      },
-    },
-  }),
-}));
+import { chainDouble, chainState } from "./setup-shared";
 
 import {
   CHANGE_KINDS,
@@ -61,6 +36,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  chainDouble.enabled = true;
   chainState.getVaultState.mockReset();
   chainState.queuedChangeEta.mockReset();
   chainState.getBudget.mockReset();
