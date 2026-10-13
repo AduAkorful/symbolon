@@ -27,11 +27,18 @@ export async function payoutOptions(db: Database, client: PublicClient, deployme
       if (checked.ok && checked.invoice) options.set(`${checked.invoice.payoutAddress.toLowerCase()}:${checked.invoice.payoutDomain}`, { address: checked.invoice.payoutAddress, domain: checked.invoice.payoutDomain, source: "signed invoice" });
     } catch { /* Invalid historical uploads are not trusted payout choices. */ }
   }
-  if (!options.size && vendor.payoutAddress) {
-    // Only when the Seal has signed no invoice to this business: its configured payout, on the ledger's local domain (plan 05j, B14).
+  if (!options.size) {
+    // Only when the Seal has signed no invoice to this business: where its invoices pay by default, on the ledger's local domain
+    // (plan 05j, B14). A Seal with no payout setting pays at its own wallet: that is what a new invoice is signed with (`compose`),
+    // and the settings screen stores "own wallet" as no setting, so it is a real payout, not a missing one (QA retest 3c).
     const c = symbolonContracts(client, deployment);
     const localDomain = await c.ledger.read.localDomain();
-    options.set(`${vendor.payoutAddress}:${localDomain}`, { address: vendor.payoutAddress, domain: localDomain, source: "Seal payout setting · local domain" });
+    const payout = vendor.payoutAddress ?? vendor.address;
+    options.set(`${payout}:${localDomain}`, {
+      address: payout,
+      domain: localDomain,
+      source: vendor.payoutAddress ? "Seal payout setting · local domain" : "Seal's own wallet, its default payout · local domain",
+    });
   }
   if (!options.size) throw new AuthError(409, "No payout address is available. The vendor must sign an invoice or set a payout in their Seal settings.");
   const [invitation] = await db.select({ terms: vendorInvitations.terms }).from(vendorInvitations).where(and(eq(vendorInvitations.businessId, businessId), eq(vendorInvitations.acceptedSeal, seal.toLowerCase()))).orderBy(desc(vendorInvitations.acceptedAt)).limit(1);

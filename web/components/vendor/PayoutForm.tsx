@@ -14,9 +14,13 @@ export function PayoutForm({ initial, sealAddress }: { initial: string | null; s
   const [value, setValue] = useState(initial ?? "");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  // a half-typed address isn't an error yet: it is said once the field is left or the address is as long as one can be
+  const [left, setLeft] = useState(false);
 
   const typed = value.trim();
   const problem = typed === "" ? null : !isAddress(typed) ? "That isn't a valid address." : getAddress(typed) === zeroAddress ? "That is the empty address; nothing can be paid there." : null;
+
+  const showProblem = problem !== null && (left || typed.length >= 42);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -36,8 +40,8 @@ export function PayoutForm({ initial, sealAddress }: { initial: string | null; s
 
   return (
     <form onSubmit={save} className="mt-4 max-w-xl space-y-4">
-      <Field label="Payout address on Arc" {...(problem ? { error: problem } : {})} hint="Leave it empty to be paid at your Seal’s wallet. Invoices you have already signed keep the address they were signed with.">
-        {(a) => <input {...a} className={`${controlClass} font-mono`} value={value} onChange={(e) => setValue(e.target.value)} placeholder={sealAddress} spellCheck={false} />}
+      <Field label="Payout address on Arc" {...(showProblem ? { error: problem } : {})} hint="Leave it empty to be paid at your Seal’s wallet. Invoices you have already signed keep the address they were signed with.">
+        {(a) => <input {...a} className={`${controlClass} font-mono`} value={value} onChange={(e) => { setValue(e.target.value); setLeft(false); }} onBlur={() => setLeft(true)} placeholder={sealAddress} spellCheck={false} />}
       </Field>
       {note ? (note.ok ? <p role="status" className="text-sm text-ok">{note.text}</p> : <InlineError>{note.text}</InlineError>) : null}
       <Button type="submit" busy={busy} disabled={problem !== null}>{busy ? "Saving…" : "Save"}</Button>

@@ -133,6 +133,20 @@ describe("preparing addPayee", () => {
     expect(decoded.args?.[3]).toMatchObject({ monthlyCap: 500n });
   });
 
+  it("a Seal with no payout setting is paid at its own wallet, which is what its invoices default to (QA retest 3c)", async () => {
+    const f = await fixture();
+    const [vendorUser] = await db.insert(users).values({ email: "payee-nosetting-" + crypto.randomUUID() + "@example.test" }).returning();
+    const own = address(4);
+    await db.insert(seals).values({ address: own, userId: vendorUser!.id, handle: "own-" + crypto.randomUUID().slice(0, 8), displayName: "Own Wallet Vendor" }).onConflictDoNothing();
+    await db.insert(payees).values({ businessId: f.business.id, seal: own, status: "verified", verificationMethod: "invitation", verifiedBy: f.owner.id, verifiedAt: new Date() });
+    chainState.getVaultState.mockResolvedValue({ policy: { ownerThreshold: 500n } });
+    chainState.getPayee.mockResolvedValue({ exists: false });
+    const call = await preparePayee(db, readClient, deployment, f.owner, f.business.id, own, { payout: own, domain: 26, requirePo: false, requireDelivery: false });
+    expect(decodeFunctionData({ abi: symbolonVaultAbi, data: call.data as Hex }).functionName).toBe("addPayee");
+    // a different address the Seal never gave is still refused
+    await expect(preparePayee(db, readClient, deployment, f.owner, f.business.id, own, { payout: address(9), domain: 26, requirePo: false, requireDelivery: false })).rejects.toBeInstanceOf(AuthError);
+  });
+
   it("never defaults a payee's cap above the operating budget's own cap (SYM-36)", async () => {
     const { owner, business } = await verifiedVendor();
     chainState.getPayee.mockResolvedValue({ exists: false });

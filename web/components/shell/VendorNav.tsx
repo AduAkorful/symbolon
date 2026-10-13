@@ -19,8 +19,8 @@ const isActive = (path: string, href: string) => (href === "/vendor" ? path === 
 export function VendorNav() {
   const path = usePathname();
   return (
-    <nav aria-label="Vendor" className="order-3 w-full overflow-x-auto lg:order-none lg:w-auto">
-      <ul className="flex gap-1">
+    <nav aria-label="Vendor" className="order-3 w-full lg:order-none lg:w-auto">
+      <ul className="flex flex-wrap gap-1">
         {nav.map((n) => {
           const active = isActive(path, n.href);
           return (
