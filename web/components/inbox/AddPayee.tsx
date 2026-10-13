@@ -70,6 +70,8 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
   // while a transaction is being sent or its receipt recorded the dialog stays; reading the payout choices can be abandoned
   const [sending, setSending] = useState(false);
   const [asOf, setAsOf] = useState(0);
+  // the options read finished (with choices or with a reason there are none): the spinner shows only until then
+  const [loaded, setLoaded] = useState(false);
   // what the Vault says once the transaction is confirmed: when this payee can first be paid
   const [added, setAdded] = useState<{ activeAt: string; txHash: string } | null>(null);
   const router = useRouter();
@@ -78,7 +80,7 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
     setBusy(true); setError("");
     try { const result = await postJson<ChoiceResult>(path, { action: "options", seal }); setAsOf(Date.now()); setOptions(result.options); setSelected(result.options[0] ? `${result.options[0].address}:${result.options[0].domain}` : ""); setSetup(result.setup); setCap(result.defaults.monthlyCap ? moneyInput(result.defaults.monthlyCap, 6) : ""); setRequirePo(result.defaults.requirePo); setRequireDelivery(result.defaults.requireDelivery); }
     catch (e) { setError(e instanceof Error ? e.message : "Couldn't load payout choices."); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setLoaded(true); }
   }
   async function add() {
     const [payout, domainText] = selected.split(":");
@@ -107,8 +109,19 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
               {error}
             </InlineError>
           ) : null}
-          {!options.length ? (
+          {!options.length && !loaded ? (
             <InlineLoading>Reading the vendor’s signed payout addresses…</InlineLoading>
+          ) : !options.length ? (
+            <div className="space-y-4">
+              <p className="text-graphite">
+                This vendor hasn’t given a payout address yet, so there is nothing to pay. Ask them to set where they’re paid in their Symbolon settings, or to
+                sign an invoice to you. Then open this again.
+              </p>
+              <Overlay.Footer>
+                <Button variant="secondary" onClick={() => setOpen(false)}>Close</Button>
+                <Button onClick={() => { setLoaded(false); void loadOptions(); }}>Check again</Button>
+              </Overlay.Footer>
+            </div>
           ) : (
             <div className="space-y-4">
               <Field label="Payout address signed by this vendor">

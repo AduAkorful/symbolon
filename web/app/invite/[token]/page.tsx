@@ -21,6 +21,6 @@ export default async function InvitationPage({ params }: { params: Promise<{ tok
     <PageTitle className="mt-8">{invite.vendorName}</PageTitle>
     <p className="mt-4 text-graphite">{invite.businessName} invited this vendor to connect its Seal. The business says it will send this link through a channel it already trusts.</p>
     <p className="mt-6 border-l-2 border-rule pl-4 text-sm">This link is a secret and can be used once. Only accept if you expected this invitation from {invite.businessName}.</p>
-    {session?.user ? hasSeal ? <AcceptInvitation token={token} /> : <Link className={buttonClass({ className: "mt-8" })} href={`/vendor/start?next=${encodeURIComponent(`/invite/${token}`)}`}>Create your Seal to continue</Link> : <Link className={buttonClass({ className: "mt-8" })} href={`/signin?next=${encodeURIComponent(`/invite/${token}`)}`}>Sign in to continue</Link>}
+    {session?.user ? hasSeal ? <AcceptInvitation token={token} businessName={invite.businessName} /> : <Link className={buttonClass({ className: "mt-8" })} href={`/vendor/start?next=${encodeURIComponent(`/invite/${token}`)}`}>Create your Seal to continue</Link> : <Link className={buttonClass({ className: "mt-8" })} href={`/signin?next=${encodeURIComponent(`/invite/${token}`)}`}>Sign in to continue</Link>}
   </main>;
 }
