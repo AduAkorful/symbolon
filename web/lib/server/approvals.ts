@@ -48,6 +48,7 @@ import { appendAppDecision } from "./app-decisions";
 import { ensureVaultBlock, type ChainSettings } from "./business";
 import { summarizeDecision } from "./decision-text";
 import { AuthError } from "./errors";
+import { awaitReceipt } from "./tx-receipt";
 import { evidenceFor, type EvidenceRow } from "./match-view";
 import type { SessionUser } from "./session";
 import { readPaymentBudget, readPaymentLedger, verifyPaymentDocument } from "./payment-ledger";
@@ -761,12 +762,7 @@ export async function recordPayNow(
   const userWallet = callerUser?.wallet ? getAddress(callerUser.wallet) : null;
   if (!userWallet) throw new AuthError(400, "Sign-in wallet required to record payments.");
 
-  let receipt;
-  try {
-    receipt = await client.getTransactionReceipt({ hash: txHash });
-  } catch {
-    throw new AuthError(409, "That transaction isn't confirmed yet. Try again shortly.");
-  }
+  const receipt = await awaitReceipt(client, txHash);
 
   if (receipt.status !== "success" || !receipt.to || getAddress(receipt.to) !== vault) {
     throw new AuthError(409, "That successful transaction was not sent to this business's Vault.");

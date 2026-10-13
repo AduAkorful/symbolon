@@ -383,6 +383,7 @@ export function TreasuryView({
         <WithdrawModal
           businessId={businessId}
           signer={signer}
+          explorer={explorer}
           onClose={() => setActiveModal(null)}
           onSuccess={(txHash) => {
             setActiveModal(null);
@@ -423,6 +424,7 @@ export function TreasuryView({
         <SubscribeModal
           businessId={businessId}
           signer={signer}
+          explorer={explorer}
           onClose={() => setActiveModal(null)}
           onSuccess={(txHash) => {
             setActiveModal(null);
@@ -436,6 +438,7 @@ export function TreasuryView({
         <RedeemModal
           businessId={businessId}
           signer={signer}
+          explorer={explorer}
           onClose={() => setActiveModal(null)}
           onSuccess={(txHash) => {
             setActiveModal(null);

@@ -12,7 +12,8 @@ import { controlClass, Field } from "@/components/ui/Field";
 import { Segmented } from "@/components/ui/Segmented";
 import { InlineError } from "@/components/ui/States";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
-import { postJson } from "@/lib/client/api";
+import { postJson, postRecord } from "@/lib/client/api";
+import { SentTransactionNotice, useSentTransaction } from "@/components/wallet/useSentTransaction";
 import { getConversionWallet } from "@/lib/client/conversion-wallet";
 import { ConversionFlow, TransferNotSubmittedError, quoteOutput, observeSwapReceipt, confirmFundingReceipt, type ConversionRecovery } from "@/lib/client/conversion-flow";
 import { recordQueuedChange } from "@/lib/client/queued-actions";
@@ -29,11 +30,13 @@ const TOKENS = [
 export function WithdrawModal({
   businessId,
   signer,
+  explorer,
   onClose,
   onSuccess,
 }: {
   businessId: string;
   signer: SignerPlan;
+  explorer: string;
   onClose: () => void;
   onSuccess: (txHash: string) => void;
 }) {
@@ -43,6 +46,7 @@ export function WithdrawModal({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const getProviders = useWalletProviders();
+  const tx = useSentTransaction();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -61,11 +65,11 @@ export function WithdrawModal({
       });
 
       const providers = await getProviders();
-      const txHash = await sendWithWallet(providers, signer, { to: prep.to, data: prep.data });
-
-      await postJson(`/api/business/${businessId}/treasury`, { action: "record-withdraw", txHash, reason });
-
-      onSuccess(txHash);
+      await tx.run({
+        send: () => sendWithWallet(providers, signer, { to: prep.to, data: prep.data }),
+        record: (hash) => postRecord(`/api/business/${businessId}/treasury`, { action: "record-withdraw", txHash: hash, reason }),
+        onDone: (_result, hash) => onSuccess(hash),
+      });
     } catch (e: any) {
       setErr(e.message || "Withdrawal failed");
     } finally {
@@ -93,9 +97,11 @@ export function WithdrawModal({
           {(a) => <input {...a} type="text" required placeholder="Manual payment checked by phone" value={reason} onChange={(e) => setReason(e.target.value)} className={controlClass} />}
         </Field>
 
+        <SentTransactionNotice tx={tx} explorer={explorer} />
+
         <Overlay.Footer>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button type="submit" busy={busy}>{busy ? "Signing…" : "Sign and withdraw"}</Button>
+          <Button variant="secondary" onClick={onClose}>{tx.locked ? "Close" : "Cancel"}</Button>
+          <Button type="submit" busy={busy || tx.busy} disabled={tx.locked}>{busy || tx.busy ? "Signing…" : "Sign and withdraw"}</Button>
         </Overlay.Footer>
       </form>
     </Overlay>
@@ -243,7 +249,7 @@ export function ConvertModal({
           if (!submitted) throw new TransferNotSubmittedError(error instanceof Error ? error.message : "Funding was not submitted.");
           throw error;
         }
-      }, async (swapTxHash, transferTxHash) => postJson(`/api/business/${businessId}/treasury`, { action: "record-conversion", swapTxHash, transferTxHash }), async (hash, amountRaw, onReceipt) => {
+      }, async (swapTxHash, transferTxHash) => postRecord(`/api/business/${businessId}/treasury`, { action: "record-conversion", swapTxHash, transferTxHash }), async (hash, amountRaw, onReceipt) => {
         const { client, owner, deployment } = await walletContext();
         return confirmFundingReceipt(client, deployment.tokens.eurc, owner, getAddress(vault), BigInt(amountRaw), hash, onReceipt);
       });
@@ -320,11 +326,13 @@ export function ConvertModal({
 export function SubscribeModal({
   businessId,
   signer,
+  explorer,
   onClose,
   onSuccess,
 }: {
   businessId: string;
   signer: SignerPlan;
+  explorer: string;
   onClose: () => void;
   onSuccess: (txHash: string) => void;
 }) {
@@ -332,6 +340,7 @@ export function SubscribeModal({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const getProviders = useWalletProviders();
+  const tx = useSentTransaction();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -343,11 +352,11 @@ export function SubscribeModal({
       const prep = await postJson<{ to: string; data: string }>(`/api/business/${businessId}/treasury`, { action: "prepare-subscribe", assets });
 
       const providers = await getProviders();
-      const txHash = await sendWithWallet(providers, signer, { to: prep.to, data: prep.data });
-
-      await postJson(`/api/business/${businessId}/treasury`, { action: "record-reserve", txHash });
-
-      onSuccess(txHash);
+      await tx.run({
+        send: () => sendWithWallet(providers, signer, { to: prep.to, data: prep.data }),
+        record: (hash) => postRecord(`/api/business/${businessId}/treasury`, { action: "record-reserve", txHash: hash }),
+        onDone: (_result, hash) => onSuccess(hash),
+      });
     } catch (e: any) {
       setErr(e.message || "Subscription failed");
     } finally {
@@ -364,9 +373,11 @@ export function SubscribeModal({
           {(a) => <input {...a} type="text" inputMode="decimal" required placeholder="1000" value={assets} onChange={(e) => setAssets(e.target.value)} className={controlClass} />}
         </Field>
 
+        <SentTransactionNotice tx={tx} explorer={explorer} />
+
         <Overlay.Footer>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button type="submit" busy={busy}>{busy ? "Moving…" : "Move to USYC"}</Button>
+          <Button variant="secondary" onClick={onClose}>{tx.locked ? "Close" : "Cancel"}</Button>
+          <Button type="submit" busy={busy || tx.busy} disabled={tx.locked}>{busy || tx.busy ? "Moving…" : "Move to USYC"}</Button>
         </Overlay.Footer>
       </form>
     </Overlay>
@@ -376,11 +387,13 @@ export function SubscribeModal({
 export function RedeemModal({
   businessId,
   signer,
+  explorer,
   onClose,
   onSuccess,
 }: {
   businessId: string;
   signer: SignerPlan;
+  explorer: string;
   onClose: () => void;
   onSuccess: (txHash: string) => void;
 }) {
@@ -388,6 +401,7 @@ export function RedeemModal({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const getProviders = useWalletProviders();
+  const tx = useSentTransaction();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -399,11 +413,11 @@ export function RedeemModal({
       const prep = await postJson<{ to: string; data: string }>(`/api/business/${businessId}/treasury`, { action: "prepare-redeem", shares });
 
       const providers = await getProviders();
-      const txHash = await sendWithWallet(providers, signer, { to: prep.to, data: prep.data });
-
-      await postJson(`/api/business/${businessId}/treasury`, { action: "record-reserve", txHash });
-
-      onSuccess(txHash);
+      await tx.run({
+        send: () => sendWithWallet(providers, signer, { to: prep.to, data: prep.data }),
+        record: (hash) => postRecord(`/api/business/${businessId}/treasury`, { action: "record-reserve", txHash: hash }),
+        onDone: (_result, hash) => onSuccess(hash),
+      });
     } catch (e: any) {
       setErr(e.message || "Redemption failed");
     } finally {
@@ -420,9 +434,11 @@ export function RedeemModal({
           {(a) => <input {...a} type="text" inputMode="decimal" required placeholder="500" value={shares} onChange={(e) => setShares(e.target.value)} className={controlClass} />}
         </Field>
 
+        <SentTransactionNotice tx={tx} explorer={explorer} />
+
         <Overlay.Footer>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button type="submit" busy={busy}>{busy ? "Redeeming…" : "Redeem"}</Button>
+          <Button variant="secondary" onClick={onClose}>{tx.locked ? "Close" : "Cancel"}</Button>
+          <Button type="submit" busy={busy || tx.busy} disabled={tx.locked}>{busy || tx.busy ? "Redeeming…" : "Redeem"}</Button>
         </Overlay.Footer>
       </form>
     </Overlay>

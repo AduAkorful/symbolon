@@ -5,18 +5,13 @@ import { useWallets } from "@privy-io/react-auth";
 import type { Hex } from "viem";
 import { buttonClass } from "@/components/ui/button";
 import { controlClass } from "@/components/ui/Field";
+import { postJson, postRecord } from "@/lib/client/api";
+import { SentTransactionNotice, useSentTransaction, type SentTransaction } from "@/components/wallet/useSentTransaction";
 
 type Step = "idle" | "signing" | "recording" | "done" | "error";
 
 async function post(url: string, body: unknown) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error((json as { error?: string }).error ?? "Request failed.");
-  return json;
+  return postJson<Record<string, any>>(url, body);
 }
 
 /** Confirm or reject the delivery of an invoice. Shown on the invoice detail page when the Vault requires delivery. */
@@ -28,14 +23,17 @@ export function DeliveryActions({
   currentReason,
   /** The user's current wallet address, from the session (server-rendered) */
   userWallet,
+  explorer = "https://explorer.testnet.arc.io",
 }: {
   businessId: string;
   fingerprint: string;
   currentState?: string | null;
   currentReason?: string | null;
   userWallet?: string | null;
+  explorer?: string;
 }) {
   const { wallets } = useWallets();
+  const tx = useSentTransaction();
   const [step, setStep] = useState<Step>("idle");
   const [msg, setMsg] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState(false);
@@ -73,9 +71,11 @@ export function DeliveryActions({
             setStep={setStep}
             setMsg={setMsg}
             step={step}
+            tx={tx}
           />
         </div>
         {msg ? <p className={`mt-2 text-sm ${step === "error" ? "text-red" : "text-seal"}`}>{msg}</p> : null}
+        <SentTransactionNotice tx={tx} explorer={explorer} />
       </div>
     );
   }
@@ -88,6 +88,7 @@ export function DeliveryActions({
       </p>
 
       {!rejecting ? (
+        <>
         <div className="mt-3 flex flex-wrap gap-2">
           <ConfirmButton
             businessId={businessId}
@@ -97,16 +98,20 @@ export function DeliveryActions({
             setStep={setStep}
             setMsg={setMsg}
             step={step}
+            tx={tx}
           />
           <button
             id={`btn-reject-delivery-${fingerprint.slice(2, 10)}`}
             onClick={() => setRejecting(true)}
-            disabled={step === "signing" || step === "recording"}
+            disabled={step === "signing" || step === "recording" || tx.busy || tx.locked}
             className={buttonClass({ variant: "danger" })}
           >
             Reject delivery
           </button>
         </div>
+        {msg ? <p className={`mt-2 text-sm ${step === "error" ? "text-red" : "text-seal"}`}>{msg}</p> : null}
+        <SentTransactionNotice tx={tx} explorer={explorer} />
+        </>
       ) : (
         <form
           className="mt-3 space-y-2"
@@ -125,21 +130,24 @@ export function DeliveryActions({
               });
               await wallet.switchChain(prepared.chainId);
               const provider = await wallet.getEthereumProvider();
-              const txHash: Hex = await provider.request({
-                method: "eth_sendTransaction",
-                params: [{ to: prepared.to, data: prepared.data, from: wallet.address }],
+              const why = reason.trim();
+              let finished = false;
+              await tx.run({
+                send: async () =>
+                  (await provider.request({
+                    method: "eth_sendTransaction",
+                    params: [{ to: prepared.to, data: prepared.data, from: wallet.address }],
+                  })) as Hex,
+                record: (hash) => postRecord(`/api/business/${businessId}/delivery`, { action: "record_reject", fingerprint, txHash: hash, reason: why }),
+                onDone: () => {
+                  finished = true;
+                  setState("rejected");
+                  setRejectionReason(why);
+                  setStep("done");
+                  setRejecting(false);
+                },
               });
-              setStep("recording");
-              await post(`/api/business/${businessId}/delivery`, {
-                action: "record_reject",
-                fingerprint,
-                txHash,
-                reason: reason.trim(),
-              });
-              setState("rejected");
-              setRejectionReason(reason.trim());
-              setStep("done");
-              setRejecting(false);
+              if (!finished) setStep("idle");
             } catch (ex) {
               setStep("error");
               setMsg(ex instanceof Error ? ex.message : "Something went wrong.");
@@ -163,10 +171,10 @@ export function DeliveryActions({
             <button
               id={`btn-reject-confirm-${fingerprint.slice(2, 10)}`}
               type="submit"
-              disabled={!reason.trim() || reason.trim().length < 3 || step === "signing" || step === "recording"}
+              disabled={!reason.trim() || reason.trim().length < 3 || step === "signing" || step === "recording" || tx.busy || tx.locked}
               className={buttonClass()}
             >
-              {step === "signing" ? "Waiting for wallet…" : step === "recording" ? "Recording…" : "Reject delivery"}
+              {tx.phase === "recording" ? "Recording…" : step === "signing" ? "Waiting for wallet…" : step === "recording" ? "Recording…" : "Reject delivery"}
             </button>
             <button
               type="button"
@@ -177,6 +185,7 @@ export function DeliveryActions({
             </button>
           </div>
           {msg ? <p className={`text-sm ${step === "error" ? "text-red" : "text-seal"}`}>{msg}</p> : null}
+          <SentTransactionNotice tx={tx} explorer={explorer} />
         </form>
       )}
     </div>
@@ -193,6 +202,7 @@ function ConfirmButton({
   setStep,
   setMsg,
   step,
+  tx,
 }: {
   businessId: string;
   fingerprint: string;
@@ -201,6 +211,7 @@ function ConfirmButton({
   setStep: (s: Step) => void;
   setMsg: (m: string | null) => void;
   step: Step;
+  tx: SentTransaction;
 }) {
   const handleConfirm = async () => {
     setStep("signing");
@@ -214,18 +225,21 @@ function ConfirmButton({
       });
       await wallet.switchChain(prepared.chainId);
       const provider = await wallet.getEthereumProvider();
-      const txHash: Hex = await provider.request({
-        method: "eth_sendTransaction",
-        params: [{ to: prepared.to, data: prepared.data, from: wallet.address }],
+      let finished = false;
+      await tx.run({
+        send: async () =>
+          (await provider.request({
+            method: "eth_sendTransaction",
+            params: [{ to: prepared.to, data: prepared.data, from: wallet.address }],
+          })) as Hex,
+        record: (hash) => postRecord(`/api/business/${businessId}/delivery`, { action: "record_confirm", fingerprint, txHash: hash }),
+        onDone: () => {
+          finished = true;
+          setStep("done");
+          onDone();
+        },
       });
-      setStep("recording");
-      await post(`/api/business/${businessId}/delivery`, {
-        action: "record_confirm",
-        fingerprint,
-        txHash,
-      });
-      setStep("done");
-      onDone();
+      if (!finished) setStep("idle");
     } catch (ex) {
       setStep("error");
       setMsg(ex instanceof Error ? ex.message : "Something went wrong.");
@@ -236,10 +250,10 @@ function ConfirmButton({
     <button
       id={`btn-confirm-delivery-${fingerprint.slice(2, 10)}`}
       onClick={handleConfirm}
-      disabled={step === "signing" || step === "recording"}
+      disabled={step === "signing" || step === "recording" || tx.busy || tx.locked}
       className={buttonClass()}
     >
-      {step === "signing" ? "Waiting for wallet…" : step === "recording" ? "Recording…" : "Confirm delivery"}
+      {tx.phase === "recording" ? "Recording…" : step === "signing" ? "Waiting for wallet…" : step === "recording" ? "Recording…" : "Confirm delivery"}
     </button>
   );
 }

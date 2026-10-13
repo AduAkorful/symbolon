@@ -7,7 +7,7 @@ import { encodeAbiParameters, encodeEventTopics, getAddress, type Hex, type Publ
 
 import { chainDouble, chainState } from "./setup-shared";
 
-import { listOrders, prepareOpenPo, recordOpenPo, prepareClosePo, recordClosePo } from "@/lib/server/orders";
+import { adoptUnrecordedPo, listOrders, prepareOpenPo, recordOpenPo, prepareClosePo, recordClosePo } from "@/lib/server/orders";
 import { AuthError } from "@/lib/server/errors";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -399,5 +399,55 @@ describe("listOrders", () => {
 
     const orders = await listOrders(db, client, deployment, member, business.id);
     expect(Array.isArray(orders)).toBe(true);
+  });
+});
+
+describe("adoptUnrecordedPo (plan 05zj A, SYM-08)", () => {
+  it("saves an order the Vault holds but the app never recorded, from its own opening event", async () => {
+    const { owner, business, vendorSeal } = await fixture();
+    chainDouble.enabled = true;
+    const poNum = "PO-LOST-RECORD";
+    const ref = computePoRef(poNum);
+    const txHash = hash(77);
+    const amount = 900_000000n;
+
+    chainState.getPurchaseOrder.mockResolvedValue({ open: true, seal: vendorSeal, remaining: amount, releaseAfter: 0n });
+    chainState.scanLogs.mockResolvedValue({ logs: [{ transactionHash: txHash }], scannedTo: 1n });
+    const client = mockClient({
+      getTransactionReceipt: async () => ({
+        status: "success",
+        to: getAddress(business.vault!),
+        logs: [openPoLog(business.vault!, ref, vendorSeal, hash(0), amount, 0n)],
+      }),
+    });
+
+    const adopted = await adoptUnrecordedPo(db, client, deployment, owner, business.id, { poNumber: poNum, description: "kept" });
+    expect(adopted?.poRef).toBe(ref);
+    const [row] = await db.select().from(purchaseOrders).where(eq(purchaseOrders.poRef, ref));
+    expect(row?.poNumber).toBe(poNum);
+    expect(row?.amount).toBe(amount);
+
+    // once it is saved there is nothing left to adopt, so the normal "already exists" answer applies
+    expect(await adoptUnrecordedPo(db, client, deployment, owner, business.id, { poNumber: poNum })).toBeNull();
+  });
+
+  it("adopts nothing when the Vault does not hold that order, or the number does not hash to the event", async () => {
+    const { owner, business, vendorSeal } = await fixture();
+    chainDouble.enabled = true;
+    const client = mockClient();
+
+    chainState.getPurchaseOrder.mockResolvedValue({ open: false, seal: "0x0000000000000000000000000000000000000000", remaining: 0n, releaseAfter: 0n });
+    expect(await adoptUnrecordedPo(db, client, deployment, owner, business.id, { poNumber: "PO-NOT-THERE" })).toBeNull();
+
+    // the Vault holds an order under that reference, but the receipt is for a different number: nothing is saved
+    const real = computePoRef("PO-REAL");
+    chainState.getPurchaseOrder.mockResolvedValue({ open: true, seal: vendorSeal, remaining: 1n, releaseAfter: 0n });
+    chainState.scanLogs.mockResolvedValue({ logs: [{ transactionHash: hash(78) }], scannedTo: 1n });
+    const mismatched = mockClient({
+      getTransactionReceipt: async () => ({ status: "success", to: getAddress(business.vault!), logs: [openPoLog(business.vault!, real, vendorSeal, hash(0), 1n, 0n)] }),
+    });
+    expect(await adoptUnrecordedPo(db, mismatched, deployment, owner, business.id, { poNumber: "PO-TYPED-WRONG" })).toBeNull();
+    const rows = await db.select().from(purchaseOrders).where(eq(purchaseOrders.poRef, computePoRef("PO-TYPED-WRONG")));
+    expect(rows).toHaveLength(0);
   });
 });

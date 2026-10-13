@@ -7,7 +7,8 @@ import type { Address } from "viem";
 import { TxLink } from "@/components/TxLink";
 import { sendCall, type SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
-import { postJson } from "@/lib/client/api";
+import { postJson, postRecord } from "@/lib/client/api";
+import { useSentHashes } from "@/components/wallet/useSentTransaction";
 import type { ComplianceViewModel, CounterpartyScreeningRow } from "@/lib/server/compliance";
 import { formatDay } from "@/lib/format";
 import { Address as AddressView } from "@/components/Address";
@@ -35,6 +36,7 @@ export function ComplianceView({
   const [recordBusyId, setRecordBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const sent = useSentHashes();
 
   const { businessId, counterparties, tiers, canScreen, canWrite, vault } = model;
   const apiPath = `/api/business/${businessId}/compliance`;
@@ -62,17 +64,22 @@ export function ComplianceView({
     setError(null);
     setNotice(null);
     try {
-      const prep = await postJson<{ to: string; data: string }>(apiPath, {
-        action: "prepare-write",
-        screeningId,
-      });
-
-      const txHash = await sendCall(signer, prep, discover);
-      await postJson(apiPath, {
+      // a hash kept from an earlier try means the transaction was already sent: check it again, never send it twice
+      let txHash = sent.get(screeningId);
+      if (!txHash) {
+        const prep = await postJson<{ to: string; data: string }>(apiPath, {
+          action: "prepare-write",
+          screeningId,
+        });
+        txHash = await sendCall(signer, prep, discover);
+        sent.set(screeningId, txHash);
+      }
+      await postRecord(apiPath, {
         action: "record-write",
         screeningId,
         txHash,
       });
+      sent.clear(screeningId);
 
       setNotice(`Recorded on Vault: ${txHash.slice(0, 10)}…`);
       refreshAfterChain(router);
@@ -115,7 +122,7 @@ export function ComplianceView({
               <ul className="divide-y divide-rule-soft border-y border-rule">
                 {counterparties.map((row) => {
                   const isScreening = busySeal === row.seal;
-                  const isRecording = recordBusyId === row.latestScreeningId;
+                  const isRecording = recordBusyId !== null && recordBusyId === row.latestScreeningId;
                   const isHighOrBlocked = row.onchainRisk !== null && row.onchainRisk >= 2;
                   return (
                     <li key={row.seal} className="grid gap-x-6 gap-y-3 py-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -146,7 +153,7 @@ export function ComplianceView({
                             ) : null}
                             {canWrite && row.latestScreeningId ? (
                               <Button size="sm" disabled={isScreening || isRecording || signer.kind === "none"} busy={isRecording} title="Write the latest screening result to the Vault" onClick={() => handleRecordWrite(row.latestScreeningId!)}>
-                                {isRecording ? "Recording…" : "Save in the Vault"}
+                                {isRecording ? "Recording…" : row.latestScreeningId && sent.get(row.latestScreeningId) ? "Check again" : "Save in the Vault"}
                               </Button>
                             ) : null}
                           </div>

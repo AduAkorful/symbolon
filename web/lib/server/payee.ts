@@ -7,6 +7,7 @@ import { businesses, decisions, invoices, payees, seals, vendorInvitations, vend
 import { requireMember } from "./access";
 import { appendAppDecision } from "./app-decisions";
 import { AuthError } from "./errors";
+import { awaitReceipt, TX_PENDING } from "./tx-receipt";
 import type { SessionUser } from "./session";
 
 const HASH = /^0x[0-9a-fA-F]{64}$/;
@@ -87,8 +88,7 @@ export async function recordPayee(db: Database, client: PublicClient, deployment
   const [business] = await db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1);
   if (!business?.vault) throw new AuthError(409, "This business doesn't have a Vault.");
   const vault = getAddress(business.vault);
-  let receipt;
-  try { receipt = await client.getTransactionReceipt({ hash: txHash as Hex }); } catch { throw new AuthError(409, "That transaction isn't confirmed yet. Try again shortly."); }
+  const receipt = await awaitReceipt(client, txHash as Hex);
   if (receipt.status !== "success" || !receipt.to || getAddress(receipt.to) !== vault) throw new AuthError(409, "That successful transaction wasn't sent to this business's Vault.");
   const event = parseEventLogs({ abi: symbolonVaultAbi, eventName: "PayeeAdded", logs: receipt.logs }).filter((l) => getAddress(l.address) === vault);
   if (event.length !== 1) throw new AuthError(409, "That transaction didn't add exactly one payee to this Vault.");
@@ -99,7 +99,7 @@ export async function recordPayee(db: Database, client: PublicClient, deployment
     throw new AuthError(409, "That receipt's payout isn't among the vendor's signed options.");
   }
   const c = symbolonContracts(client, deployment);
-  const current = await c.lens.read.getPayee([vault, args.seal]);
+  const current = await c.lens.read.getPayee([vault, args.seal], { blockNumber: receipt.blockNumber }).catch(() => { throw new AuthError(409, "That transaction isn't confirmed yet. Arc is still catching up; checking again in a moment.", TX_PENDING); });
   const termsAgree = current.terms.budget === args.terms.budget && current.terms.requirePo === args.terms.requirePo && current.terms.requireDelivery === args.terms.requireDelivery && current.terms.monthlyCap === args.terms.monthlyCap;
   if (!current.exists || getAddress(current.payout) !== getAddress(args.payout) || current.payoutDomain !== args.payoutDomain || current.activeAt !== args.activeAt || !termsAgree) throw new AuthError(409, "The Vault's current payee record doesn't match that receipt.");
   // Recording the same receipt again must not add another history row

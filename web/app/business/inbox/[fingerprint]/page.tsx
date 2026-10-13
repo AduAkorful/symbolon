@@ -119,6 +119,7 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
                 fingerprint={fingerprint}
                 currentState={currentDeliveryState}
                 currentReason={rejectionReason ?? null}
+                explorer={getConfig().deployment.explorer}
               />
             </div>
           ) : null}

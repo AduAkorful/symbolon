@@ -6,6 +6,7 @@ import { businesses, members, type Database } from "@symbolon/db";
 import { requireMember } from "./access";
 import { appendAppDecision } from "./app-decisions";
 import { AuthError } from "./errors";
+import { awaitReceipt } from "./tx-receipt";
 import { describePolicy, isTemplate, type PolicyText } from "./policy-text";
 import type { SessionUser } from "./session";
 import { pauseStateOf, readVaultState, stewardStanding } from "./vault-read";
@@ -110,12 +111,7 @@ export async function confirmVault(
   const owner = ownerWallet(user);
   const factory = cfg.deployment.contracts.vaultFactory;
 
-  let receipt;
-  try {
-    receipt = await client.getTransactionReceipt({ hash: txHash as Hex });
-  } catch {
-    throw new AuthError(409, "That transaction isn't confirmed yet, or the chain can't be reached right now. Try again in a moment.");
-  }
+  const receipt = await awaitReceipt(client, txHash as Hex);
   if (receipt.status !== "success") throw new AuthError(409, "That transaction failed onchain, so no Vault was made.");
   if (!receipt.to || getAddress(receipt.to) !== getAddress(factory)) throw new AuthError(409, "That transaction wasn't sent to Symbolon's Vault factory.");
   const created = parseEventLogs({ abi: vaultFactoryAbi, eventName: "VaultCreated", logs: receipt.logs }).filter((l) => getAddress(l.address) === getAddress(factory));
@@ -256,12 +252,7 @@ export async function recordFeeTransfer(
   if (!b.stewardWallet) throw new AuthError(409, "This business has no Steward wallet provisioned yet.");
   const owner = ownerWallet(user);
 
-  let receipt;
-  try {
-    receipt = await client.getTransactionReceipt({ hash: txHash as Hex });
-  } catch {
-    throw new AuthError(409, "That transaction isn't confirmed yet, or the chain can't be reached right now. Try again in a moment.");
-  }
+  const receipt = await awaitReceipt(client, txHash as Hex);
   if (receipt.status !== "success") throw new AuthError(409, "That transaction failed onchain.");
   if (!receipt.to || getAddress(receipt.to) !== getAddress(b.stewardWallet)) {
     throw new AuthError(409, "That transaction was not sent to this business's Steward wallet.");

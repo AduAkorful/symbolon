@@ -4,7 +4,8 @@ import { useState } from "react";
 import { isLooseningTerms } from "@/lib/server/loosening";
 import { sendWithWallet, type SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
-import { postJson } from "@/lib/client/api";
+import { postJson, postRecord } from "@/lib/client/api";
+import { SentTransactionNotice, useSentTransaction } from "@/components/wallet/useSentTransaction";
 import { moneyDraft, moneyInput } from "@/lib/money-draft";
 import { duration } from "@/lib/format";
 import { buttonClass } from "@/components/ui/button";
@@ -26,6 +27,7 @@ interface PayeeTermsEditorProps {
   signer: SignerPlan;
   looseningDelaySeconds: number;
   accountingDecimals: number;
+  explorer?: string;
 }
 
 export function PayeeTermsEditor({
@@ -36,9 +38,11 @@ export function PayeeTermsEditor({
   signer,
   looseningDelaySeconds,
   accountingDecimals,
+  explorer = "https://explorer.testnet.arc.io",
 }: PayeeTermsEditorProps) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const tx = useSentTransaction();
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -102,22 +106,19 @@ export function PayeeTermsEditor({
 
       setStatus("Please confirm transaction in your wallet...");
       const providers = await getProviders();
-      const txHash = await sendWithWallet(providers, signer, {
-        to: prep.to,
-        data: prep.data,
+      let recorded = false;
+      await tx.run({
+        send: () => sendWithWallet(providers, signer, { to: prep.to, data: prep.data }),
+        record: (hash) => postRecord(`/api/business/${businessId}/payee-terms`, { action: "record", seal, txHash: hash }),
+        onDone: () => {
+          recorded = true;
+          setStatus("Payee terms successfully updated.");
+          setTimeout(() => {
+            window.location.reload();
+          }, 1200);
+        },
       });
-
-      setStatus("Recording terms update...");
-      await postJson(`/api/business/${businessId}/payee-terms`, {
-        action: "record",
-        seal,
-        txHash,
-      });
-
-      setStatus("Payee terms successfully updated.");
-      setTimeout(() => {
-        window.location.reload();
-      }, 1200);
+      if (!recorded) setStatus(null);
     } catch (err: any) {
       setError(err?.message || "Failed to update payee terms.");
       setStatus(null);
@@ -224,21 +225,23 @@ export function PayeeTermsEditor({
           )}
         </p>
 
+        <SentTransactionNotice tx={tx} explorer={explorer} />
+
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => setEditing(false)}
-            disabled={busy}
+            disabled={busy || tx.busy}
             className={buttonClass({ variant: "secondary", size: "sm" })}
           >
             Cancel
           </button>
           <button
             type="submit"
-            disabled={busy}
+            disabled={busy || tx.busy || tx.locked}
             className={buttonClass({ size: "sm" })}
           >
-            {busy ? "Saving..." : isLooser ? "Queue update" : "Apply now"}
+            {busy || tx.busy ? "Saving..." : isLooser ? "Queue update" : "Apply now"}
           </button>
         </div>
       </div>

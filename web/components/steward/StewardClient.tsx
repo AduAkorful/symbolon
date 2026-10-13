@@ -11,7 +11,8 @@ import { InlineError } from "@/components/ui/States";
 import { sendCall, wasRejected, type SignerPlan } from "@/components/setup/owner-signer";
 import { TxLink } from "@/components/TxLink";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
-import { postJson } from "@/lib/client/api";
+import { postJson, postRecord } from "@/lib/client/api";
+import { SentTransactionNotice, useSentTransaction } from "@/components/wallet/useSentTransaction";
 import { formatDateTime } from "@/lib/format";
 import { Address } from "@/components/Address";
 import { Money } from "@/components/ui/Money";
@@ -262,6 +263,17 @@ export function StewardClient({
     }
   }
 
+  const feeTx = useSentTransaction();
+
+  async function afterFeeSent() {
+    setFundingOpen(false);
+    feeTx.reset();
+    setFeeNote("Sent. Waiting for Arc to show it…");
+    const arrived = await settleFee({ before: feeNow.raw, read: readFee, show: setFeeNow });
+    setFeeNote(arrived === "changed" ? "Arrived." : "Sent. Arc hasn't shown it yet; it will appear here when it does.");
+    router.refresh();
+  }
+
   async function handleFundFees() {
     if (!signer || !isOwner) return;
     setFundingBusy(true);
@@ -271,16 +283,11 @@ export function StewardClient({
         action: "prepare-fee",
         amount: feeAmount,
       });
-      const txHash = await sendCall(signer, prep, discover);
-      await postJson(`/api/business/${business.id}/steward`, {
-        action: "record-fee",
-        txHash,
+      await feeTx.run({
+        send: () => sendCall(signer, prep, discover),
+        record: (hash) => postRecord(`/api/business/${business.id}/steward`, { action: "record-fee", txHash: hash }),
+        onDone: () => void afterFeeSent(),
       });
-      setFundingOpen(false);
-      setFeeNote("Sent. Waiting for Arc to show it…");
-      const arrived = await settleFee({ before: feeNow.raw, read: readFee, show: setFeeNow });
-      setFeeNote(arrived === "changed" ? "Arrived." : "Sent. Arc hasn't shown it yet; it will appear here when it does.");
-      router.refresh();
     } catch (err) {
       setFundingError(wasRejected(err) ? "Request rejected in wallet." : err instanceof Error ? err.message : "Failed to fund fees.");
     } finally {
@@ -604,7 +611,7 @@ export function StewardClient({
         <Overlay
           title="Fund the Steward's network fees"
           description="Arc fees are paid in USDC. Send a small amount from your wallet so the Steward can send its transactions."
-          onClose={() => setFundingOpen(false)}
+          onClose={() => { if (!feeTx.busy) setFundingOpen(false); }}
         >
           <div className="space-y-4">
             <Field label="Amount (USDC)" hint="0.1 USDC is enough for hundreds of transactions.">
@@ -614,11 +621,12 @@ export function StewardClient({
             </Field>
 
             {fundingError ? <InlineError>{fundingError}</InlineError> : null}
+            <SentTransactionNotice tx={feeTx} explorer={explorer} />
 
             <Overlay.Footer>
-              <Button variant="secondary" onClick={() => setFundingOpen(false)}>Cancel</Button>
-              <Button busy={fundingBusy} onClick={() => void handleFundFees()}>
-                {fundingBusy ? "Signing…" : "Send fees"}
+              <Button variant="secondary" disabled={feeTx.busy} onClick={() => setFundingOpen(false)}>{feeTx.locked ? "Close" : "Cancel"}</Button>
+              <Button busy={fundingBusy || feeTx.busy} disabled={feeTx.locked} onClick={() => void handleFundFees()}>
+                {fundingBusy || feeTx.busy ? "Signing…" : "Send fees"}
               </Button>
             </Overlay.Footer>
           </div>

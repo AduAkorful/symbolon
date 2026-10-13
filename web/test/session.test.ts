@@ -3,6 +3,7 @@ import { createTestDb, sessions, users } from "@symbolon/db";
 import { eq } from "drizzle-orm";
 import { SESSION_ABSOLUTE_MS, SESSION_IDLE_MS, createSession, readSession, revokeAllSessions, revokeSession } from "@/lib/server/session";
 import { walletUser as upsertWalletUser } from "./helpers";
+import { signInWithPrivy, type PrivyLike } from "@/lib/server/privy-signin";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => {
@@ -83,5 +84,28 @@ describe("users", () => {
     expect(b.id).toBe(a.id);
     expect(a.email).toBeNull();
     expect((await db.select().from(users).where(eq(users.wallet, "0xabcdef0000000000000000000000000000000001"))).length).toBe(1);
+  });
+});
+
+describe("signing in with Privy while the wallet is still being made (plan 05zj B, SYM-02)", () => {
+  const privyWith = (wallets: { address: string; kind: "embedded" | "external" }[]): PrivyLike => ({
+    appId: "app-1",
+    verifyAccessToken: async () => ({ userId: "did:privy:new-email-user", appId: "app-1" }),
+    getUser: async () => ({ id: "did:privy:new-email-user", email: "new@example.test", wallets }),
+  });
+
+  it("answers a new email user who has no wallet yet with a retryable 503 and a code, and creates no account", async () => {
+    const error = await signInWithPrivy(db, privyWith([]), "aaa.bbb.ccc").catch((e) => e);
+    expect(error).toMatchObject({ status: 503, code: "wallet_pending" });
+    expect(await db.select().from(users).where(eq(users.privyUserId, "did:privy:new-email-user"))).toHaveLength(0);
+  });
+
+  it("signs the same person in once the embedded wallet exists, and the account keeps that wallet", async () => {
+    const made = await signInWithPrivy(db, privyWith([{ address: wallet(900), kind: "embedded" }]), "aaa.bbb.ccc");
+    expect(made.wallet).toBe(wallet(900));
+    // later sign-ins don't change it
+    const again = await signInWithPrivy(db, privyWith([{ address: wallet(901), kind: "embedded" }]), "aaa.bbb.ccc");
+    expect(again.id).toBe(made.id);
+    expect(again.wallet).toBe(wallet(900));
   });
 });

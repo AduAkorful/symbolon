@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { TxLink } from "@/components/TxLink";
 import { sendWithWallet, type SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
+import { useSentHashes } from "@/components/wallet/useSentTransaction";
 import { postJson } from "@/lib/client/api";
 import { applyQueuedChange, recordQueuedChange } from "@/lib/client/queued-actions";
 import { formatDateTime } from "@/lib/format";
@@ -43,6 +44,7 @@ export function QueuedChangeList({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const getProviders = useWalletProviders();
+  const sent = useSentHashes();
 
   async function loadChanges() {
     try {
@@ -68,8 +70,15 @@ export function QueuedChangeList({
     setBusyId(change.id);
     setError(null);
     try {
-      const providers = await getProviders();
-      await applyQueuedChange(businessId, change, call => sendWithWallet(providers, signer, call));
+      const key = `apply:${change.id}`;
+      const kept = sent.get(key);
+      if (kept) {
+        await recordQueuedChange(businessId, kept);
+      } else {
+        const providers = await getProviders();
+        await applyQueuedChange(businessId, change, call => sendWithWallet(providers, signer, call), (hash) => sent.set(key, hash));
+      }
+      sent.clear(key);
 
       await loadChanges();
       onRefresh?.();
@@ -85,6 +94,15 @@ export function QueuedChangeList({
     setBusyId(change.id);
     setError(null);
     try {
+      const kept = sent.get(`cancel:${change.id}`);
+      if (kept) {
+        // the cancellation was already sent: check it again, never send it twice
+        await recordQueuedChange(businessId, kept);
+        sent.clear(`cancel:${change.id}`);
+        await loadChanges();
+        onRefresh?.();
+        return;
+      }
       const prep = await postJson<{ to: string; data: string }>(
         `/api/business/${businessId}/queued-changes`,
         {
@@ -98,8 +116,10 @@ export function QueuedChangeList({
         to: prep.to,
         data: prep.data,
       });
+      sent.set(`cancel:${change.id}`, txHash);
 
       await recordQueuedChange(businessId, txHash);
+      sent.clear(`cancel:${change.id}`);
 
       await loadChanges();
       onRefresh?.();
@@ -173,7 +193,7 @@ export function QueuedChangeList({
                     onClick={() => handleApply(change)}
                     className={buttonClass({ size: "sm" })}
                   >
-                    {isBusy ? "Applying…" : "Apply now"}
+                    {isBusy ? "Applying…" : sent.get(`apply:${change.id}`) ? "Check again" : "Apply now"}
                   </button>
                 ) : null}
 
@@ -183,7 +203,7 @@ export function QueuedChangeList({
                   onClick={() => handleCancel(change)}
                   className={buttonClass({ variant: "secondary", size: "sm" })}
                 >
-                  Cancel
+                  {sent.get(`cancel:${change.id}`) ? "Check again" : "Cancel"}
                 </button>
               </div>
             </div>
@@ -222,6 +242,7 @@ export function QueuedChange({
 }: SingleQueuedChangeProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sentHash, setSentHash] = useState<string | null>(null);
   const getProviders = useWalletProviders();
 
   const isReady = state === "ready" || (eta ? Date.now() >= new Date(eta).getTime() : false);
@@ -230,24 +251,32 @@ export function QueuedChange({
     setBusy(true);
     setError(null);
     try {
-      const prep = await postJson<{ ok: boolean; to: string; data: string }>(
-        `/api/business/${businessId}/queued-changes`,
-        {
-          action: "prepare-cancel",
-          changeId,
-        },
-      );
-      if (!prep.ok) throw new Error("Could not prepare cancellation.");
-      if (signer.kind !== "wallet") throw new Error("Wallet not connected.");
+      let txHash = sentHash;
+      if (!txHash) {
+        const prep = await postJson<{ ok: boolean; to: string; data: string }>(
+          `/api/business/${businessId}/queued-changes`,
+          {
+            action: "prepare-cancel",
+            changeId,
+          },
+        );
+        if (!prep.ok) throw new Error("Could not prepare cancellation.");
+        if (signer.kind !== "wallet") throw new Error("Wallet not connected.");
 
-      const providers = await getProviders();
-      const txHash = await sendWithWallet(providers, signer, {
-        to: prep.to,
-        data: prep.data,
-      });
+        const providers = await getProviders();
+        txHash = await sendWithWallet(providers, signer, {
+          to: prep.to,
+          data: prep.data,
+        });
+        // kept from here: a failed record leads to "Check again", never to a second cancellation
+        setSentHash(txHash);
+      }
 
       const rec = await recordQueuedChange(businessId, txHash);
-      if (rec.ok) onCancelled?.();
+      if (rec.ok) {
+        setSentHash(null);
+        onCancelled?.();
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to cancel change.");
     } finally {
@@ -278,7 +307,7 @@ export function QueuedChange({
             onClick={handleCancel}
             className={buttonClass({ variant: "secondary" })}
           >
-            {busy ? "Cancelling…" : "Cancel"}
+            {busy ? "Cancelling…" : sentHash ? "Check again" : "Cancel"}
           </button>
         </div>
       </div>

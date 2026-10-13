@@ -5,7 +5,8 @@ import { TxLink } from "@/components/TxLink";
 import { QueuedChangeList } from "@/components/QueuedChange";
 import { sendWithWallet, type SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
-import { postJson } from "@/lib/client/api";
+import { postJson, postRecord } from "@/lib/client/api";
+import { useSentHashes } from "@/components/wallet/useSentTransaction";
 import type { SettingsViewData } from "@/lib/server/settings";
 import type { ReleaseViewInfo, ReleaseNudgeResult } from "@/lib/server/release";
 import { Rename } from "./Rename";
@@ -40,6 +41,7 @@ export function SettingsView({
   const [autoError, setAutoError] = useState<string | null>(null);
   const [autoSuccess, setAutoSuccess] = useState<string | null>(null);
   const getProviders = useWalletProviders();
+  const sent = useSentHashes();
 
   const { business, vaultDetails, release, nudge } = data;
 
@@ -58,33 +60,40 @@ export function SettingsView({
     setAutoError(null);
     setAutoSuccess(null);
     try {
-      const prep = await postJson<{
-        ok: boolean;
-        to: string;
-        data: string;
-        state: string;
-        eta?: string;
-      }>(`/api/business/${business.id}/settings`, {
-        action: "prepare-auto-update",
-        enabled: targetState,
-      });
+      const key = `auto:${targetState}`;
+      let txHash = sent.get(key);
+      if (!txHash) {
+        const prep = await postJson<{
+          ok: boolean;
+          to: string;
+          data: string;
+          state: string;
+          eta?: string;
+        }>(`/api/business/${business.id}/settings`, {
+          action: "prepare-auto-update",
+          enabled: targetState,
+        });
 
-      if (!prep.ok) throw new Error("Could not prepare auto-update change.");
-      if (signer.kind !== "wallet") throw new Error("Wallet not connected.");
+        if (!prep.ok) throw new Error("Could not prepare auto-update change.");
+        if (signer.kind !== "wallet") throw new Error("Wallet not connected.");
 
-      const providers = await getProviders();
-      const txHash = await sendWithWallet(providers, signer, {
-        to: prep.to,
-        data: prep.data,
-      });
+        const providers = await getProviders();
+        txHash = await sendWithWallet(providers, signer, {
+          to: prep.to,
+          data: prep.data,
+        });
+        // kept from here: a failed record is checked again, never sent twice
+        sent.set(key, txHash);
+      }
 
-      const rec = await postJson<{ ok: boolean; status?: string }>(
+      const rec = await postRecord<{ ok: boolean; status?: string }>(
         `/api/business/${business.id}/settings`,
         {
           action: "record-auto-update",
           txHash,
         },
       );
+      sent.clear(key);
 
       if (rec.ok) {
         if (targetState) {

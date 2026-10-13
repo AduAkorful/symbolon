@@ -1,5 +1,8 @@
 "use client";
 
+import { postJson, postRecord } from "@/lib/client/api";
+import { SentTransactionNotice, useSentTransaction } from "@/components/wallet/useSentTransaction";
+
 import { useState, useTransition } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import { useWallets } from "@privy-io/react-auth";
@@ -63,14 +66,7 @@ const shortSeal = (seal: string) => `${seal.slice(0, 8)}…${seal.slice(-4)}`;
 const vendorName = (vendors: KnownVendor[], seal: string) => vendors.find((v) => v.seal.toLowerCase() === seal.toLowerCase())?.name ?? shortSeal(seal);
 
 async function post(url: string, body: unknown) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error((json as { error?: string }).error ?? "Request failed");
-  return json;
+  return postJson<Record<string, any>>(url, body);
 }
 
 // The columns of the list on a wide screen; on a phone each order is a card with the same facts
@@ -139,7 +135,7 @@ export function OrdersClient({ businessId, initial, vendors, explorer }: OrdersP
       )}
 
       {creating ? (
-        <NewOrderSheet businessId={businessId} wallets={wallets} vendors={vendors} onClose={() => setCreating(false)} onMutate={reload} />
+        <NewOrderSheet businessId={businessId} wallets={wallets} vendors={vendors} explorer={explorer} onClose={() => setCreating(false)} onMutate={reload} />
       ) : null}
     </div>
   );
@@ -232,7 +228,7 @@ function OrderDetail({
       />
       <div>
         {!closed ? (
-          <CloseButton businessId={businessId} poRef={o.poRef} poNumber={o.poNumber} wallets={wallets} onMutate={onMutate} />
+          <CloseButton businessId={businessId} poRef={o.poRef} poNumber={o.poNumber} wallets={wallets} explorer={explorer} onMutate={onMutate} />
         ) : (
           <p className="text-graphite">
             Closed {o.closedAt ? formatDay(o.closedAt, { year: "always" }) : ""}
@@ -256,8 +252,10 @@ function CloseButton({
   poRef,
   poNumber,
   wallets,
+  explorer,
   onMutate,
 }: {
+  explorer: string;
   businessId: string;
   poRef: string;
   poNumber: string;
@@ -268,6 +266,7 @@ function CloseButton({
   const [msg, setMsg] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [confirming, setConfirming] = useState(false);
+  const tx = useSentTransaction();
 
   const doClose = async () => {
     setStep("signing");
@@ -278,16 +277,24 @@ function CloseButton({
       const prepared = await post(`/api/business/${businessId}/order`, { action: "prepare_close", poRef });
       await wallet.switchChain(prepared.chainId);
       const provider = await wallet.getEthereumProvider();
-      const txHash: Hex = await provider.request({
-        method: "eth_sendTransaction",
-        params: [{ to: prepared.to, data: prepared.data, from: wallet.address }],
+      let finished = false;
+      await tx.run({
+        send: async () =>
+          (await provider.request({
+            method: "eth_sendTransaction",
+            params: [{ to: prepared.to, data: prepared.data, from: wallet.address }],
+          })) as Hex,
+        record: (hash) => postRecord(`/api/business/${businessId}/order`, { action: "record_close", txHash: hash, poRef }),
+        onDone: () => {
+          finished = true;
+          setStep("done");
+          setMsg("Order closed.");
+          setConfirming(false);
+          onMutate();
+        },
       });
-      setStep("recording");
-      await post(`/api/business/${businessId}/order`, { action: "record_close", txHash, poRef });
-      setStep("done");
-      setMsg("Order closed.");
-      setConfirming(false);
-      onMutate();
+      // sent but not yet confirmed: the notice below holds the hash and the way to check it again
+      if (!finished) setStep("idle");
     } catch (e) {
       setStep("error");
       setMsg(e instanceof Error ? e.message : "Something went wrong.");
@@ -302,7 +309,7 @@ function CloseButton({
         <button
           id={`btn-close-${poRef.slice(2, 10)}`}
           onClick={() => setConfirming(true)}
-          disabled={step === "signing" || step === "recording"}
+          disabled={step === "signing" || step === "recording" || tx.busy}
           className={buttonClass({ variant: "secondary", size: "sm" })}
         >
           Close order
@@ -317,10 +324,10 @@ function CloseButton({
             <button
               id={`btn-close-confirm-${poRef.slice(2, 10)}`}
               onClick={() => startTransition(doClose)}
-              disabled={step === "signing" || step === "recording"}
+              disabled={step === "signing" || step === "recording" || tx.busy || tx.locked}
               className={buttonClass()}
             >
-              {step === "signing" ? "Waiting for wallet…" : step === "recording" ? "Recording…" : "Close the order"}
+              {tx.phase === "recording" ? "Recording…" : step === "signing" ? "Waiting for wallet…" : step === "recording" ? "Recording…" : "Close the order"}
             </button>
             <button
               onClick={() => setConfirming(false)}
@@ -332,6 +339,7 @@ function CloseButton({
         </div>
       )}
       {msg ? <p className={`text-sm ${step === "error" ? "text-red" : "text-graphite"}`}>{msg}</p> : null}
+      <SentTransactionNotice tx={tx} explorer={explorer} />
     </>
   );
 }
@@ -342,9 +350,11 @@ function NewOrderSheet({
   businessId,
   wallets,
   vendors,
+  explorer,
   onClose,
   onMutate,
 }: {
+  explorer: string;
   businessId: string;
   wallets: ReturnType<typeof useWallets>["wallets"];
   vendors: KnownVendor[];
@@ -354,6 +364,7 @@ function NewOrderSheet({
   const [step, setStep] = useState<Step>("idle");
   const [msg, setMsg] = useState<string | null>(null);
   const [vendorWarning, setVendorWarning] = useState<string | null>(null);
+  const tx = useSentTransaction();
 
   const [poNumber, setPoNumber] = useState("");
   // a vendor the business already knows is picked by name; a new one is entered by the address on their invoice
@@ -380,24 +391,40 @@ function NewOrderSheet({
         description: description || undefined,
         releaseDate: releaseDate || undefined,
       });
+      // The Vault already held this order and the app had never saved it: it is saved now, nothing is sent
+      if (prepared.adopted) {
+        setStep("done");
+        setMsg("That order was already open on Arc. It is saved here now.");
+        onMutate();
+        onClose();
+        return;
+      }
       if (prepared.vendorWarning) setVendorWarning(prepared.vendorWarning);
       await wallet.switchChain(prepared.chainId);
       const provider = await wallet.getEthereumProvider();
-      const txHash: Hex = await provider.request({
-        method: "eth_sendTransaction",
-        params: [{ to: prepared.to, data: prepared.data, from: wallet.address }],
+      let finished = false;
+      await tx.run({
+        send: async () =>
+          (await provider.request({
+            method: "eth_sendTransaction",
+            params: [{ to: prepared.to, data: prepared.data, from: wallet.address }],
+          })) as Hex,
+        record: (hash) =>
+          postRecord(`/api/business/${businessId}/order`, {
+            action: "record_open",
+            txHash: hash,
+            poNumber: prepared.poNumber,
+            description: prepared.description,
+          }),
+        onDone: () => {
+          finished = true;
+          setStep("done");
+          setMsg("Order opened.");
+          onMutate();
+          onClose();
+        },
       });
-      setStep("recording");
-      await post(`/api/business/${businessId}/order`, {
-        action: "record_open",
-        txHash,
-        poNumber: prepared.poNumber,
-        description: prepared.description,
-      });
-      setStep("done");
-      setMsg("Order opened.");
-      onMutate();
-      onClose();
+      if (!finished) setStep("idle");
     } catch (e) {
       setStep("error");
       setMsg(e instanceof Error ? e.message : "Something went wrong.");
@@ -458,10 +485,12 @@ function NewOrderSheet({
 
         {msg ? (step === "error" ? <InlineError>{msg}</InlineError> : <p role="status" className="text-seal">{msg}</p>) : null}
 
+        <SentTransactionNotice tx={tx} explorer={explorer} />
+
         <Overlay.Footer>
-          <Button id="btn-new-order-cancel" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button id="btn-open-order-submit" type="submit" busy={step === "signing" || step === "recording"}>
-            {step === "signing" ? "Waiting for wallet…" : step === "recording" ? "Recording…" : "Open the order"}
+          <Button id="btn-new-order-cancel" variant="secondary" onClick={onClose}>{tx.locked ? "Close" : "Cancel"}</Button>
+          <Button id="btn-open-order-submit" type="submit" disabled={tx.locked} busy={step === "signing" || step === "recording" || tx.busy}>
+            {tx.phase === "recording" ? "Recording…" : step === "signing" ? "Waiting for wallet…" : step === "recording" ? "Recording…" : "Open the order"}
           </Button>
         </Overlay.Footer>
       </form>

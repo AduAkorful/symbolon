@@ -5,7 +5,8 @@ import Link from "next/link";
 import { QueuedChange } from "@/components/QueuedChange";
 import { sendWithWallet, type SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
-import { postJson } from "@/lib/client/api";
+import { postJson, postRecord } from "@/lib/client/api";
+import { SentTransactionNotice, useSentTransaction } from "@/components/wallet/useSentTransaction";
 import type { PolicyViewData } from "@/lib/server/policy-edit";
 import type { BudgetViewItem } from "@/lib/server/budgets";
 import { policyTemplate, type PolicyTemplate } from "@/lib/policy-template";
@@ -66,10 +67,13 @@ export function PolicyView({
   pendingChange,
   warnings: initialWarnings,
   budgets: initialBudgets,
+  explorerUrl = "https://explorer.testnet.arc.io",
 }: PolicyViewProps) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const policyTx = useSentTransaction();
+  const budgetTx = useSentTransaction();
   const [error, setError] = useState<string | null>(null);
 
   // Form draft state in user-friendly units
@@ -173,21 +177,19 @@ export function PolicyView({
 
       setStatusMessage("Please confirm transaction in your wallet...");
       const providers = await getProviders();
-      const txHash = await sendWithWallet(providers, signer, {
-        to: prep.to,
-        data: prep.data,
+      let recorded = false;
+      await policyTx.run({
+        send: () => sendWithWallet(providers, signer, { to: prep.to, data: prep.data }),
+        record: (hash) => postRecord(`/api/business/${businessId}/policy`, { action: "record", txHash: hash }),
+        onDone: () => {
+          recorded = true;
+          setStatusMessage("Policy updated successfully.");
+          setTimeout(() => {
+            window.location.reload();
+          }, 1200);
+        },
       });
-
-      setStatusMessage("Recording transaction on server...");
-      await postJson(`/api/business/${businessId}/policy`, {
-        action: "record",
-        txHash,
-      });
-
-      setStatusMessage("Policy updated successfully.");
-      setTimeout(() => {
-        window.location.reload();
-      }, 1200);
+      if (!recorded) setStatusMessage(null);
     } catch (err: any) {
       setError(err?.message || "Failed to update policy.");
       setStatusMessage(null);
@@ -225,22 +227,20 @@ export function PolicyView({
 
       setStatusMessage("Please confirm transaction in your wallet...");
       const providers = await getProviders();
-      const txHash = await sendWithWallet(providers, signer, {
-        to: prep.to,
-        data: prep.data,
+      const name = budgetName.trim();
+      let recorded = false;
+      await budgetTx.run({
+        send: () => sendWithWallet(providers, signer, { to: prep.to, data: prep.data }),
+        record: (hash) => postRecord(`/api/business/${businessId}/budgets`, { action: "record-create", name, txHash: hash }),
+        onDone: () => {
+          recorded = true;
+          setStatusMessage("Budget created successfully.");
+          setTimeout(() => {
+            window.location.reload();
+          }, 1200);
+        },
       });
-
-      setStatusMessage("Recording budget...");
-      await postJson(`/api/business/${businessId}/budgets`, {
-        action: "record-create",
-        name: budgetName.trim(),
-        txHash,
-      });
-
-      setStatusMessage("Budget created successfully.");
-      setTimeout(() => {
-        window.location.reload();
-      }, 1200);
+      if (!recorded) setStatusMessage(null);
     } catch (err: any) {
       setError(err?.message || "Failed to create budget.");
       setStatusMessage(null);
@@ -375,9 +375,11 @@ export function PolicyView({
                 : "A tighter or equal policy: it applies as soon as you sign."}
             </p>
 
+            <SentTransactionNotice tx={policyTx} explorer={explorerUrl} />
+
             <Overlay.Footer>
-              <Button variant="secondary" disabled={busy} onClick={() => setEditing(false)}>Cancel</Button>
-              <Button type="submit" busy={busy}>{busy ? "Working…" : isLooser ? "Queue the change" : "Apply now"}</Button>
+              <Button variant="secondary" disabled={busy} onClick={() => setEditing(false)}>{policyTx.locked ? "Close" : "Cancel"}</Button>
+              <Button type="submit" busy={busy || policyTx.busy} disabled={policyTx.locked}>{busy || policyTx.busy ? "Working…" : isLooser ? "Queue the change" : "Apply now"}</Button>
             </Overlay.Footer>
           </form>
         </Overlay>
@@ -438,9 +440,10 @@ export function PolicyView({
                   </select>
                 )}
               </Field>
+              <SentTransactionNotice tx={budgetTx} explorer={explorerUrl} />
               <Overlay.Footer>
-                <Button variant="secondary" disabled={busy} onClick={() => setCreatingBudget(false)}>Cancel</Button>
-                <Button type="submit" busy={busy}>{busy ? "Creating…" : "Create the budget"}</Button>
+                <Button variant="secondary" disabled={busy} onClick={() => setCreatingBudget(false)}>{budgetTx.locked ? "Close" : "Cancel"}</Button>
+                <Button type="submit" busy={busy || budgetTx.busy} disabled={budgetTx.locked}>{busy || budgetTx.busy ? "Creating…" : "Create the budget"}</Button>
               </Overlay.Footer>
             </form>
           </Overlay>

@@ -6,7 +6,8 @@ import { Overlay } from "@/components/Overlay";
 import { QueuedChangeList } from "@/components/QueuedChange";
 import { sendWithWallet, type SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
-import { postJson } from "@/lib/client/api";
+import { postJson, postRecord } from "@/lib/client/api";
+import { useSentHashes } from "@/components/wallet/useSentTransaction";
 import type { TeamMemberView, TeamViewData } from "@/lib/server/team";
 import { checksum, formatDay } from "@/lib/format";
 import { Address } from "@/components/Address";
@@ -45,6 +46,7 @@ export function TeamView({
   const [inviteLabel, setInviteLabel] = useState("");
   const [createdInviteUrl, setCreatedInviteUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const sent = useSentHashes();
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -140,31 +142,38 @@ export function TeamView({
     setBusy(true);
     setOnchainStatus("Preparing onchain transaction...");
     try {
-      const prep = await postJson<{
-        to: string;
-        data: string;
-        state: string;
-        summary: { title: string };
-      }>(`/api/business/${business.id}/team`, {
-        action: "prepare-onchain",
-        targetUserId: m.userId,
-        role,
-        enabled,
-        budgetId,
-      });
+      // The same change sent once is only checked again, never sent a second time
+      const key = `${m.userId}:${role}:${enabled}:${budgetId ?? ""}`;
+      let txHash = sent.get(key);
+      if (!txHash) {
+        const prep = await postJson<{
+          to: string;
+          data: string;
+          state: string;
+          summary: { title: string };
+        }>(`/api/business/${business.id}/team`, {
+          action: "prepare-onchain",
+          targetUserId: m.userId,
+          role,
+          enabled,
+          budgetId,
+        });
 
-      setOnchainStatus("Please confirm the transaction in your wallet...");
-      const providers = await getProviders();
-      const txHash = await sendWithWallet(providers, signer, {
-        to: prep.to,
-        data: prep.data,
-      });
+        setOnchainStatus("Please confirm the transaction in your wallet...");
+        const providers = await getProviders();
+        txHash = await sendWithWallet(providers, signer, {
+          to: prep.to,
+          data: prep.data,
+        });
+        sent.set(key, txHash);
+      }
 
       setOnchainStatus("Recording transaction receipt...");
-      await postJson(`/api/business/${business.id}/team`, {
+      await postRecord(`/api/business/${business.id}/team`, {
         action: "record-onchain",
         txHash,
       });
+      sent.clear(key);
 
       window.location.reload();
     } catch (err: any) {

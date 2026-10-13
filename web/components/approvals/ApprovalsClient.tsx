@@ -16,6 +16,8 @@ import { EmptyState, InlineError } from "@/components/ui/States";
 import { sendCall, type SignerPlan } from "@/components/setup/owner-signer";
 import { TxLink } from "@/components/TxLink";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
+import { SentTransactionNotice, useSentTransaction } from "@/components/wallet/useSentTransaction";
+import { postRecord } from "@/lib/client/api";
 import { signTypedData } from "@/components/vendor/seal-signer";
 import type { ApprovalItem, ApprovalsListResult } from "@/lib/server/approvals";
 import type { businessOffers } from "@/lib/server/offers";
@@ -46,6 +48,7 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [lastTxHash, setLastTxHash] = useState<string | null>(null);
+  const payTx = useSentTransaction();
 
   // --- Pay Now Handler ---
   async function handlePayNow(item: ApprovalItem) {
@@ -63,27 +66,24 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
         throw new Error(prepData.reason || prepData.error || "Failed to prepare payment transaction.");
       }
 
-      // 2. Send transaction with user's wallet
-      const hash = await sendCall(
-        signerPlan,
-        { to: prepData.to, data: prepData.data },
-        discover,
-      );
-
-      // 3. Record transaction receipt on server
-      const recRes = await fetch(`/api/business/${businessId}/approvals`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "record-pay", txHash: hash, fingerprint: item.fingerprint }),
+      // 2 and 3. Send with the user's wallet, then record the receipt. Once a hash exists it is kept and checked again, never sent again.
+      await payTx.run({
+        send: () => sendCall(signerPlan, { to: prepData.to, data: prepData.data }, discover),
+        record: async (hash) => {
+          const recData = await postRecord<{ ok?: boolean; error?: string }>(`/api/business/${businessId}/approvals`, {
+            action: "record-pay",
+            txHash: hash,
+            fingerprint: item.fingerprint,
+          });
+          if (!recData.ok) throw new Error(recData.error || "Transaction was sent but could not be recorded.");
+          return recData;
+        },
+        onDone: (_result, hash) => {
+          setLastTxHash(hash);
+          setPayNowItem(null);
+          refreshAfterChain(router);
+        },
       });
-      const recData = await recRes.json();
-      if (!recRes.ok || !recData.ok) {
-        throw new Error(recData.error || "Transaction was sent but could not be recorded.");
-      }
-
-      setLastTxHash(hash);
-      setPayNowItem(null);
-      refreshAfterChain(router);
     } catch (err: any) {
       setActionError(err.message || "Failed to process payment.");
     } finally {
@@ -303,10 +303,11 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
           />
 
           {actionError ? <InlineError>{actionError}</InlineError> : null}
+          <SentTransactionNotice tx={payTx} explorer={explorerUrl} />
 
           <Overlay.Footer>
-            <Button variant="secondary" onClick={() => setPayNowItem(null)} disabled={actionLoading}>Cancel</Button>
-            <Button onClick={() => handlePayNow(payNowItem)} busy={actionLoading}>{actionLoading ? "Sending…" : "Confirm and pay"}</Button>
+            <Button variant="secondary" onClick={() => setPayNowItem(null)} disabled={actionLoading}>{payTx.locked ? "Close" : "Cancel"}</Button>
+            <Button onClick={() => handlePayNow(payNowItem)} busy={actionLoading || payTx.busy} disabled={payTx.locked}>{actionLoading || payTx.busy ? "Sending…" : "Confirm and pay"}</Button>
           </Overlay.Footer>
         </Overlay>
       ) : null}

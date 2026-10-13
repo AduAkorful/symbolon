@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { encodeEventTopics, getAddress, parseAbiItem, type Hex, type PublicClient } from "viem";
+import { encodeEventTopics, getAddress, parseAbiItem, TransactionReceiptNotFoundError, type Hex, type PublicClient } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { arcTestnet, getDeployment } from "@symbolon/chain";
 import {
@@ -28,6 +28,7 @@ import {
   recordWithdraw,
 } from "@/lib/server/treasury";
 import { setBufferDays, setEarlyPay } from "@/lib/server/settings";
+import { awaitReceipt } from "@/lib/server/tx-receipt";
 import { loadAhead } from "@/lib/server/home";
 import { AuthError } from "@/lib/server/errors";
 
@@ -577,5 +578,41 @@ describe("Treasury Service", () => {
       // User A cannot read Biz B ahead
       await expect(loadAhead(db, mockClient, cfg, userA, bizB.id)).rejects.toThrow(AuthError);
     });
+  });
+});
+
+describe("awaitReceipt (plan 05zj A, SYM-03)", () => {
+  const notFound = () => new TransactionReceiptNotFoundError({ hash: "0x" + "ab".repeat(32) as `0x${string}` });
+  const hashValue = ("0x" + "ab".repeat(32)) as `0x${string}`;
+
+  it("waits through a lagging endpoint's 'no receipt yet' until the receipt appears", async () => {
+    let calls = 0;
+    const client = {
+      getTransactionReceipt: async () => {
+        calls++;
+        if (calls < 4) throw notFound();
+        return { status: "success" };
+      },
+    };
+    const slept: number[] = [];
+    const receipt = await awaitReceipt(client as never, hashValue, { sleep: async (ms) => void slept.push(ms), now: () => 0 });
+    expect(receipt).toMatchObject({ status: "success" });
+    expect(calls).toBe(4);
+    expect(slept).toHaveLength(3);
+  });
+
+  it("is a retryable answer with its own code, not a failure, when the receipt never shows within the wait", async () => {
+    let clock = 0;
+    const client = { getTransactionReceipt: async () => { throw notFound(); } };
+    const error = await awaitReceipt(client as never, hashValue, { timeoutMs: 5_000, now: () => clock, sleep: async (ms) => { clock += ms; } }).catch((e) => e);
+    expect(error).toBeInstanceOf(AuthError);
+    expect(error).toMatchObject({ status: 409, code: "tx_pending" });
+    expect(error.message).toMatch(/isn't confirmed yet/);
+  });
+
+  it("answers at once, still retryable, when the read itself failed (the transaction is not known to have failed)", async () => {
+    const client = { getTransactionReceipt: async () => { throw new Error("rate limited"); } };
+    const error = await awaitReceipt(client as never, hashValue, { sleep: async () => { throw new Error("must not wait"); } }).catch((e) => e);
+    expect(error).toMatchObject({ status: 409, code: "tx_pending" });
   });
 });

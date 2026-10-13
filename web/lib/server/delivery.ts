@@ -17,6 +17,7 @@ import { businesses, decisions, deliveries, invoices, users, type Database } fro
 import { requireMember } from "./access";
 import { appendAppDecision } from "./app-decisions";
 import { AuthError } from "./errors";
+import { awaitReceipt } from "./tx-receipt";
 import type { ChainSettings } from "./business";
 import type { SessionUser } from "./session";
 import { UNSAFE_TEXT } from "@/lib/text-safety";
@@ -232,12 +233,7 @@ export async function recordDelivery(
   if (!userRow?.wallet) throw new AuthError(409, "Your account doesn't have a wallet.");
   const userWallet = getAddress(userRow.wallet);
 
-  let receipt;
-  try {
-    receipt = await client.getTransactionReceipt({ hash: txHash });
-  } catch {
-    throw new AuthError(409, "That transaction isn't confirmed yet. Try again shortly.");
-  }
+  const receipt = await awaitReceipt(client, txHash);
   if (receipt.status !== "success" || !receipt.to || getAddress(receipt.to) !== vault) {
     throw new AuthError(409, "That transaction wasn't a successful call to this Vault.");
   }
@@ -275,7 +271,7 @@ export async function recordDelivery(
 
     // Re-read lens to confirm
     const c = symbolonContracts(client, cfg.deployment);
-    const confirmed = await c.lens.read.deliveryConfirmed([vault, fingerprint]).catch(() => false);
+    const confirmed = await c.lens.read.deliveryConfirmed([vault, fingerprint], { blockNumber: receipt.blockNumber }).catch(() => false);
     if (!confirmed) {
       throw new AuthError(502, "The Vault doesn't show delivery as confirmed yet. Try again shortly.");
     }

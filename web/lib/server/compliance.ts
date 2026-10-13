@@ -18,6 +18,7 @@ import { Risk } from "@symbolon/steward";
 import { requireMember } from "./access";
 import { appendAppDecision } from "./app-decisions";
 import { AuthError } from "./errors";
+import { awaitReceipt } from "./tx-receipt";
 import { blockSeal } from "./inbox";
 import type { AppConfig } from "./load-config";
 import type { SessionUser } from "./session";
@@ -298,12 +299,7 @@ export async function recordScreeningWrite(
   const vault = getAddress(business.vault);
   const seal = getAddress(screening.seal);
 
-  let receipt;
-  try {
-    receipt = await client.getTransactionReceipt({ hash: txHash });
-  } catch {
-    throw new AuthError(409, "That transaction isn't confirmed yet. Try again shortly.");
-  }
+  const receipt = await awaitReceipt(client, txHash);
 
   if (receipt.status !== "success" || !receipt.to || getAddress(receipt.to) !== vault) {
     throw new AuthError(409, "That successful transaction was not sent to this business's Vault.");
@@ -333,7 +329,7 @@ export async function recordScreeningWrite(
   }
 
   const c = symbolonContracts(client, deployment);
-  const payee = await c.lens.read.getPayee([vault, seal]).catch(() => {
+  const payee = await c.lens.read.getPayee([vault, seal], { blockNumber: receipt.blockNumber }).catch(() => {
     throw new AuthError(502, "Can't re-read payee facts on Vault.");
   });
 

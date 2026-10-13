@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { sendCall, type SignerPlan } from "@/components/setup/owner-signer";
-import { postJson } from "@/lib/client/api";
+import { postJson, postRecord } from "@/lib/client/api";
+import { SentTransactionNotice, useSentTransaction } from "@/components/wallet/useSentTransaction";
 import { moneyDraft, moneyInput } from "@/lib/money-draft";
 import { Overlay } from "@/components/Overlay";
 import { Button } from "@/components/ui/button";
@@ -32,7 +33,7 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
   const [requirePo, setRequirePo] = useState(false);
   const [requireDelivery, setRequireDelivery] = useState(false);
   const [cap, setCap] = useState("");
-  const [txHash, setTxHash] = useState("");
+  const tx = useSentTransaction();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   // while a transaction is being sent or its receipt recorded the dialog stays; reading the payout choices can be abandoned
@@ -50,18 +51,13 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
     setBusy(true); setSending(true); setError("");
     try {
       const call = await postJson<{ to: string; data: string }>(path, { action: "prepare", seal, payout, domain: Number(domainText), requirePo, requireDelivery, monthlyCap: capRaw(cap) });
-      const hash = await sendCall(signer, call, discover);
-      setTxHash(hash);
-      await confirm(hash);
+      await tx.run({
+        send: () => sendCall(signer, call, discover),
+        record: (hash) => postRecord(path, { action: "record", txHash: hash, seal }),
+        onDone: () => { refreshAfterChain(router); setOpen(false); },
+      });
     } catch (e) { setError(e instanceof Error ? e.message : "Couldn't add this payee."); }
     finally { setBusy(false); setSending(false); }
-  }
-  async function confirm(hash = txHash) {
-    if (!hash) return;
-    setBusy(true); setError("");
-    try { await postJson(path, { action: "record", txHash: hash, seal }); refreshAfterChain(router); }
-    catch (e) { setError(e instanceof Error ? e.message : "The receipt isn't confirmed yet. Try again."); }
-    finally { setBusy(false); }
   }
   const [open, setOpen] = useState(false);
   const openDialog = () => { setOpen(true); if (!options.length) void loadOptions(); };
@@ -69,11 +65,10 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
     <div className="mt-3">
       <Button variant="secondary" size="sm" onClick={openDialog}>Set up as a payee</Button>
       {open ? (
-        <Overlay title="Add this vendor as a payee" description="You sign one transaction that lets your Vault pay this vendor, within the terms below." onClose={() => { if (!sending) setOpen(false); }}>
+        <Overlay title="Add this vendor as a payee" description="You sign one transaction that lets your Vault pay this vendor, within the terms below." onClose={() => { if (!sending && !tx.busy) { setOpen(false); if (tx.phase === "done") tx.reset(); } }}>
           {error ? (
             <InlineError>
               {error}
-              {txHash ? <> <a href={`${explorer}/tx/${txHash}`} target="_blank" rel="noreferrer" className="underline">View the transaction</a></> : null}
             </InlineError>
           ) : null}
           {!options.length ? (
@@ -94,9 +89,10 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
                 <label className="flex min-h-9 items-center gap-2"><input type="checkbox" checked={requirePo} onChange={(e) => setRequirePo(e.target.checked)} className="h-4 w-4 accent-[var(--seal)]" />Require a purchase order</label>
                 <label className="flex min-h-9 items-center gap-2"><input type="checkbox" checked={requireDelivery} onChange={(e) => setRequireDelivery(e.target.checked)} className="h-4 w-4 accent-[var(--seal)]" />Require delivery confirmation</label>
               </div>
+              <SentTransactionNotice tx={tx} explorer={explorer} />
               <Overlay.Footer>
-                {txHash ? <Button variant="secondary" disabled={busy} onClick={() => confirm()}>Check the receipt</Button> : <Button variant="secondary" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>}
-                <Button busy={busy} disabled={signer.kind === "none" || !selected} onClick={add}>{busy ? "Waiting…" : "Sign the transaction"}</Button>
+                {tx.locked ? null : <Button variant="secondary" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>}
+                <Button busy={busy || tx.busy} disabled={signer.kind === "none" || !selected || tx.locked} onClick={add}>{busy || tx.busy ? "Waiting…" : "Sign the transaction"}</Button>
               </Overlay.Footer>
             </div>
           )}

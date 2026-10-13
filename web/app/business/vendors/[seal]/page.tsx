@@ -109,6 +109,7 @@ export default async function BusinessVendorDetailPage({ params }: { params: Pro
             {business.role === "owner" && budgetsData ? (
               <PayeeTermsEditor
                 accountingDecimals={budgetsData.accountingDecimals}
+                explorer={config.deployment.explorer}
                 businessId={business.id}
                 seal={vendor.seal}
                 currentTerms={{

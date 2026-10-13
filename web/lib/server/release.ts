@@ -25,6 +25,7 @@ import { captureUpgradeSnapshot, compareUpgradeSnapshots, upgradeScope, type Upg
 import { requireMember } from "./access";
 import { appendAppDecision } from "./app-decisions";
 import { AuthError } from "./errors";
+import { awaitReceipt } from "./tx-receipt";
 import type { SessionUser } from "./session";
 
 /** EIP-1967 implementation slot: keccak256("eip1967.proxy.implementation") - 1 */
@@ -400,7 +401,7 @@ export async function recordScheduleUpgrade(
   if (!b || !b.vault) throw new AuthError(404, "Business or Vault not found.");
 
   const vault = getAddress(b.vault);
-  const receipt = await client.getTransactionReceipt({ hash: txHash });
+  const receipt = await awaitReceipt(client, txHash);
   if (receipt.status !== "success") {
     throw new AuthError(400, "Transaction reverted onchain.");
   }
@@ -500,7 +501,7 @@ export async function recordCancelUpgrade(
   if (!b || !b.vault) throw new AuthError(404, "Business or Vault not found.");
 
   const vault = getAddress(b.vault);
-  const receipt = await client.getTransactionReceipt({ hash: txHash });
+  const receipt = await awaitReceipt(client, txHash);
   if (receipt.status !== "success") {
     throw new AuthError(400, "Transaction reverted onchain.");
   }
@@ -623,7 +624,7 @@ export async function recordUpgrade(
   if (!b || !b.vault) throw new AuthError(404, "Business or Vault not found.");
 
   const vault = getAddress(b.vault);
-  const receipt = await client.getTransactionReceipt({ hash: txHash });
+  const receipt = await awaitReceipt(client, txHash);
   if (receipt.status !== "success") {
     throw new AuthError(400, "Transaction reverted onchain.");
   }

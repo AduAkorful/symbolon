@@ -6,7 +6,7 @@ import { formatUnits } from "viem";
 import { openBusiness } from "@/app/actions";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { TxLink } from "@/components/TxLink";
-import { postJson } from "@/lib/client/api";
+import { isStillConfirming, postJson } from "@/lib/client/api";
 import { D, E, registerMotion } from "@/lib/motion";
 import { sendCall, wasRejected, type SignerPlan } from "./owner-signer";
 import { showAmount } from "@/lib/format";
@@ -92,7 +92,7 @@ export function Setup(props: SetupProps) {
         setVaultTx(txHash);
         return;
       } catch (e) {
-        if (tries < 20 && e instanceof Error && /isn't confirmed yet/.test(e.message)) {
+        if (tries < 20 && (isStillConfirming(e) || (e instanceof Error && /isn't confirmed yet/.test(e.message)))) {
           await wait(2000);
           continue;
         }

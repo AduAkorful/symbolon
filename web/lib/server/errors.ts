@@ -3,6 +3,8 @@ export class AuthError extends Error {
   constructor(
     readonly status: 400 | 401 | 403 | 404 | 409 | 429 | 502 | 503,
     message: string,
+    /** A machine-readable reason a screen can act on, without reading the words (plan 05zj A: "tx_pending") */
+    readonly code?: string,
   ) {
     super(message);
     this.name = "AuthError";

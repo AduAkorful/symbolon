@@ -10,6 +10,7 @@ import { ensureChain, findWalletFor, wrongWalletMessage, type SignerPlan } from 
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { signTypedData } from "@/components/vendor/seal-signer";
 import { refreshAfterChain } from "@/lib/client/refresh";
+import { postRecord } from "@/lib/client/api";
 
 interface Props {
   fingerprint: string;
@@ -23,12 +24,21 @@ export function CancelInvoiceAction({ fingerprint, invoiceNumber, signer }: Prop
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // once the cancellation has been sent its hash and request are kept: a second try only checks it, never signs and sends again
+  const [sent, setSent] = useState<{ hash: `0x${string}`; requestId: string } | null>(null);
 
   async function handleCancel() {
     setError(null);
     setBusy(true);
 
     try {
+      if (sent) {
+        await postRecord("/api/vendor/cancel", { action: "record", requestId: sent.requestId, txHash: sent.hash });
+        setSent(null);
+        setOpen(false);
+        refreshAfterChain(router);
+        return;
+      }
       // 1. Prepare
       const prepRes = await fetch("/api/vendor/cancel", {
         method: "POST",
@@ -70,13 +80,9 @@ export function CancelInvoiceAction({ fingerprint, invoiceNumber, signer }: Prop
       })) as `0x${string}`;
 
       // 5. Record
-      const recRes = await fetch("/api/vendor/cancel", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "record", requestId: subData.requestId, txHash }),
-      });
-      const recData = await recRes.json();
-      if (!recRes.ok) throw new Error(recData.error || "Failed to record cancellation");
+      setSent({ hash: txHash, requestId: subData.requestId });
+      await postRecord("/api/vendor/cancel", { action: "record", requestId: subData.requestId, txHash });
+      setSent(null);
 
       setOpen(false);
       refreshAfterChain(router);
@@ -117,7 +123,7 @@ export function CancelInvoiceAction({ fingerprint, invoiceNumber, signer }: Prop
 
           <Overlay.Footer>
             <Button variant="secondary" disabled={busy} onClick={() => setOpen(false)}>Keep invoice</Button>
-            <Button variant="destructive" busy={busy} onClick={handleCancel}>{busy ? "Cancelling…" : "Cancel invoice"}</Button>
+            <Button variant="destructive" busy={busy} onClick={handleCancel}>{busy ? "Cancelling…" : sent ? "Check again" : "Cancel invoice"}</Button>
           </Overlay.Footer>
         </Overlay>
       ) : null}

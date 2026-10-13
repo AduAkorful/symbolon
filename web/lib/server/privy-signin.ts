@@ -22,7 +22,8 @@ export interface PrivyLike {
 }
 
 const JWT = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
-const retry = (message: string) => new AuthError(503, message);
+/** A answer the sign-in screen retries by itself (503 with a code), never one that ends the person's Privy session */
+const retry = (message: string, code = "signin_retry") => new AuthError(503, message, code);
 
 /** The wallet a new account starts with: the one they signed in with, else the one Privy made for them */
 export function chooseWallet(wallets: PrivyUserView["wallets"]): string | null {
@@ -56,7 +57,7 @@ export async function signInWithPrivy(db: Database, privy: PrivyLike, accessToke
 
   // A new person. Their wallet is decided once, here (P4); with none yet, nothing is created.
   const wallet = chooseWallet(view.wallets);
-  if (!wallet) throw retry("Your wallet is still being set up. Wait a moment and sign in again.");
+  if (!wallet) throw retry("Your wallet is still being set up. This takes a few seconds; trying again.", "wallet_pending");
   const [owner] = await db.select({ id: users.id }).from(users).where(eq(users.wallet, wallet)).limit(1);
   if (owner) throw new AuthError(409, "That wallet already belongs to another account.");
   const email = view.email && !(await emailTaken(db, view.email)) ? view.email : null;

@@ -5,6 +5,8 @@ import { useState } from "react";
 
 import { ensureChain, findWalletFor, wrongWalletMessage, type SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
+import { useSentHashes } from "@/components/wallet/useSentTransaction";
+import { postRecord } from "@/lib/client/api";
 import type { PayoutChangeRequestItem } from "@/lib/server/payout-change";
 import { formatDay, formatDateTime } from "@/lib/format";
 import { Address } from "@/components/Address";
@@ -42,6 +44,7 @@ export function VendorRequestsSection({
   const discover = useWalletProviders();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const sent = useSentHashes();
 
   const pendingRequests = requests.filter((r) => r.status === "pending");
   const nowSecs = Math.floor(Date.now() / 1000);
@@ -53,42 +56,45 @@ export function VendorRequestsSection({
     setBusy(true);
 
     try {
-      // 1. Prepare
-      const prepRes = await fetch(`/api/business/${businessId}/requests`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "prepare_confirm", requestId }),
-      });
-      const prepData = await prepRes.json();
-      if (!prepRes.ok) throw new Error(prepData.error || "Failed to prepare confirmation");
+      // 1. Prepare (not when the transaction was already sent: it is only checked again)
+      let prepData: { to?: string; data?: string } = {};
+      if (!sent.get(`confirm:${requestId}`)) {
+        const prepRes = await fetch(`/api/business/${businessId}/requests`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "prepare_confirm", requestId }),
+        });
+        prepData = await prepRes.json();
+        if (!prepRes.ok) throw new Error((prepData as { error?: string }).error || "Failed to prepare confirmation");
+      }
 
-      // 2. Send transaction with owner wallet
-      if (signer.kind === "none") throw new Error(signer.reason);
-      const wallets = await discover();
-      const seen: string[] = [];
-      const provider = await findWalletFor(signer.address, wallets, seen);
-      if (!provider) throw new Error(wrongWalletMessage(signer.address, seen));
-      await ensureChain(provider, signer.chain);
+      // 2. Send transaction with owner wallet (a hash kept from an earlier try is checked again, never sent twice)
+      const key = `confirm:${requestId}`;
+      let txHash = sent.get(key) as `0x${string}` | undefined;
+      if (!txHash) {
+        if (signer.kind === "none") throw new Error(signer.reason);
+        const wallets = await discover();
+        const seen: string[] = [];
+        const provider = await findWalletFor(signer.address, wallets, seen);
+        if (!provider) throw new Error(wrongWalletMessage(signer.address, seen));
+        await ensureChain(provider, signer.chain);
 
-      const txHash = (await provider.request({
-        method: "eth_sendTransaction",
-        params: [
-          {
-            from: signer.address,
-            to: prepData.to,
-            data: prepData.data,
-          },
-        ],
-      })) as `0x${string}`;
+        txHash = (await provider.request({
+          method: "eth_sendTransaction",
+          params: [
+            {
+              from: signer.address,
+              to: prepData.to,
+              data: prepData.data,
+            },
+          ],
+        })) as `0x${string}`;
+        sent.set(key, txHash);
+      }
 
       // 3. Record
-      const recRes = await fetch(`/api/business/${businessId}/requests`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "record_confirm", requestId, txHash }),
-      });
-      const recData = await recRes.json();
-      if (!recRes.ok) throw new Error(recData.error || "Failed to record confirmation");
+      await postRecord(`/api/business/${businessId}/requests`, { action: "record_confirm", requestId, txHash });
+      sent.clear(key);
 
       refreshAfterChain(router);
     } catch (err) {
@@ -105,39 +111,42 @@ export function VendorRequestsSection({
     setBusy(true);
 
     try {
-      const prepRes = await fetch(`/api/business/${businessId}/requests`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "prepare_cancel", requestId }),
-      });
-      const prepData = await prepRes.json();
-      if (!prepRes.ok) throw new Error(prepData.error || "Failed to prepare cancel");
+      let prepData: { to?: string; data?: string } = {};
+      if (!sent.get(`cancel:${requestId}`)) {
+        const prepRes = await fetch(`/api/business/${businessId}/requests`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "prepare_cancel", requestId }),
+        });
+        prepData = await prepRes.json();
+        if (!prepRes.ok) throw new Error((prepData as { error?: string }).error || "Failed to prepare cancel");
+      }
 
-      if (signer.kind === "none") throw new Error(signer.reason);
-      const wallets = await discover();
-      const seen: string[] = [];
-      const provider = await findWalletFor(signer.address, wallets, seen);
-      if (!provider) throw new Error(wrongWalletMessage(signer.address, seen));
-      await ensureChain(provider, signer.chain);
+      const key = `cancel:${requestId}`;
+      let txHash = sent.get(key) as `0x${string}` | undefined;
+      if (!txHash) {
+        if (signer.kind === "none") throw new Error(signer.reason);
+        const wallets = await discover();
+        const seen: string[] = [];
+        const provider = await findWalletFor(signer.address, wallets, seen);
+        if (!provider) throw new Error(wrongWalletMessage(signer.address, seen));
+        await ensureChain(provider, signer.chain);
 
-      const txHash = (await provider.request({
-        method: "eth_sendTransaction",
-        params: [
-          {
-            from: signer.address,
-            to: prepData.to,
-            data: prepData.data,
-          },
-        ],
-      })) as `0x${string}`;
+        txHash = (await provider.request({
+          method: "eth_sendTransaction",
+          params: [
+            {
+              from: signer.address,
+              to: prepData.to,
+              data: prepData.data,
+            },
+          ],
+        })) as `0x${string}`;
+        sent.set(key, txHash);
+      }
 
-      const recRes = await fetch(`/api/business/${businessId}/requests`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "record_cancel", requestId, txHash }),
-      });
-      const recData = await recRes.json();
-      if (!recRes.ok) throw new Error(recData.error || "Failed to record cancel");
+      await postRecord(`/api/business/${businessId}/requests`, { action: "record_cancel", requestId, txHash });
+      sent.clear(key);
 
       refreshAfterChain(router);
     } catch (err) {
@@ -183,7 +192,7 @@ export function VendorRequestsSection({
           tone="info"
           title="Cooldown in progress"
           className="mt-4"
-          actions={isOwner && requests[0] ? <Button variant="danger" size="sm" disabled={busy} onClick={() => handleCancelPending(requests[0]!.id)}>Cancel the change in the Vault</Button> : undefined}
+          actions={isOwner && requests[0] ? <Button variant="danger" size="sm" disabled={busy} onClick={() => handleCancelPending(requests[0]!.id)}>{requests[0] && sent.get(`cancel:${requests[0].id}`) ? "Check again" : "Cancel the change in the Vault"}</Button> : undefined}
         >
           <p>Payout is changing to</p>
           <Address value={pendingPayout!} full copy className="text-ink" />
@@ -216,7 +225,7 @@ export function VendorRequestsSection({
               <div className="mt-4 flex flex-wrap items-center justify-end gap-3 border-t border-rule-soft pt-4">
                 {isApprover || isOwner ? <Button variant="secondary" disabled={busy} onClick={() => handleReject(req.id)}>Reject</Button> : null}
                 {isOwner ? (
-                  <Button busy={busy} onClick={() => handleConfirm(req.id)}>{busy ? "Confirming…" : "Confirm in the Vault"}</Button>
+                  <Button busy={busy} onClick={() => handleConfirm(req.id)}>{busy ? "Confirming…" : sent.get(`confirm:${req.id}`) ? "Check again" : "Confirm in the Vault"}</Button>
                 ) : (
                   <span className="text-sm text-graphite">Only the owner can confirm this.</span>
                 )}

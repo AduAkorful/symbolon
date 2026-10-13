@@ -3,6 +3,7 @@ import "server-only";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   encodeFunctionData,
+  getAbiItem,
   getAddress,
   parseEventLogs,
   type Address,
@@ -10,12 +11,14 @@ import {
   type PublicClient,
 } from "viem";
 import { poRef as computePoRef, formatAmount, parseAmount } from "@symbolon/seal";
-import { symbolonContracts, symbolonVaultAbi, vaultCall, type Deployment } from "@symbolon/chain";
+import { scanLogs, symbolonContracts, symbolonVaultAbi, vaultCall, type Deployment } from "@symbolon/chain";
 import { businesses, decisions, invoices, payees, purchaseOrders, type Database } from "@symbolon/db";
 import { requireMember } from "./access";
 import { appendAppDecision } from "./app-decisions";
 import { CHAIN_READ_DEADLINE_MS, withDeadline } from "./deadline";
+import { ensureVaultBlock } from "./business";
 import { AuthError } from "./errors";
+import { awaitReceipt, TX_PENDING } from "./tx-receipt";
 import type { SessionUser } from "./session";
 import { UNSAFE_TEXT } from "@/lib/text-safety";
 
@@ -318,6 +321,76 @@ export async function prepareOpenPo(
   };
 }
 
+/**
+ * For the "open an order" action: if the Vault already holds this order and the app has no row for it, save it from the Vault's
+ * own event and say so (plan 05zj, SYM-08). Null when there is nothing to adopt, and the normal prepare goes on.
+ */
+export async function adoptUnrecordedPo(
+  db: Database,
+  client: PublicClient,
+  deployment: Deployment,
+  user: Pick<SessionUser, "id">,
+  businessId: string,
+  body: { poNumber: unknown; description?: unknown },
+) {
+  await requireMember(db, user.id, businessId, "owner");
+  if (typeof body.poNumber !== "string") return null;
+  const poNumber = body.poNumber.trim().normalize("NFC");
+  if (!poNumber || poNumber.length > MAX_PO_NUMBER_LENGTH || UNSAFE_TEXT.test(poNumber)) return null;
+  const [business] = await db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1);
+  if (!business?.vault) return null;
+  const vault = getAddress(business.vault);
+  const ref = computePoRef(poNumber);
+  const [known] = await db
+    .select({ poRef: purchaseOrders.poRef })
+    .from(purchaseOrders)
+    .where(and(eq(purchaseOrders.businessId, businessId), eq(purchaseOrders.poRef, ref)))
+    .limit(1);
+  if (known) return null;
+  try {
+    const held = await symbolonContracts(client, deployment).lens.read.getPurchaseOrder([vault, ref]);
+    if (held.seal === "0x0000000000000000000000000000000000000000") return null;
+  } catch {
+    return null;
+  }
+  const description = typeof body.description === "string" && body.description.trim() && !UNSAFE_TEXT.test(body.description) ? body.description.trim().slice(0, MAX_DESC_LENGTH) : null;
+  return adoptOpenedPo(db, client, deployment, user, businessId, vault, ref, poNumber, description);
+}
+
+/**
+ * Saves an order the Vault already holds but this app never recorded, from the order's own `PurchaseOrderOpened` event. The PO
+ * number the person typed must hash to the event's reference (`recordOpenPo` checks it), so a wrong number adopts nothing.
+ */
+async function adoptOpenedPo(
+  db: Database,
+  client: PublicClient,
+  deployment: Deployment,
+  user: Pick<SessionUser, "id">,
+  businessId: string,
+  vault: Address,
+  ref: Hex,
+  poNumber: string,
+  description: string | null,
+) {
+  let hash: Hex | undefined;
+  try {
+    const opened = getAbiItem({ abi: symbolonVaultAbi, name: "PurchaseOrderOpened" });
+    const from = await ensureVaultBlock(db, client, deployment, businessId, vault);
+    const { logs } = await scanLogs(client, { address: vault, events: [opened], fromBlock: from, args: { poRef: ref } });
+    hash = logs[0]?.transactionHash ?? undefined;
+  } catch (e) {
+    console.error("orders: looking for an unrecorded order's opening event failed", e);
+    return null;
+  }
+  if (!hash) return null;
+  try {
+    return await recordOpenPo(db, client, deployment, user, businessId, hash, poNumber, description);
+  } catch (e) {
+    if (e instanceof AuthError && e.status !== 409) throw e;
+    return null;
+  }
+}
+
 // ─── Record open ──────────────────────────────────────────────────────────────
 
 export async function recordOpenPo(
@@ -346,12 +419,7 @@ export async function recordOpenPo(
   if (!business?.vault) throw new AuthError(409, "This business doesn't have a Vault.");
   const vault = getAddress(business.vault);
 
-  let receipt;
-  try {
-    receipt = await client.getTransactionReceipt({ hash: txHash as Hex });
-  } catch {
-    throw new AuthError(409, "That transaction isn't confirmed yet. Try again shortly.");
-  }
+  const receipt = await awaitReceipt(client, txHash as Hex);
   if (receipt.status !== "success" || !receipt.to || getAddress(receipt.to) !== vault) {
     throw new AuthError(409, "That transaction wasn't a successful call to this Vault.");
   }
@@ -385,8 +453,8 @@ export async function recordOpenPo(
 
   // Re-check against the lens
   const c = symbolonContracts(client, deployment);
-  const onchain = await c.lens.read.getPurchaseOrder([vault, ev.poRef]).catch(() => {
-    throw new AuthError(502, "Can't confirm the PO against the Vault right now. Try again.");
+  const onchain = await c.lens.read.getPurchaseOrder([vault, ev.poRef], { blockNumber: receipt.blockNumber }).catch(() => {
+    throw new AuthError(409, "Can't confirm the PO against the Vault yet. Checking again in a moment.", TX_PENDING);
   });
   if (!onchain.open || getAddress(onchain.seal) !== getAddress(ev.seal)) {
     throw new AuthError(409, "The Vault's purchase order doesn't match the receipt. Try again shortly.");
@@ -534,12 +602,7 @@ export async function recordClosePo(
   if (!business?.vault) throw new AuthError(409, "This business doesn't have a Vault.");
   const vault = getAddress(business.vault);
 
-  let receipt;
-  try {
-    receipt = await client.getTransactionReceipt({ hash: txHash as Hex });
-  } catch {
-    throw new AuthError(409, "That transaction isn't confirmed yet. Try again shortly.");
-  }
+  const receipt = await awaitReceipt(client, txHash as Hex);
   if (receipt.status !== "success" || !receipt.to || getAddress(receipt.to) !== vault) {
     throw new AuthError(409, "That transaction wasn't a successful call to this Vault.");
   }

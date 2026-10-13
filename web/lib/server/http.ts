@@ -88,10 +88,10 @@ export function routeWith<C>(handler: (request: Request, ctx: C) => Promise<Resp
       if (!["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase())) assertSameOrigin(request);
       return await handler(request, ctx);
     } catch (e) {
-      if (e instanceof AuthError) return NextResponse.json({ error: e.message }, { status: e.status });
+      if (e instanceof AuthError) return NextResponse.json({ error: e.message, ...(e.code ? { code: e.code } : {}) }, { status: e.status });
       console.error("route failed", e);
       const busy = arcBusyMessage(e);
-      if (busy) return NextResponse.json({ error: busy }, { status: 503 });
+      if (busy) return NextResponse.json({ error: busy, code: "busy" }, { status: 503 });
       return NextResponse.json({ error: "Something went wrong on our side. Try again." }, { status: 500 });
     }
   };

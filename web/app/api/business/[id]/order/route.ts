@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getClient } from "@/lib/server/chain";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
-import { listOrders, prepareOpenPo, recordOpenPo, prepareClosePo, recordClosePo } from "@/lib/server/orders";
+import { adoptUnrecordedPo, listOrders, prepareOpenPo, recordOpenPo, prepareClosePo, recordClosePo } from "@/lib/server/orders";
 import { readBody, requireSession, routeWith } from "@/lib/server/http";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -35,6 +35,12 @@ export const POST = routeWith<Ctx>(async (request, ctx) => {
   const db = await getDb();
 
   if (body.action === "prepare_open" || body.action === "prepare") {
+    // An order the Vault holds but the app never saved is saved from its own event instead of being refused as a duplicate
+    const adopted = await adoptUnrecordedPo(db, getClient(), config.deployment, session.user, businessId, {
+      poNumber: body.poNumber,
+      description: body.description,
+    });
+    if (adopted) return NextResponse.json({ adopted: true, ...adopted });
     return NextResponse.json(
       await prepareOpenPo(db, getClient(), config.deployment, session.user, businessId, {
         poNumber: body.poNumber,

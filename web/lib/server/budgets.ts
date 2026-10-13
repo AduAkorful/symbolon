@@ -5,6 +5,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { symbolonVaultAbi, symbolonContracts, type Deployment } from "@symbolon/chain";
 import { budgets, businesses, type Database } from "@symbolon/db";
 import { AuthError } from "./errors";
+import { awaitReceipt } from "./tx-receipt";
 import { requireMember } from "./access";
 import { prepareChange, recordChange, listQueuedChanges } from "./queued-change";
 import { isUnlimitedCap } from "../format";
@@ -257,9 +258,8 @@ export async function recordCreateBudget(
   const [business] = await db.select().from(businesses).where(eq(businesses.id, businessId));
   if (!business?.vault) throw new AuthError(409, "Business has no Vault.");
   const vault = getAddress(business.vault);
-  const [receipt, transaction] = await Promise.all([
-    client.getTransactionReceipt({ hash: params.txHash }), client.getTransaction({ hash: params.txHash }),
-  ]).catch(() => { throw new AuthError(409, "Can't confirm the budget transaction."); });
+  const receipt = await awaitReceipt(client, params.txHash);
+  const transaction = await client.getTransaction({ hash: params.txHash }).catch(() => { throw new AuthError(409, "Can't confirm the budget transaction.", "tx_pending"); });
   if (receipt.status !== "success" || !receipt.to || getAddress(receipt.to) !== vault) throw new AuthError(409, "Not a successful transaction to this Vault.");
   const decoded = decodeFunctionData({ abi: symbolonVaultAbi, data: transaction.input });
   if (decoded.functionName !== "setBudget" || decoded.args[0].toLowerCase() !== budgetId) throw new AuthError(409, "The signed budget does not match this name.");

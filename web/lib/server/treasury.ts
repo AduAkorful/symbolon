@@ -50,6 +50,7 @@ import { requireMember } from "./access";
 import { appendAppDecision } from "./app-decisions";
 import { parseUsdcAmount, type ChainSettings } from "./business";
 import { AuthError } from "./errors";
+import { awaitReceipt } from "./tx-receipt";
 import type { SessionUser } from "./session";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
@@ -603,7 +604,7 @@ export async function recordWithdraw(
   const [b] = await db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1);
   if (!b || !b.vault) throw new AuthError(404, "No Vault created yet.");
 
-  const receipt = await client.getTransactionReceipt({ hash: txHash as Hex });
+  const receipt = await awaitReceipt(client, txHash as Hex);
   if (receipt.status !== "success") throw new AuthError(409, "Transaction failed onchain.");
 
   // Parse Withdrawn event from Vault
@@ -867,7 +868,7 @@ export async function recordReserveMove(
   if (!b || !b.vault) throw new AuthError(404, "No Vault created yet.");
 
   const vault = getAddress(b.vault);
-  const receipt = await client.getTransactionReceipt({ hash: txHash as Hex });
+  const receipt = await awaitReceipt(client, txHash as Hex);
   if (receipt.status !== "success") throw new AuthError(409, "Transaction failed onchain.");
 
   const subEventAbi = parseAbiItem("event ReserveSubscribed(address indexed caller, uint256 assets, uint256 shares, bytes32 decisionHash)");
@@ -956,12 +957,12 @@ export async function recordConversion(
   const vault = getAddress(b.vault);
 
   // Verify swap tx on chain
-  const swapReceipt = await client.getTransactionReceipt({ hash: swapTxHash as Hex });
+  const swapReceipt = await awaitReceipt(client, swapTxHash as Hex);
   if (swapReceipt.status !== "success") throw new AuthError(409, "Swap transaction failed onchain.");
   if (getAddress(swapReceipt.from) !== owner) throw new AuthError(403, "Swap transaction was not sent from your wallet.");
 
   // Verify transfer tx on chain
-  const transferReceipt = await client.getTransactionReceipt({ hash: transferTxHash as Hex });
+  const transferReceipt = await awaitReceipt(client, transferTxHash as Hex);
   if (transferReceipt.status !== "success") throw new AuthError(409, "Transfer transaction failed onchain.");
   if (getAddress(transferReceipt.from) !== owner) throw new AuthError(403, "Transfer transaction was not sent from your wallet.");
 

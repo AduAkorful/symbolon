@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import { TxLink } from "@/components/TxLink";
 import { sendWithWallet, type SignerPlan } from "@/components/setup/owner-signer";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
-import { postJson } from "@/lib/client/api";
+import { postJson, postRecord } from "@/lib/client/api";
+import { useSentHashes } from "@/components/wallet/useSentTransaction";
 import type { ReleaseViewInfo } from "@/lib/server/release";
 import { buttonClass } from "@/components/ui/button";
 import { ReleaseNotesBody } from "./ReleaseNotesBody";
@@ -31,6 +32,7 @@ export function ReleaseCard({
   const [stateDiffs, setStateDiffs] = useState<string[] | null>(null);
   const [now, setNow] = useState<number>(Date.now());
   const getProviders = useWalletProviders();
+  const sent = useSentHashes();
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -65,30 +67,36 @@ export function ReleaseCard({
     setError(null);
     setSuccess(null);
     try {
-      const prep = await postJson<{
-        ok: boolean;
-        to: string;
-        data: string;
-      }>(`/api/business/${businessId}/settings`, {
-        action: "prepare-schedule",
-      });
+      // A transaction that was already sent is only checked again, never sent a second time
+      let txHash = sent.get("schedule");
+      if (!txHash) {
+        const prep = await postJson<{
+          ok: boolean;
+          to: string;
+          data: string;
+        }>(`/api/business/${businessId}/settings`, {
+          action: "prepare-schedule",
+        });
 
-      if (!prep.ok) throw new Error("Could not prepare upgrade schedule.");
-      if (signer.kind !== "wallet") throw new Error("Wallet not connected.");
+        if (!prep.ok) throw new Error("Could not prepare upgrade schedule.");
+        if (signer.kind !== "wallet") throw new Error("Wallet not connected.");
 
-      const providers = await getProviders();
-      const txHash = await sendWithWallet(providers, signer, {
-        to: prep.to,
-        data: prep.data,
-      });
+        const providers = await getProviders();
+        txHash = await sendWithWallet(providers, signer, {
+          to: prep.to,
+          data: prep.data,
+        });
+        sent.set("schedule", txHash);
+      }
 
-      const rec = await postJson<{ ok: boolean; readyAt: number }>(
+      const rec = await postRecord<{ ok: boolean; readyAt: number }>(
         `/api/business/${businessId}/settings`,
         {
           action: "record-schedule",
           txHash,
         },
       );
+      sent.clear("schedule");
 
       if (rec.ok) {
         setSuccess(`Release ${latest.version} upgrade scheduled successfully.`);
@@ -106,30 +114,35 @@ export function ReleaseCard({
     setError(null);
     setSuccess(null);
     try {
-      const prep = await postJson<{
-        ok: boolean;
-        to: string;
-        data: string;
-      }>(`/api/business/${businessId}/settings`, {
-        action: "prepare-cancel-upgrade",
-      });
+      let txHash = sent.get("cancel");
+      if (!txHash) {
+        const prep = await postJson<{
+          ok: boolean;
+          to: string;
+          data: string;
+        }>(`/api/business/${businessId}/settings`, {
+          action: "prepare-cancel-upgrade",
+        });
 
-      if (!prep.ok) throw new Error("Could not prepare cancel upgrade.");
-      if (signer.kind !== "wallet") throw new Error("Wallet not connected.");
+        if (!prep.ok) throw new Error("Could not prepare cancel upgrade.");
+        if (signer.kind !== "wallet") throw new Error("Wallet not connected.");
 
-      const providers = await getProviders();
-      const txHash = await sendWithWallet(providers, signer, {
-        to: prep.to,
-        data: prep.data,
-      });
+        const providers = await getProviders();
+        txHash = await sendWithWallet(providers, signer, {
+          to: prep.to,
+          data: prep.data,
+        });
+        sent.set("cancel", txHash);
+      }
 
-      const rec = await postJson<{ ok: boolean }>(
+      const rec = await postRecord<{ ok: boolean }>(
         `/api/business/${businessId}/settings`,
         {
           action: "record-cancel-upgrade",
           txHash,
         },
       );
+      sent.clear("cancel");
 
       if (rec.ok) {
         setSuccess("Upgrade schedule cancelled.");
@@ -148,33 +161,43 @@ export function ReleaseCard({
     setSuccess(null);
     setStateDiffs(null);
     try {
-      const prep = await postJson<{
-        ok: boolean;
-        to: string;
-        data: string;
-        operationId: string;
-      }>(`/api/business/${businessId}/settings`, {
-        action: "prepare-upgrade",
-      });
+      // The operation (the Vault's state read before the upgrade) is kept with the hash, so a second try compares against the same "before"
+      let txHash = sent.get("apply");
+      let operationId = sent.get("apply-op");
+      if (!txHash || !operationId) {
+        const prep = await postJson<{
+          ok: boolean;
+          to: string;
+          data: string;
+          operationId: string;
+        }>(`/api/business/${businessId}/settings`, {
+          action: "prepare-upgrade",
+        });
 
-      if (!prep.ok) throw new Error("Could not prepare upgrade.");
-      if (signer.kind !== "wallet") throw new Error("Wallet not connected.");
+        if (!prep.ok) throw new Error("Could not prepare upgrade.");
+        if (signer.kind !== "wallet") throw new Error("Wallet not connected.");
 
-      const providers = await getProviders();
-      const txHash = await sendWithWallet(providers, signer, {
-        to: prep.to,
-        data: prep.data,
-      });
+        const providers = await getProviders();
+        txHash = await sendWithWallet(providers, signer, {
+          to: prep.to,
+          data: prep.data,
+        });
+        operationId = prep.operationId;
+        sent.set("apply", txHash);
+        sent.set("apply-op", operationId);
+      }
 
-      const rec = await postJson<{
+      const rec = await postRecord<{
         ok: boolean;
         stateMatch: boolean;
         diffs: string[];
       }>(`/api/business/${businessId}/settings`, {
         action: "record-upgrade",
         txHash,
-        operationId: prep.operationId,
+        operationId,
       });
+      sent.clear("apply");
+      sent.clear("apply-op");
 
       if (rec.ok) {
         if (rec.stateMatch) {
@@ -256,7 +279,7 @@ export function ReleaseCard({
                 disabled={busy}
                 className={buttonClass({ size: "sm" })}
               >
-                {busy ? "Scheduling..." : `Schedule release ${latest.version}`}
+                {busy ? "Scheduling..." : sent.get("schedule") ? "Check again" : `Schedule release ${latest.version}`}
               </button>
             </div>
           )}
@@ -299,7 +322,7 @@ export function ReleaseCard({
                 disabled={busy}
                 className={buttonClass({ variant: "danger", size: "sm" })}
               >
-                {busy ? "Cancelling..." : "Cancel the schedule"}
+                {busy ? "Cancelling..." : sent.get("cancel") ? "Check again" : "Cancel the schedule"}
               </button>
             </div>
           )}
@@ -324,7 +347,7 @@ export function ReleaseCard({
                 disabled={busy}
                 className={buttonClass({ size: "sm" })}
               >
-                {busy ? "Applying upgrade..." : `Apply release ${latest.version}`}
+                {busy ? "Applying upgrade..." : sent.get("apply") ? "Check again" : `Apply release ${latest.version}`}
               </button>
               <button
                 type="button"

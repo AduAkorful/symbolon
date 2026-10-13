@@ -37,6 +37,7 @@ import {
   type GatedFunctionName,
 } from "./change-kinds";
 import { AuthError } from "./errors";
+import { awaitReceipt } from "./tx-receipt";
 import {
   isLooseningAddressRole,
   isLooseningAutoUpdate,
@@ -272,12 +273,7 @@ export async function recordChange(
     return { ok: true, status: existingRecord.status, changeId: existingRecord.changeId };
   }
 
-  let receipt;
-  try {
-    receipt = await client.getTransactionReceipt({ hash: txHash });
-  } catch {
-    throw new AuthError(409, "Transaction not confirmed yet. Try again shortly.");
-  }
+  const receipt = await awaitReceipt(client, txHash);
 
   if (receipt.status !== "success" || !receipt.to || getAddress(receipt.to) !== vault) {
     throw new AuthError(409, "Transaction failed or was not sent to this Vault.");
