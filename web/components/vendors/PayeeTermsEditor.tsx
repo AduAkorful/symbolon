@@ -9,7 +9,7 @@ import { SentTransactionNotice, useSentTransaction } from "@/components/wallet/u
 import { moneyDraft, moneyInput } from "@/lib/money-draft";
 import { duration } from "@/lib/format";
 import { buttonClass } from "@/components/ui/button";
-import { controlClass } from "@/components/ui/Field";
+import { controlClass, Field } from "@/components/ui/Field";
 
 
 
@@ -142,7 +142,7 @@ export function PayeeTermsEditor({
 
   return (
     <form onSubmit={handleSave} className="mt-4 rounded-doc border border-ink/20 bg-paper-raised p-4 text-sm">
-      <h3 className="font-display text-base">Edit Payee Terms</h3>
+      <h3 className="font-display text-base">Edit payee terms</h3>
       <p className="mt-1 text-xs text-graphite">
         Making terms stricter applies immediately. Making terms looser waits for the Vault’s loosening delay.
       </p>
@@ -174,20 +174,11 @@ export function PayeeTermsEditor({
           </select>
         </div>
 
-        <div>
-          <label htmlFor="termsMonthlyCap" className="block text-xs font-medium text-graphite">
-            Monthly cap ($)
-          </label>
-          <input
-            id="termsMonthlyCap"
-            type="number"
-            step="any"
-            value={draftMonthlyCapUsd}
-            onChange={(e) => setDraftMonthlyCapUsd(e.target.value)}
-            className={controlClass}
-            required
-          />
-        </div>
+        <Field label="Monthly cap ($)">
+          {(a) => (
+            <input {...a} type="number" step="any" value={draftMonthlyCapUsd} onChange={(e) => setDraftMonthlyCapUsd(e.target.value)} className={controlClass} required />
+          )}
+        </Field>
 
         <div className="flex items-center gap-4 pt-1">
           <label className="flex items-center gap-2 text-xs cursor-pointer">

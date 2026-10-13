@@ -150,7 +150,7 @@ export function ChangePayoutAddressSection({ currentPayout, sealAddress, signer 
           disabled={busy || !newPayout.trim() || addressProblem !== null}
           className={buttonClass()}
         >
-          {busy ? "Checking Vaults..." : "Request Payout Change"}
+          {busy ? "Checking Vaults…" : "Request payout change"}
         </button>
       </form>
 

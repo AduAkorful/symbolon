@@ -15,7 +15,7 @@ import { Address } from "@/components/Address";
 import { buttonClass } from "@/components/ui/button";
 import { InlineError } from "@/components/ui/States";
 import { Eyebrow, PageTitle } from "@/components/ui/Type";
-import { controlClass } from "@/components/ui/Field";
+import { controlClass, Field } from "@/components/ui/Field";
 import { showAmount } from "@/lib/format";
 
 export interface ClientOption {
@@ -388,14 +388,18 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
                 </label>
               ))}
             </div>
-            <input
-              className={`${box} w-full ${newBy === "vault" ? "font-mono" : ""}`}
-              value={newValue}
-              onChange={(e) => setNewValue(e.target.value)}
-              placeholder={newBy === "vault" ? "0x…" : "ap@company.example"}
-              aria-label={newBy === "vault" ? "Vault address" : "Email"}
-              required
-            />
+            <Field label={newBy === "vault" ? "Vault address" : "Email"}>
+              {(a) => (
+                <input
+                  {...a}
+                  className={`${box} w-full ${newBy === "vault" ? "font-mono" : ""}`}
+                  value={newValue}
+                  onChange={(e) => setNewValue(e.target.value)}
+                  placeholder={newBy === "vault" ? "0x…" : "ap@company.example"}
+                  required
+                />
+              )}
+            </Field>
             <p className="text-sm text-graphite">A business on Symbolon can share its Vault address with you. Symbolon doesn’t list businesses.</p>
           </div>
         ) : chosen ? (

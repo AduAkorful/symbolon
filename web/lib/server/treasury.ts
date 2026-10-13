@@ -1,7 +1,7 @@
 import "server-only";
 
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
-import { isUnlimitedCap } from "../format";
+import { formatDay, isUnlimitedCap } from "../format";
 import {
   decodeEventLog,
   encodeFunctionData,
@@ -363,10 +363,7 @@ export async function loadTreasury(
 
   let runwayStatement = `Cash covers everything due in the next ${FORECAST_HORIZON_DAYS} days.`;
   if (runway !== undefined) {
-    const shortDate = new Date(Date.now() + runway * 86_400_000).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    });
+    const shortDate = formatDay(new Date(Date.now() + runway * 86_400_000));
     runwayStatement = `Cash runs short on ${shortDate} (USDC).`;
   }
 
@@ -374,7 +371,7 @@ export async function loadTreasury(
     const dt = new Date(Number(d.day) * 86_400 * 1000);
     return {
       day: idx,
-      date: dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      date: formatDay(dt),
       outflows: formatUnits(d.outflows, usdcDecimals),
       inflows: formatUnits(d.inflows, usdcDecimals),
       balance: formatUnits(d.balance, usdcDecimals),
@@ -388,7 +385,7 @@ export async function loadTreasury(
       const day = dayOffset < 0 ? 0 : dayOffset;
       return {
         day,
-        date: f.dueDate.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        date: formatDay(f.dueDate),
         amount: formatUnits(f.amount, usdcDecimals),
         delta: -Number(formatUnits(f.amount, usdcDecimals)),
         vendor: f.vendor,

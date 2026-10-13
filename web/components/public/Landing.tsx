@@ -97,7 +97,7 @@ export function Landing() {
               <Half side="vendor" fingerprint={FP} className="h-[330px] bg-paper-raised" tone="var(--seal)">
                 <div className="px-4 py-7 pr-9 sm:px-6 sm:pr-11">
                   <p className="font-mono text-xs uppercase tracking-[0.16em] text-graphite">The vendor’s half</p>
-                  <p className="mt-2 font-display text-2xl">Verified Vendor</p>
+                  <p className="mt-2 font-display text-2xl">Verified vendor</p>
                   <SealStamp handle="@vendor" size={52} className="mt-4 rotate-[-6deg]" />
                   <p className="mt-5 text-sm text-graphite">Invoice 0001 · $2,000.00 USDC</p>
                 </div>
@@ -107,7 +107,7 @@ export function Landing() {
               <Half side="payer" fingerprint={FP} className="h-[330px] bg-paper-raised" tone="var(--seal)">
                 <div className="px-4 py-7 pl-9 sm:px-6 sm:pl-11">
                   <p className="font-mono text-xs uppercase tracking-[0.16em] text-graphite">The payer’s half</p>
-                  <p className="mt-2 font-display text-2xl">Your Business</p>
+                  <p className="mt-2 font-display text-2xl">Your business</p>
                   <ul className="mt-4 space-y-1.5 text-sm">
                     <li>✓ Order PO-0001</li>
                     <li>✓ Delivered on time</li>

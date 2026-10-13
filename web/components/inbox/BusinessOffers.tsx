@@ -2,7 +2,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { businessOffers } from "@/lib/server/offers";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, showMoney } from "@/lib/format";
 import { Eyebrow } from "@/components/ui/Type";
 import { PayInvoice } from "@/components/inbox/PayInvoice";
 import type { SignerPlan } from "@/components/setup/owner-signer";
@@ -37,7 +37,7 @@ export function BusinessOffers({ businessId, fingerprint, view, symbol, pay }: {
     <Eyebrow as="h2">Vendor Early Pay offers</Eyebrow>
     <p className="mt-2 text-xs text-graphite">Accepting an offer pays the invoice now, with the vendor’s signed discount. The Vault’s rules still apply.</p>
     {open.map((offer) => <div key={offer.id} className="mt-3 text-sm">
-      <p>{offer.discountPercent}% discount · saving {exact(BigInt(view.remaining) * BigInt(offer.discountBps) / 10_000n)} {symbol} · valid until {formatDateTime(new Date(offer.validUntil))}</p>
+      <p>{offer.discountPercent}% discount · saving {showMoney(exact(BigInt(view.remaining) * BigInt(offer.discountBps) / 10_000n), symbol)} · valid until {formatDateTime(new Date(offer.validUntil))}</p>
       {view.canAct ? (
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
           {pay && !pay.unavailable ? (

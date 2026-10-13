@@ -7,6 +7,9 @@ import { PublicHeader } from "@/components/public/PublicHeader";
 import { CONTAINER } from "@/components/shell/container";
 import { getConfig } from "@/lib/server/config";
 
+// the network settings come from the running deployment's config, which isn't known when the build prerenders
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Get started",
   description: "What you need to try Symbolon on Arc testnet: a wallet, the network settings, and a little testnet USDC.",

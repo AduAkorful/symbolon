@@ -80,12 +80,9 @@ export function isUnlimitedCap(raw: bigint): boolean {
 const HOUR = 3_600n;
 const DAY = 24n * HOUR;
 
-/** Whole dollars from raw 6-decimal units, with the cents the UI always shows */
+/** Dollars from raw units: at least two decimals and every real digit after them ("$15.375", never "$15.37"); the same digits as `showMoney` */
 export function usd(raw: bigint, decimals = 6): string {
-  const unit = 10n ** BigInt(decimals);
-  const whole = raw / unit;
-  const cents = ((raw % unit) * 100n) / unit;
-  return `$${whole.toLocaleString("en-US")}.${cents.toString().padStart(2, "0")}`;
+  return `$${showAmount(formatAmount(raw, decimals))}`;
 }
 
 export function duration(seconds: bigint): string {

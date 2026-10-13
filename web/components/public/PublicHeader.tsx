@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Wordmark } from "@/components/Marks";
 import { CONTAINER } from "@/components/shell/container";
-import { buttonClass } from "@/components/ui/button";
+import { SessionLinks } from "@/components/public/SessionLinks";
 
 /** The frame around pages anyone can open: no account, no navigation into the app */
 export function PublicHeader() {
@@ -20,12 +20,7 @@ export function PublicHeader() {
         <Link href="/status" className="hidden min-h-10 items-center text-graphite hover:text-ink md:inline-flex">
           Status
         </Link>
-        <Link href="/signin" className="inline-flex min-h-10 items-center text-graphite hover:text-ink">
-          Sign in
-        </Link>
-        <Link href="/vendor/start" className={buttonClass({ size: "sm" })}>
-          Start free
-        </Link>
+        <SessionLinks />
       </nav>
     </header>
   );

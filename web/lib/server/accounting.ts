@@ -29,6 +29,7 @@ import { requireMember } from "./access";
 import { syncToHead } from "./sync";
 import { appendAppDecision } from "./app-decisions";
 import { AuthError } from "./errors";
+import { formatDay } from "../format";
 import type { SessionUser } from "./session";
 
 export interface AccountingPayment {
@@ -162,7 +163,7 @@ export async function loadAccounting(
     }
 
     const dateStr = e.blockTime
-      ? e.blockTime.toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" })
+      ? formatDay(e.blockTime)
       : "Pending";
 
     return {

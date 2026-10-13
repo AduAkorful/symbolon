@@ -18,7 +18,7 @@ import { SentTransactionNotice, useSentTransaction } from "@/components/wallet/u
 import { getConversionWallet } from "@/lib/client/conversion-wallet";
 import { ConversionFlow, TransferNotSubmittedError, quoteOutput, observeSwapReceipt, confirmFundingReceipt, type ConversionRecovery } from "@/lib/client/conversion-flow";
 import { recordQueuedChange } from "@/lib/client/queued-actions";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, showMoney } from "@/lib/format";
 import { moneyDraft, moneyInput } from "@/lib/money-draft";
 
 // The treasury's dialogs (plan 05zb F3). Each is one `Overlay`: the frame, the title, the padding and the scroll belong to it;
@@ -157,7 +157,7 @@ export function FundModal({
         : typed.raw <= 0n
           ? "The amount has to be more than zero."
           : walletRaw !== null && typed.raw > walletRaw
-            ? `Your wallet holds only $${moneyInput(walletRaw, 6)} USDC.`
+            ? `Your wallet holds only ${showMoney(moneyInput(walletRaw, 6), "USDC")}.`
             : null;
 
   async function submit(e: React.FormEvent) {
@@ -218,7 +218,7 @@ export function FundModal({
         <Field label="Amount">
           {(a) => <input {...a} type="text" inputMode="decimal" required placeholder="500" value={amount} onChange={(e) => setAmount(e.target.value)} className={controlClass} />}
         </Field>
-        {walletRaw !== null ? <p className="text-xs text-graphite">Your wallet holds ${moneyInput(walletRaw, 6)} USDC.</p> : null}
+        {walletRaw !== null ? <p className="text-xs text-graphite">Your wallet holds {showMoney(moneyInput(walletRaw, 6), "USDC")}.</p> : null}
         <WatchTokens signer={signer} tokens={watchable} />
         {amountProblem ? <InlineError>{amountProblem}</InlineError> : null}
 
@@ -365,7 +365,7 @@ export function ConvertModal({
           <dl className="space-y-2 rounded-doc border border-rule px-4 py-3">
             <div className="flex justify-between gap-4">
               <dt className="text-graphite">Estimated EURC</dt>
-              <dd className="font-medium">{quote.out} EURC</dd>
+              <dd className="font-medium">{showMoney(quote.out, "EURC")}</dd>
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-graphite">Price protection</dt>
@@ -705,7 +705,7 @@ export function ReservePolicyModal({
           <dl className="divide-y divide-rule rounded-doc border border-rule">
             <div className="flex justify-between gap-4 px-4 py-2.5"><dt className="text-graphite">Reserve</dt><dd className="font-medium text-ink">{enabled ? "On" : "Off"}</dd></div>
             <div className="flex justify-between gap-4 px-4 py-2.5"><dt className="text-graphite">Most that may sit in USYC</dt><dd className="font-medium text-ink">{maxReservePercent}% of cash</dd></div>
-            <div className="flex justify-between gap-4 px-4 py-2.5"><dt className="text-graphite">Always left as USDC</dt><dd className="font-medium text-ink">{minOperating} USDC</dd></div>
+            <div className="flex justify-between gap-4 px-4 py-2.5"><dt className="text-graphite">Always left as USDC</dt><dd className="font-medium text-ink">{showMoney(minOperating, "USDC")}</dd></div>
           </dl>
           <p className="text-graphite">
             {waits

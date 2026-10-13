@@ -6,7 +6,11 @@
  */
 export function Avatar({ name, src, show = true, size = 24, letters = 1, className = "" }: { name: string; src?: string | undefined; show?: boolean; size?: number; letters?: 1 | 2; className?: string }) {
   const drawn = Boolean(src) && show;
-  const initials = name
+  // an address has no initials: "0x7d9a…" would read as "0", so a plain person mark stands in
+  const isAddress = /^0x[0-9a-f]{4,}/i.test(name.trim());
+  const initials = isAddress
+    ? null
+    : name
     .split(/\s+/)
     .filter(Boolean)
     .slice(0, letters)
@@ -18,7 +22,16 @@ export function Avatar({ name, src, show = true, size = 24, letters = 1, classNa
       style={{ width: size, height: size, fontSize: Math.round(size * (letters === 2 ? 0.42 : 0.52)) }}
       {...(drawn ? { role: "img", "aria-label": `${name}` } : { "aria-hidden": true })}
     >
-      {drawn ? <img src={src} alt="" className="h-full w-full object-contain" /> : initials}
+      {drawn ? (
+        <img src={src} alt="" className="h-full w-full object-contain" />
+      ) : initials !== null ? (
+        initials
+      ) : (
+        <svg viewBox="0 0 24 24" width="60%" height="60%" fill="currentColor" aria-hidden="true">
+          <circle cx="12" cy="8.5" r="4" />
+          <path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z" />
+        </svg>
+      )}
     </span>
   );
 }

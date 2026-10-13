@@ -16,7 +16,7 @@ import { WatchTokens } from "@/components/wallet/WatchTokens";
 import { Address } from "@/components/Address";
 import { buttonClass } from "@/components/ui/button";
 import { PageTitle } from "@/components/ui/Type";
-import { controlClass } from "@/components/ui/Field";
+import { controlClass, Field } from "@/components/ui/Field";
 
 /** What the chain says about the Steward of a Vault we know (plan 05h, H13): only "paused" (or "none", an older Vault with no Steward) lets the wizard on to Fund */
 export type Standing = "paused" | "active" | "unknown" | "mismatch" | "none";
@@ -337,10 +337,9 @@ export function Setup(props: SetupProps) {
                       void run("Confirming on Arc…", () => record(pasted.trim()));
                     }}
                   >
-                    <label className="min-w-[16rem] flex-1 text-xs text-graphite">
-                      Transaction hash
-                      <input className={`${input} font-mono`} value={pasted} onChange={(e) => setPasted(e.target.value)} placeholder="0x…" required />
-                    </label>
+                    <Field label="Transaction hash" className="min-w-[16rem] flex-1">
+                      {(a) => <input {...a} className={`${input} font-mono`} value={pasted} onChange={(e) => setPasted(e.target.value)} placeholder="0x…" required />}
+                    </Field>
                     <button disabled={busy !== null} className={buttonClass({ variant: "secondary" })}>
                       Check it
                     </button>
@@ -403,7 +402,7 @@ function Fund({ business, props, standing, run, busy, discover }: { business: { 
         : draft.raw <= 0n
           ? "The amount has to be more than zero."
           : walletRaw !== null && draft.raw > walletRaw
-            ? `Your wallet holds only ${showMoney(moneyInput(walletRaw, 6), "USDC")} USDC.`
+            ? `Your wallet holds only ${showMoney(moneyInput(walletRaw, 6), "USDC")}.`
             : null;
   const maxRaw = walletRaw !== null ? (walletRaw > FEE_RESERVE ? walletRaw - FEE_RESERVE : 0n) : null;
   const funding = balance?.ok ? balance.funding : undefined;
@@ -446,7 +445,7 @@ function Fund({ business, props, standing, run, busy, discover }: { business: { 
               <input className={input} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="100.00" required aria-invalid={amountProblem ? true : undefined} />
             </label>
             <p className="mt-2 text-xs text-graphite" aria-live="polite">
-              {walletRaw !== null ? `Your wallet holds ${showMoney(moneyInput(walletRaw, 6), "USDC")} USDC.` : balance?.ok ? "Can’t confirm your wallet’s balance right now." : ""}
+              {walletRaw !== null ? `Your wallet holds ${showMoney(moneyInput(walletRaw, 6), "USDC")}.` : balance?.ok ? "Can’t confirm your wallet’s balance right now." : ""}
               {maxRaw !== null && maxRaw > 0n ? (
                 <button type="button" onClick={() => setAmount(moneyInput(maxRaw, 6))} className="ml-2 underline decoration-rule underline-offset-4">
                   Use the most ({showMoney(moneyInput(maxRaw, 6), "USDC")}), leaving a little for the fee

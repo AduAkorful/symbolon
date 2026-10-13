@@ -12,7 +12,7 @@ import { getConfig } from "@/lib/server/config";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Contract Status",
+  title: "Contract status",
   description: "Live onchain verification and deployment health of Symbolon contracts on Arc testnet.",
 };
 

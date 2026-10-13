@@ -294,7 +294,8 @@ export function TeamView({
                       <StatusPill tone="neutral" className="capitalize">{m.appRole}</StatusPill>
                     </p>
                     {m.displayName && m.email ? <p className="mt-0.5 text-sm text-graphite">{m.email}</p> : null}
-                    {m.wallet ? <div className="mt-1 text-sm text-graphite"><Address value={m.wallet} full /></div> : null}
+                    {/* a person with no name or email is already shown by their wallet: the address is not printed twice (plan 05zj G, SYM-50) */}
+                    {m.wallet && (m.displayName || m.email) ? <div className="mt-1 text-sm text-graphite"><Address value={m.wallet} full /></div> : null}
                     <p className="mt-2 flex flex-wrap items-center gap-2 text-sm">
                       <span className="text-graphite">In the Vault:</span>
                       <StatusPill tone={onchain.tone}>{onchain.text}</StatusPill>
