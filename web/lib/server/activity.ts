@@ -2,7 +2,8 @@ import "server-only";
 
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { formatAmount } from "@symbolon/seal";
-import { resolveTokenSymbol } from "@symbolon/core";
+import { resolveTokenSymbol, syncVault } from "@symbolon/core";
+import type { Deployment } from "@symbolon/chain";
 import { formatDateTime, showMoney } from "../format";
 import {
   businesses,
@@ -16,6 +17,8 @@ import {
 } from "@symbolon/db";
 import { getAddress, type Address, type PublicClient } from "viem";
 import { requireMember } from "./access";
+import { ensureVaultBlock } from "./business";
+import { summarizeDecision } from "./decision-text";
 import { AuthError } from "./errors";
 import type { SessionUser } from "./session";
 
@@ -130,9 +133,15 @@ export function describeEvent(eventName: string, args: Record<string, unknown>, 
   }
 }
 
-/** Pure function describing Decisions per K12 */
-export function describeDecision(d: typeof decisions.$inferSelect): { what: string; tone?: "seal" | "red" } {
-  const subjectShort = d.subject ? `${d.subject.slice(0, 10)}…` : "";
+/**
+ * Pure function describing Decisions per K12. `ref` turns a decision's subject into what a person recognises (an invoice number and
+ * its vendor, a vendor's name); without one, or when it knows nothing of the subject, the start of the hash is shown, never a guess.
+ */
+export function describeDecision(
+  d: typeof decisions.$inferSelect,
+  ref?: (subject: string) => string | undefined,
+): { what: string; tone?: "seal" | "red" } {
+  const subjectShort = d.subject ? (ref?.(d.subject) ?? `${d.subject.slice(0, 10)}…`) : "";
   const rec = d.record as Record<string, unknown> | null;
   const rule = rec?.rule ? String(rec.rule) : "";
 
@@ -155,7 +164,12 @@ export function describeDecision(d: typeof decisions.$inferSelect): { what: stri
     case "screening_recorded":
       return { what: `Compliance screening recorded onchain for ${subjectShort}` };
     case "export_created":
-      return { what: `Exported ${rec?.format ?? "accounting"} records (${rec?.rowCount ?? ""} entries)` };
+    {
+      // stored under `inputs` (plan 05zj E, SYM-24)
+      const inputs = (rec?.inputs ?? {}) as { format?: unknown; rowCount?: unknown };
+      const format = inputs.format === "beancount" ? "Beancount" : "CSV";
+      return { what: typeof inputs.rowCount === "number" ? `Exported ${format} accounting records (${inputs.rowCount} ${inputs.rowCount === 1 ? "entry" : "entries"})` : `Exported ${format} accounting records` };
+    }
     case "reserve_sweep":
     case "reserve_subscribe":
       return { what: "Moved idle cash into the USYC reserve", tone: "seal" };
@@ -164,7 +178,25 @@ export function describeDecision(d: typeof decisions.$inferSelect): { what: stri
     case "early_pay_offered":
       return { what: `Vendor submitted early pay cash-now offer for ${subjectShort}` };
     default:
-      return { what: `Decision: ${d.kind}${rec?.outcome ? ` (${rec.outcome})` : ""}` };
+      // every other recorded action has its own plain sentence (and a readable fallback), never "Decision: some_code"
+      return { what: summarizeDecision((rec ?? { kind: d.kind }) as Record<string, unknown>).sentence };
+  }
+}
+
+const VIEW_SYNC_WINDOW_BLOCKS = 20_000n;
+const VIEW_SYNC_DEADLINE_MS = 4_000;
+
+async function syncVaultForView(db: Database, client: PublicClient, deployment: Deployment, businessId: string, vault: string): Promise<void> {
+  try {
+    const fromBlock = await ensureVaultBlock(db, client, deployment, businessId, vault);
+    const late = new Promise<void>((resolve) => setTimeout(resolve, VIEW_SYNC_DEADLINE_MS));
+    const sync = syncVault(db, client, deployment, getAddress(vault), { fromBlock, maxBlocks: VIEW_SYNC_WINDOW_BLOCKS }).then(
+      () => undefined,
+      (error) => console.error("activity: vault sync failed", error instanceof Error ? error.message : error),
+    );
+    await Promise.race([sync, late]);
+  } catch (error) {
+    console.error("activity: couldn't start the vault sync", error instanceof Error ? error.message : error);
   }
 }
 
@@ -209,6 +241,7 @@ export async function loadActivity(
   user: Pick<SessionUser, "id">,
   businessId: string,
   filters: ActivityFilters = {},
+  opts: { deployment?: Deployment } = {},
 ): Promise<ActivityFeed> {
   await requireMember(db, user.id, businessId);
 
@@ -216,6 +249,13 @@ export async function loadActivity(
   if (!business) throw new AuthError(404, "Business not found");
 
   const vault = business.vault?.toLowerCase() ?? "";
+
+  // Bring the Vault's own events forward by one bounded window before reading (plan 05zj E, SYM-14, D7 a): a page that only read
+  // what a Steward run or the cron had stored showed an empty Activity until one of those ran. It never holds the page past its
+  // deadline; what it hasn't read yet arrives on the next view.
+  if (client && vault && opts.deployment) {
+    await syncVaultForView(db, client, opts.deployment, businessId, vault);
+  }
 
   // Perform bounded lazy backfill of block times if client is available
   if (client && vault) {
@@ -299,8 +339,17 @@ export async function loadActivity(
     .orderBy(desc(decisions.createdAt))
     .limit(100);
 
+  // what a decision's subject is called to a person: an invoice by number and vendor, a vendor by name
+  const refFor = (subject: string): string | undefined => {
+    const inv = invoiceByFp.get(subject.toLowerCase());
+    if (inv) return `${inv.invoiceNumber} from ${sealMap.get(inv.seal.toLowerCase()) || inv.seal}`;
+    const vendor = sealMap.get(subject.toLowerCase());
+    if (vendor) return vendor;
+    return undefined;
+  };
+
   for (const d of decRows) {
-    const desc = describeDecision(d);
+    const desc = describeDecision(d, refFor);
     const actor = resolveActorForDecision(d);
     const rec = d.record as Record<string, unknown> | null;
     const inputs = rec?.inputs as Record<string, unknown> | null;

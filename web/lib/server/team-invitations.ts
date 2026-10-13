@@ -12,10 +12,10 @@ const sha = (value: string) => createHash("sha256").update(value).digest("hex");
 
 const cleanLabel = (value: unknown): string | null => {
   if (value === undefined || value === null || value === "") return null;
-  if (typeof value !== "string") throw new AuthError(400, "Label must be a string.");
+  if (typeof value !== "string") throw new AuthError(400, "The note must be text.");
   const result = value.normalize("NFC").trim();
   if (result.length > 100 || /[\p{Cc}\p{Cf}]/u.test(result)) {
-    throw new AuthError(400, "Label must be 1 to 100 characters, without control characters.");
+    throw new AuthError(400, "The note must be 1 to 100 characters, without control characters.");
   }
   return result || null;
 };

@@ -11,6 +11,9 @@ export function PublicHeader() {
         <Wordmark />
       </Link>
       <nav className="flex items-center gap-4 text-sm" aria-label="Public navigation">
+        <Link href="/guide" className="hidden min-h-10 items-center text-graphite hover:text-ink sm:inline-flex">
+          Get started
+        </Link>
         <Link href="/verify" className="hidden min-h-10 items-center text-graphite hover:text-ink sm:inline-flex">
           Verify an invoice
         </Link>

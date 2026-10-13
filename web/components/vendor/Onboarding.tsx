@@ -44,15 +44,21 @@ export function Onboarding({ wallet, next = "/vendor" }: { wallet: string | null
       return;
     }
     setAvail("checking");
+    // an answer that arrives after the handle changed again is for a handle that is no longer there (plan 05zj F, SYM-46)
+    let stale = false;
     const t = setTimeout(async () => {
       try {
         const r = await fetch(`/api/vendor/seal?handle=${encodeURIComponent(handle)}`, { cache: "no-store" });
-        setAvail(r.ok ? ((await r.json()) as { ok: boolean; reason?: string }) : null);
+        const answer = r.ok ? ((await r.json()) as { ok: boolean; reason?: string }) : null;
+        if (!stale) setAvail(answer);
       } catch {
-        setAvail(null);
+        if (!stale) setAvail(null);
       }
     }, 350);
-    return () => clearTimeout(t);
+    return () => {
+      stale = true;
+      clearTimeout(t);
+    };
   }, [handle]);
 
   async function register(e: React.FormEvent) {
@@ -63,7 +69,14 @@ export function Onboarding({ wallet, next = "/vendor" }: { wallet: string | null
       await postJson("/api/vendor/seal", { handle, displayName: name, website });
       setI(1);
     } catch (err) {
-      setProblem(err instanceof Error ? err.message : "Something went wrong.");
+      const message = err instanceof Error ? err.message : "Something went wrong.";
+      // a refusal about the handle belongs under the handle, once; anything else is said at the foot of the form
+      if (/handle/i.test(message)) {
+        setAvail({ ok: false, reason: message });
+        setProblem(null);
+      } else {
+        setProblem(message);
+      }
     } finally {
       setBusy(false);
     }
@@ -89,7 +102,7 @@ export function Onboarding({ wallet, next = "/vendor" }: { wallet: string | null
         <Link href="/" aria-label="Symbolon home">
           <Wordmark />
         </Link>
-        <Link href="/business" className="text-sm text-graphite underline decoration-rule underline-offset-4">
+        <Link href="/signin" className="text-sm text-graphite underline decoration-rule underline-offset-4">
           Back to the app
         </Link>
       </header>
@@ -128,7 +141,7 @@ export function Onboarding({ wallet, next = "/vendor" }: { wallet: string | null
               )}
               <label className="mt-8 block text-sm">
                 Handle
-                <input className={`${input} font-mono`} value={handle} onChange={(e) => setHandle(e.target.value.toLowerCase())} required minLength={3} maxLength={40} autoCapitalize="none" spellCheck={false} aria-describedby="handle-note" />
+                <input className={`${input} font-mono`} value={handle} onChange={(e) => { setHandle(e.target.value.toLowerCase()); setProblem(null); }} required minLength={3} maxLength={40} autoCapitalize="none" spellCheck={false} aria-describedby="handle-note" />
               </label>
               <p id="handle-note" className="mt-1 text-xs text-graphite" aria-live="polite">
                 {avail === "checking" ? "Checking…" : avail ? (avail.ok ? "✓ Available" : avail.reason) : "Lowercase letters, digits and hyphens. It appears on your invoices as @handle."}

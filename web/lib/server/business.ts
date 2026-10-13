@@ -1,8 +1,8 @@
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, count, eq, isNull, sql } from "drizzle-orm";
 import { encodeFunctionData, erc20Abi, getAddress, parseAbiItem, parseEventLogs, parseUnits, type Address, type Hex, type PublicClient } from "viem";
 import { createVaultCall, policyTemplate, recordVault, registerBusiness, type PolicyTemplate } from "@symbolon/core";
 import { symbolonContracts, toTransaction, vaultCall, vaultFactoryAbi, type Deployment } from "@symbolon/chain";
-import { businesses, members, type Database } from "@symbolon/db";
+import { businesses, decisions, members, type Database } from "@symbolon/db";
 import { requireMember } from "./access";
 import { appendAppDecision } from "./app-decisions";
 import { AuthError } from "./errors";
@@ -212,6 +212,59 @@ export async function prepareFund(
   const value = parseUsdcAmount(amount);
   const data = encodeFunctionData({ abi: erc20Abi, functionName: "transfer", args: [getAddress(b.vault), value] });
   return { to: cfg.deployment.tokens.usdc, data, chainId: cfg.chainId };
+}
+
+/**
+ * Records a deposit the owner's wallet sent (plan 05zj E, SYM-14, D7 a). A token transfer into the Vault emits nothing the Vault
+ * itself could sync, so Activity could never show it; the app writes the record when it has confirmed the transfer from the
+ * receipt. What is checked: the transaction succeeded, and the token's own `Transfer` log (exactly one) moved this token from the
+ * owner's wallet to this Vault. Recording the same hash again changes nothing.
+ */
+export async function recordDeposit(
+  db: Database,
+  client: PublicClient,
+  cfg: ChainSettings,
+  user: Pick<SessionUser, "id" | "wallet">,
+  businessId: string,
+  txHash: unknown,
+): Promise<{ recorded: boolean; token: "USDC" | "EURC"; amount: string; txHash: string }> {
+  if (typeof txHash !== "string" || !HASH.test(txHash)) throw new AuthError(400, "That isn't a transaction hash.");
+  const b = await ownedBusiness(db, cfg, user, businessId);
+  if (!b.vault) throw new AuthError(409, "This business has no Vault yet.");
+  const vault = getAddress(b.vault);
+  const owner = ownerWallet(user);
+  const receipt = await awaitReceipt(client, txHash as Hex);
+  if (receipt.status !== "success") throw new AuthError(409, "That transaction failed onchain, so nothing was deposited.");
+  const tokens = [
+    { symbol: "USDC" as const, address: getAddress(cfg.deployment.tokens.usdc) },
+    { symbol: "EURC" as const, address: getAddress(cfg.deployment.tokens.eurc) },
+  ];
+  // the token contract's own log only: a USDC transfer also emits a system log from another address
+  const transfers = parseEventLogs({ abi: erc20Abi, eventName: "Transfer", logs: receipt.logs }).filter(
+    (l) => tokens.some((t) => t.address === getAddress(l.address)) && getAddress(l.args.to) === vault,
+  );
+  if (transfers.length !== 1) throw new AuthError(409, "That transaction didn't move exactly one token transfer into this Vault.");
+  const log = transfers[0]!;
+  if (getAddress(log.args.from) !== owner) throw new AuthError(403, "That deposit wasn't sent from your wallet.");
+  const token = tokens.find((t) => t.address === getAddress(log.address))!;
+  const lower = (txHash as string).toLowerCase();
+  const [seen] = await db
+    .select({ id: decisions.id })
+    .from(decisions)
+    .where(and(eq(decisions.businessId, businessId), eq(decisions.kind, "deposit_confirmed"), sql`${decisions.record}->'inputs'->>'txHash' = ${lower}`))
+    .limit(1);
+  if (!seen) {
+    await appendAppDecision(db, businessId, {
+      kind: "deposit_confirmed",
+      subject: vault.toLowerCase(),
+      actor: user.id,
+      inputs: { txHash: lower, token: token.symbol, amount: log.args.value.toString(), from: owner },
+      rule: "a successful receipt with the token's own transfer from the owner's wallet into this Vault",
+      outcome: "deposited",
+      txHash: lower,
+    });
+  }
+  return { recorded: !seen, token: token.symbol, amount: log.args.value.toString(), txHash: lower };
 }
 
 /**

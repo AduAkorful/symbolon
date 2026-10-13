@@ -25,7 +25,9 @@ export const GET = routeWith<Ctx>(async (request, ctx) => {
   const to = searchParams.get("to") ?? undefined;
 
   if (exportFormat === "csv" || exportFormat === "beancount") {
-    const res = await exportAccounting(db, session.user, businessId, exportFormat, { from, to });
+    const res = await exportAccounting(db, session.user, businessId, exportFormat, { from, to }, {
+      contracts: symbolonContracts(client, config.deployment), client, deployment: config.deployment,
+    });
     const mime = exportFormat === "beancount" ? "text/plain; charset=utf-8" : "text/csv; charset=utf-8";
     return new Response(res.content, {
       status: 200,
@@ -61,7 +63,7 @@ export const POST = routeWith<Ctx>(async (request, ctx) => {
     const res = await exportAccounting(db, session.user, businessId, format, {
       from: typeof body.from === "string" ? body.from : undefined,
       to: typeof body.to === "string" ? body.to : undefined,
-    });
+    }, { contracts, client, deployment: config.deployment });
     return NextResponse.json({ ok: true, ...res });
   }
 

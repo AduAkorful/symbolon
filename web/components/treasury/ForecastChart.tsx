@@ -36,13 +36,14 @@ const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0
 export function ForecastChart({
   start,
   days = 35,
-  buffer = 20,
+  buffer,
   events = [],
   dates = [],
   tableRows = [],
 }: {
   start: number;
   days?: number;
+  /** The amount the Steward keeps back, when there is one; no line is drawn without it */
   buffer?: number;
   events?: ForecastEvent[];
   dates?: ForecastDate[];
@@ -74,8 +75,8 @@ export function ForecastChart({
   const plotW = width - padL - padR;
 
   const sortedEvents = [...events].sort((a, b) => a.day - b.day);
-  let low = Math.min(start, buffer, 0);
-  let high = Math.max(start, buffer, 0);
+  let low = Math.min(start, buffer ?? 0, 0);
+  let high = Math.max(start, buffer ?? 0, 0);
   let running = start;
   for (const e of sortedEvents) {
     running += e.delta;
@@ -127,7 +128,7 @@ export function ForecastChart({
         <figure ref={box} className="relative">
           <svg width={width} height={H} viewBox={`0 0 ${width} ${H}`} className="block max-w-full" role="img" aria-label="Operating balance over the forecast period">
             {/* below the buffer */}
-            {buffer > yMin ? (
+            {buffer !== undefined && buffer > yMin ? (
               <>
                 <rect x={padL} y={y(buffer)} width={plotW} height={Math.max(0, y(yMin) - y(buffer))} fill="var(--red)" opacity="0.07" />
                 <line x1={padL} x2={padL + plotW} y1={y(buffer)} y2={y(buffer)} stroke="var(--red)" strokeWidth="1" strokeDasharray="4 4" opacity="0.8" />

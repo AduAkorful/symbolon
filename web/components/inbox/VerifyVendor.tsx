@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { postJson } from "@/lib/client/api";
 import { Overlay } from "@/components/Overlay";
@@ -14,22 +15,23 @@ export function VerifyVendor({ businessId, seal, verificationId, awaitingSecond 
   const [channel, setChannel] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const router = useRouter();
   const endpoint = `/api/business/${businessId}/verification`;
   async function start() {
     setBusy(true); setMessage("");
-    try { const result = await postJson<{ id: string }>(endpoint, { action: "start", seal }); setId(result.id); setMessage("Ask the vendor to open Checks in their Symbolon account. Use a contact your business already trusted before this invoice."); }
+    try { const result = await postJson<{ id: string }>(endpoint, { action: "start", seal }); setId(result.id); setMessage("Ask the vendor to open Checks in their Symbolon account. Use a contact your business already trusted before this invoice."); router.refresh(); }
     catch (e) { setMessage(e instanceof Error ? e.message : "Couldn't start verification."); }
     finally { setBusy(false); }
   }
   async function submit() {
     setBusy(true); setMessage("");
-    try { const result = await postJson<{ status: string }>(endpoint, { action: "code", requestId: id, code, contacted, channel }); setMessage(result.status === "awaiting_second" ? "A second owner or approver must confirm; verification is not complete yet." : "Verified. Payee setup remains a separate owner-signed Vault action."); }
+    try { const result = await postJson<{ status: string }>(endpoint, { action: "code", requestId: id, code, contacted, channel }); setMessage(result.status === "awaiting_second" ? "A second owner or approver must confirm; verification is not complete yet." : "Verified. Payee setup remains a separate owner-signed Vault action."); router.refresh(); }
     catch (e) { setMessage(e instanceof Error ? e.message : "Couldn't check that code."); }
     finally { setBusy(false); }
   }
   async function second() {
     setBusy(true); setMessage("");
-    try { await postJson(endpoint, { action: "second", requestId: id }); setMessage("Second confirmation recorded. The vendor is verified; adding them as a payee is still separate."); }
+    try { await postJson(endpoint, { action: "second", requestId: id }); setMessage("Second confirmation recorded. The vendor is verified; adding them as a payee is still separate."); router.refresh(); }
     catch (e) { setMessage(e instanceof Error ? e.message : "Couldn't confirm."); }
     finally { setBusy(false); }
   }
@@ -55,6 +57,7 @@ export function VerifyVendor({ businessId, seal, verificationId, awaitingSecond 
           {!id ? (
             <>
               <p className="text-graphite">Symbolon gives the vendor a six-digit code. Ask them to open Checks in their Symbolon account, read you the code on the call, and enter it here.</p>
+              <p className="text-sm text-graphite">Above your owner-approval amount, a second owner or approver has to confirm as well. The vendor is told a code was requested.</p>
               {message ? <InlineError>{message}</InlineError> : null}
               <Overlay.Footer>
                 <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>

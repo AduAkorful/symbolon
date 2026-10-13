@@ -6,12 +6,13 @@ import { formatUnits } from "viem";
 import { openBusiness } from "@/app/actions";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { TxLink } from "@/components/TxLink";
-import { isStillConfirming, postJson } from "@/lib/client/api";
+import { isStillConfirming, postJson, postRecord } from "@/lib/client/api";
 import { D, E, registerMotion } from "@/lib/motion";
 import { sendCall, wasRejected, type SignerPlan } from "./owner-signer";
 import { showAmount, showMoney } from "@/lib/format";
 import { moneyDraft, moneyInput } from "@/lib/money-draft";
 import { FeeTopUp } from "./FeeTopUp";
+import { WatchTokens } from "@/components/wallet/WatchTokens";
 import { Address } from "@/components/Address";
 import { buttonClass } from "@/components/ui/button";
 import { PageTitle } from "@/components/ui/Type";
@@ -38,7 +39,7 @@ const fmt = (raw: string, decimals: number) => showAmount(formatUnits(BigInt(raw
 const message = (e: unknown) => (wasRejected(e) ? "You closed the wallet's request, so nothing was sent." : e instanceof Error ? e.message : "Something went wrong.");
 
 type Funding = { walletSends: boolean; release: number | null };
-type Balance = { ok: true; usdc: string; decimals: number; block: string; walletUsdc?: string | null; funding?: Funding } | { ok: false; error?: string; reason?: string };
+type Balance = { ok: true; usdc: string; decimals: number; block: string; walletUsdc?: string | null; funding?: Funding; tokens?: { address: string; symbol: string; decimals: number }[] } | { ok: false; error?: string; reason?: string };
 
 /** A little USDC stays in the wallet for Arc's network fee, which is paid in USDC too */
 const FEE_RESERVE = 50_000n;
@@ -374,6 +375,7 @@ function Fund({ business, props, standing, run, busy, discover }: { business: { 
   const [amount, setAmount] = useState("");
   const [sent, setSent] = useState<{ hash: string; from: bigint; arrived: boolean } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [activityNote, setActivityNote] = useState<string | null>(null);
   const loaded = useRef(false);
 
   const read = async (): Promise<Balance> => {
@@ -414,6 +416,11 @@ function Fund({ business, props, standing, run, busy, discover }: { business: { 
       const call = await postJson<{ to: string; data: string }>(`/api/business/${business.id}/fund`, { amount });
       const hash = await sendCall(props.signer, call, discover);
       setSent({ hash, from: before, arrived: false });
+      // the Vault emits nothing for a token transfer, so the app writes its own Activity record from the receipt (plan 05zj E, SYM-14)
+      setActivityNote(null);
+      void postRecord(`/api/business/${business.id}/fund`, { action: "record", txHash: hash }).catch((e) =>
+        setActivityNote(`It couldn't be added to Activity yet (${e instanceof Error ? e.message : "unknown error"}). The deposit is on Arc.`),
+      );
       // Look at the chain until it shows more than before
       for (let n = 0; n < 15; n++) {
         await wait(2000);
@@ -447,6 +454,7 @@ function Fund({ business, props, standing, run, busy, discover }: { business: { 
               ) : null}
             </p>
             {amountProblem ? <p role="alert" className="mt-2 text-sm text-red">{amountProblem}</p> : null}
+            {balance?.ok && balance.tokens ? <WatchTokens signer={props.signer} tokens={balance.tokens} className="mt-2" /> : null}
             <button disabled={busy !== null || !amount.trim() || amountProblem !== null} className={`mt-4 ${primary}`}>
               {busy ?? "Deposit"}
             </button>
@@ -497,6 +505,7 @@ function Fund({ business, props, standing, run, busy, discover }: { business: { 
           <div className="mt-6 space-y-2 text-sm">
             <p className={sent.arrived ? "text-seal" : "text-graphite"}>{sent.arrived ? "✓ Arrived on Arc" : "Sent. Waiting for the chain to show it…"}</p>
             <TxLink href={`${props.explorer}/tx/${sent.hash}`} label={`View the deposit transaction ${sent.hash} on the Arc explorer`}>Deposit transaction {sent.hash.slice(0, 10)}…{sent.hash.slice(-6)}</TxLink>
+            {activityNote ? <p className="text-graphite">{activityNote}</p> : null}
           </div>
         ) : null}
         <form action={openBusiness} className="mt-10">

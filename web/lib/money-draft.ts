@@ -14,3 +14,13 @@ export function moneyDraft(value: string, decimals: number): { raw: bigint; erro
 export function moneyInput(raw: string | bigint, decimals: number): string {
   return formatAmount(BigInt(raw), decimals);
 }
+
+/**
+ * An amount for a text field: every real digit kept, at least two decimals, no thousands separators (the field is parsed back
+ * exactly). "25000.000000" → "25000.00"; "15.375000" → "15.375".
+ */
+export function inputAmount(raw: string | bigint, decimals: number): string {
+  const text = moneyInput(raw, decimals);
+  const [whole = "0", fraction = ""] = text.split(".");
+  return `${whole}.${fraction.replace(/0+$/, "").padEnd(2, "0")}`;
+}

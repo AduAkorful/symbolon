@@ -43,7 +43,7 @@ export default async function SetupPage({ searchParams }: { searchParams: Promis
         <Link href="/" aria-label="Symbolon home">
           <Wordmark />
         </Link>
-        <Link href="/business" className="text-sm text-graphite underline decoration-rule underline-offset-4">
+        <Link href={owned.length > 0 ? "/business" : "/signin"} className="text-sm text-graphite underline decoration-rule underline-offset-4">
           Back to the app
         </Link>
       </header>

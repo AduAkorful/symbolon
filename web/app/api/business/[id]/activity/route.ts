@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getClient } from "@/lib/server/chain";
+import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
 import { requireSession, routeWith } from "@/lib/server/http";
 import { loadActivity } from "@/lib/server/activity";
@@ -30,7 +31,7 @@ export const GET = routeWith<Ctx>(async (request, ctx) => {
     to,
     cursor,
     limit,
-  });
+  }, { deployment: getConfig().deployment });
 
   return NextResponse.json({ ok: true, ...feed });
 });

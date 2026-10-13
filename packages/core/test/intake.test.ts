@@ -3,7 +3,7 @@ import { keccak256, stringToBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { businesses, createTestDb, invoices } from "@symbolon/db";
+import { businesses, createTestDb, invoices, members, notifications, users } from "@symbolon/db";
 import { completeTotals, encodeSealedInvoice, sealInvoice } from "@symbolon/seal";
 
 import { receiveInvoice, vaultFromPayerRef } from "../src/index.js";
@@ -49,6 +49,24 @@ describe("invoice intake", () => {
     expect(row).toMatchObject({ total: 100_000_000n, status: "verified", invoiceNumber: "INV-1", seal: seal.address.toLowerCase() });
     expect(row!.issuedAt?.getTime()).toBe(1_790_000_000_000);
     expect((await receiveInvoice(db, { chainId: CHAIN_ID, ledger: LEDGER }, envelope, "email")).duplicate).toBe(true);
+  });
+
+  it("tells the business's owners and approvers once that an invoice arrived, and never the member who added it (D11)", async () => {
+    const [biz] = await db.insert(businesses).values({ name: "Acme", chainId: CHAIN_ID, vault: VAULT }).returning();
+    const [owner, approver, viewer] = await db.insert(users).values([{ email: "o@acme.example" }, { email: "a@acme.example" }, { email: "v@acme.example" }]).returning();
+    await db.insert(members).values([
+      { businessId: biz!.id, userId: owner!.id, role: "owner" },
+      { businessId: biz!.id, userId: approver!.id, role: "approver" },
+      { businessId: biz!.id, userId: viewer!.id, role: "viewer" },
+    ]);
+    const { envelope, fingerprint } = await sealedEnvelope({ name: "Acme", vault: VAULT }, "INV-NOTICE");
+    await receiveInvoice(db, { chainId: CHAIN_ID, ledger: LEDGER }, envelope, "upload", { excludeUserId: owner!.id });
+    const rows = await db.select().from(notifications).where(eq(notifications.kind, "invoice_received"));
+    expect(rows.map((r) => r.userId)).toEqual([approver!.id]);
+    expect(rows[0]).toMatchObject({ subject: fingerprint, body: expect.objectContaining({ invoiceNumber: "INV-NOTICE", vendorName: "Studio Ana", total: "100.000000 USDC" }) });
+    // the same invoice again changes nothing and rings nothing
+    await receiveInvoice(db, { chainId: CHAIN_ID, ledger: LEDGER }, envelope, "link");
+    expect(await db.select().from(notifications).where(eq(notifications.kind, "invoice_received"))).toHaveLength(1);
   });
 
   it("keeps an email payer unlinked until matched", async () => {

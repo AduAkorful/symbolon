@@ -117,7 +117,7 @@ export function CancelInvoiceAction({ fingerprint, invoiceNumber, signer }: Prop
           <p className="text-graphite">
             Once cancelled, this invoice can <strong className="text-ink">never</strong> be paid by any Vault.
           </p>
-          <p className="text-graphite">Your wallet will ask you to sign the cancellation, and then send it to the ledger.</p>
+          <p className="text-graphite">Your wallet will ask you to sign the cancellation, and then send it to the ledger. Sending it costs a small network fee, paid in USDC from your wallet.</p>
 
           {error ? <InlineError>{error}</InlineError> : null}
 

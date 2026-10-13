@@ -6,6 +6,7 @@ import { symbolonContracts, type Deployment } from "@symbolon/chain";
 import { businesses, type Database } from "@symbolon/db";
 import type { VaultPolicy } from "@symbolon/steward";
 import { AuthError } from "./errors";
+import { checkPolicyInput } from "../policy-check";
 import { requireMember } from "./access";
 import { prepareChange, recordChange, listQueuedChanges } from "./queued-change";
 import { describePolicyLines, describePolicyRuleItems, type PolicyRuleItem } from "./policy-text";
@@ -185,6 +186,9 @@ export async function preparePolicyChange(
     maxBridgeFee: BigInt(nextPolicyInput.maxBridgeFee),
   };
 
+  const checked = checkPolicyInput(nextPolicy);
+  if (checked.errors.length > 0) throw new AuthError(400, checked.errors[0]!);
+
   // Check differences
   const isIdentical =
     currentPolicy.perTxCap === nextPolicy.perTxCap &&
@@ -211,6 +215,7 @@ export async function preparePolicyChange(
   return {
     ...prepared,
     isLooser,
+    warnings: checked.warnings,
   };
 }
 

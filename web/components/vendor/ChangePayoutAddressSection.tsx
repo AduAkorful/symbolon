@@ -1,6 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { getAddress, isAddress, zeroAddress } from "viem";
 
 import { Address } from "@/components/Address";
 import { Overlay } from "@/components/Overlay";
@@ -28,11 +30,27 @@ interface PreparedChange {
 
 export function ChangePayoutAddressSection({ currentPayout, sealAddress, signer }: Props) {
   const discover = useWalletProviders();
+  const router = useRouter();
   const [newPayout, setNewPayout] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [prepared, setPrepared] = useState<PreparedChange | null>(null);
+
+  // said before the button is live, so a mistyped address isn't found out by the server afterwards (plan 05zj F, SYM-33)
+  const typed = newPayout.trim();
+  const addressProblem =
+    typed === ""
+      ? null
+      : !isAddress(typed)
+        ? "That isn't a valid address. It starts with 0x and has 40 more characters, with the right capitals if it has any."
+        : getAddress(typed) === zeroAddress
+          ? "That is the empty address; nothing can be paid there."
+          : currentPayout && getAddress(typed) === getAddress(currentPayout)
+            ? "That is already your payout address."
+            : getAddress(typed) === getAddress(sealAddress) && !currentPayout
+              ? "That is already where you are paid: your Seal's own wallet."
+              : null;
 
   async function handlePrepare(e: React.FormEvent) {
     e.preventDefault();
@@ -84,6 +102,7 @@ export function ChangePayoutAddressSection({ currentPayout, sealAddress, signer 
 
       setPrepared(null);
       setNewPayout("");
+      router.refresh();
       setSuccess(`Payout change submitted to ${data.count} business Vault(s). Each business owner must confirm it before it becomes active after their Vault's cooldown.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -122,11 +141,13 @@ export function ChangePayoutAddressSection({ currentPayout, sealAddress, signer 
             placeholder="0x…"
             required
             spellCheck={false}
+            aria-invalid={addressProblem ? true : undefined}
           />
+          {addressProblem ? <span role="alert" className="mt-1 block text-sm text-red">{addressProblem}</span> : null}
         </label>
         <button
           type="submit"
-          disabled={busy || !newPayout.trim()}
+          disabled={busy || !newPayout.trim() || addressProblem !== null}
           className={buttonClass()}
         >
           {busy ? "Checking Vaults..." : "Request Payout Change"}

@@ -12,6 +12,7 @@ import { controlClass, Field } from "@/components/ui/Field";
 import { Segmented } from "@/components/ui/Segmented";
 import { InlineError } from "@/components/ui/States";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
+import { WatchTokens } from "@/components/wallet/WatchTokens";
 import { postJson, postRecord } from "@/lib/client/api";
 import { SentTransactionNotice, useSentTransaction } from "@/components/wallet/useSentTransaction";
 import { getConversionWallet } from "@/lib/client/conversion-wallet";
@@ -125,6 +126,8 @@ export function FundModal({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [mode, setMode] = useState<{ walletSends: boolean; release: number | null; walletUsdc: string | null } | null>(null);
+  const [sentHash, setSentHash] = useState<string | null>(null);
+  const [watchable, setWatchable] = useState<{ address: string; symbol: string; decimals: number }[]>([]);
   const getProviders = useWalletProviders();
 
   // What this Vault accepts, and the wallet's USDC, read from the chain (plan 05zj D, SYM-13, SYM-19); until it answers the safe warning stands
@@ -132,8 +135,11 @@ export function FundModal({
     let live = true;
     void fetch(`/api/business/${businessId}/fund`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((j: { ok?: boolean; walletUsdc?: string | null; funding?: { walletSends: boolean; release: number | null } } | null) => {
-        if (live && j?.ok) setMode({ walletSends: j.funding?.walletSends ?? false, release: j.funding?.release ?? null, walletUsdc: j.walletUsdc ?? null });
+      .then((j: { ok?: boolean; walletUsdc?: string | null; funding?: { walletSends: boolean; release: number | null }; tokens?: { address: string; symbol: string; decimals: number }[] } | null) => {
+        if (live && j?.ok) {
+          setMode({ walletSends: j.funding?.walletSends ?? false, release: j.funding?.release ?? null, walletUsdc: j.walletUsdc ?? null });
+          setWatchable(j.tokens ?? []);
+        }
       })
       .catch(() => undefined);
     return () => {
@@ -175,8 +181,17 @@ export function FundModal({
       });
 
       const providers = await getProviders();
-      await sendWithWallet(providers, signer, { to: prep.to, data: prep.data });
+      const hash = await sendWithWallet(providers, signer, { to: prep.to, data: prep.data });
 
+      // The Vault emits nothing for a token transfer, so the app writes the Activity record from the receipt (plan 05zj E, SYM-14).
+      // A failure here is said; the deposit itself is already on Arc.
+      try {
+        await postRecord(`/api/business/${businessId}/fund`, { action: "record", txHash: hash });
+      } catch (recordError) {
+        setSentHash(hash);
+        setErr(`The deposit was sent, but it couldn't be added to Activity yet (${recordError instanceof Error ? recordError.message : "unknown error"}). It is on Arc; the balance will show it.`);
+        return;
+      }
       onSuccess();
     } catch (e: any) {
       setErr(e.message || "Funding failed");
@@ -204,11 +219,18 @@ export function FundModal({
           {(a) => <input {...a} type="text" inputMode="decimal" required placeholder="500" value={amount} onChange={(e) => setAmount(e.target.value)} className={controlClass} />}
         </Field>
         {walletRaw !== null ? <p className="text-xs text-graphite">Your wallet holds ${moneyInput(walletRaw, 6)} USDC.</p> : null}
+        <WatchTokens signer={signer} tokens={watchable} />
         {amountProblem ? <InlineError>{amountProblem}</InlineError> : null}
 
         <Overlay.Footer>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button type="submit" busy={busy} disabled={amountProblem !== null || typed === null}>{busy ? "Sending…" : "Send to Vault"}</Button>
+          {sentHash ? (
+            <Button onClick={onSuccess}>Done</Button>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={onClose}>Cancel</Button>
+              <Button type="submit" busy={busy} disabled={amountProblem !== null || typed === null}>{busy ? "Sending…" : "Send to Vault"}</Button>
+            </>
+          )}
         </Overlay.Footer>
       </form>
     </Overlay>

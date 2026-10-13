@@ -34,17 +34,30 @@ export function readEnvelope(text: string): { ok: true; envelope: unknown } | { 
   return { ok: true, envelope: value };
 }
 
-export async function runCheck(client: PublicClient, deployment: Deployment, text: string): Promise<CheckResult> {
+/** How long the page waits on Arc for the ledger before saying so; the signature check never waits on it */
+export const LEDGER_READ_DEADLINE_MS = 10_000;
+
+const SLOW_LEDGER = "Arc is taking too long to answer, so whether this invoice has been paid can't be shown right now. The signature check doesn't depend on it.";
+
+export async function runCheck(client: PublicClient, deployment: Deployment, text: string, deadlineMs: number = LEDGER_READ_DEADLINE_MS): Promise<CheckResult> {
   const read = readEnvelope(text);
   if (!read.ok) return { kind: "unsealed", reason: read.reason };
   const expected = { chainId: deployment.chainId, ledger: deployment.contracts.invoiceLedger };
 
   let check: InvoiceCheck | undefined;
   let ledgerError: string | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    check = await checkInvoice(client, symbolonContracts(client, deployment), deployment, read.envelope);
+    const late = new Promise<"late">((resolve) => {
+      timer = setTimeout(() => resolve("late"), deadlineMs);
+    });
+    const answer = await Promise.race([checkInvoice(client, symbolonContracts(client, deployment), deployment, read.envelope), late]);
+    if (answer === "late") ledgerError = SLOW_LEDGER;
+    else check = answer;
   } catch {
     ledgerError = "Can't read the ledger on Arc right now.";
+  } finally {
+    if (timer) clearTimeout(timer);
   }
   // If the ledger couldn't be read, the signature can still be checked on its own (an EOA needs no network)
   const verification = check?.verification ?? (await verifySealedInvoice(read.envelope, { expected }));

@@ -143,10 +143,13 @@ function Result({ r, explorer }: { r: CheckResult; explorer: string }) {
   const v = r.check.verification;
   const d = v.document!;
   const st = r.check.status;
+  // A cancelled invoice is still signed and unchanged, but the verdict a reader needs first is that it can't be paid (plan 05zj F, SYM-43)
+  const cancelled = r.ledger.ok && st?.cancelled === true;
   return (
     <div data-a="verdict">
-      <p className="font-mono text-xs uppercase tracking-[0.16em] text-seal">Genuine</p>
-      <h2 className="mt-2 font-display text-4xl leading-none">Sealed by its sender, and unchanged.</h2>
+      <p className={`font-mono text-xs uppercase tracking-[0.16em] ${cancelled ? "text-red" : "text-seal"}`}>{cancelled ? "Cancelled" : "Genuine"}</p>
+      <h2 className="mt-2 font-display text-4xl leading-none">{cancelled ? "Cancelled by its sender. It can never be paid." : "Sealed by its sender, and unchanged."}</h2>
+      {cancelled ? <p className="mt-3 text-sm text-graphite">The signature still checks out: this is the invoice the sender sealed, and it has not been changed.</p> : null}
       <dl className="mt-6 divide-y divide-rule-soft border-y border-rule text-sm">
         {[
           ["Seal", v.seal!],
@@ -165,7 +168,7 @@ function Result({ r, explorer }: { r: CheckResult; explorer: string }) {
         {!r.ledger.ok || !st ? (
           <span className="text-red">{r.ledger.ok ? "Can’t read the ledger on Arc right now." : r.ledger.reason} The signature was checked; payment status isn’t shown.</span>
         ) : st.cancelled ? (
-          "Cancelled by the sender on Arc’s ledger."
+          "Cancelled on Arc’s ledger."
         ) : st.paid ? (
           <span className="text-seal">Paid in full, according to Arc’s ledger.</span>
         ) : st.credited > 0n ? (

@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { postJson } from "@/lib/client/api";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ interface RenameProps {
 }
 
 export function Rename({ businessId, initialName, isOwner, onRenamed }: RenameProps) {
+  const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(initialName);
   const [busy, setBusy] = useState(false);
@@ -42,6 +44,8 @@ export function Rename({ businessId, initialName, isOwner, onRenamed }: RenamePr
       if (res.ok) {
         setEditing(false);
         onRenamed?.(res.name);
+        // the switcher and header read the name from the server; refresh so they stop showing the old one (plan 05zj E, SYM-27)
+        router.refresh();
       } else {
         setError("Failed to rename business.");
       }

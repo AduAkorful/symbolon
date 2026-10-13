@@ -48,6 +48,10 @@ export async function checkInvoice(
     expected: { chainId: deployment.chainId, ledger: deployment.contracts.invoiceLedger },
   });
   if (!verification.fingerprint) return { verification, settlements: [], settlementsComplete: true };
+  // A file that doesn't verify (changed, or sealed for another ledger) has no payment state worth reading: its fingerprint isn't
+  // one the ledger would honour for this document. Skipping the ledger here also keeps a modified file from waiting on the
+  // public RPC for an answer nobody needs (plan 05zj F, SYM-31).
+  if (!verification.ok) return { verification, settlements: [], settlementsComplete: true };
   const fp = verification.fingerprint;
   const status = await invoiceStatus(contracts, fp);
   if (!status.seen) return { verification, status, settlements: [], settlementsComplete: true };

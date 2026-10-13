@@ -1,6 +1,6 @@
 import "server-only";
 
-import { decisions, invoices, type Database } from "@symbolon/db";
+import { businesses, decisions, invoices, users, type Database } from "@symbolon/db";
 import { eq } from "drizzle-orm";
 import { notifyBusiness, notifyVendor } from "@symbolon/core";
 import { hashRecord, type DecisionRecord } from "@symbolon/steward";
@@ -41,6 +41,7 @@ export async function appendAppDecision(
     hash,
     txHash: txHash ?? input.txHash ?? null,
   }).onConflictDoNothing();
+  await notifyForDecision(db, businessId, input, txHash ?? input.txHash, hash);
   if (input.kind === "vendor_verification_awaiting_second" || input.kind === "vendor_invitation_awaiting_second") {
     const eventId = String(input.inputs.verificationId ?? input.inputs.invitationId ?? input.subject);
     const raiser = String(input.inputs.invitedBy ?? input.actor);
@@ -55,5 +56,64 @@ export async function appendAppDecision(
     const [invoice] = await db.select({ seal: invoices.seal }).from(invoices).where(eq(invoices.fingerprint, input.subject));
     if (invoice) await notifyVendor(db, invoice.seal, { kind: input.kind === "counter_sent" ? "offer_countered" : "offer_declined", subject: input.subject,
       body: { businessId }, dedupeKey: input.kind === "counter_sent" ? `counter:${input.subject}` : `${input.kind}:${String(input.inputs.offerId)}` });
+  }
+}
+
+/** What a money-moving action by a person is called in the notice sent to the rest of the team */
+const MONEY_ACTIONS = new Set(["withdrawn", "deposit_confirmed", "steward_fees_funded", "eurc_conversion", "pay"]);
+const VENDOR_VERIFIED_KINDS = new Set(["vendor_verified_invitation", "vendor_verified_code", "vendor_verification_second_confirmed"]);
+
+/**
+ * The bell's producers that hang off a recorded action (plan 05zj E, D11 a). Recipients are always resolved here from current
+ * members and the Seal's own user, never from the caller, and the person who did the thing is never told about their own action.
+ *  - the team hears when another member moved money;
+ *  - the vendor hears when a code was requested for them, when they were verified, and when they were added as a payee.
+ * Each notice has a dedupe key, so recording the same action twice rings once.
+ */
+async function notifyForDecision(
+  db: Pick<Database, "insert" | "select">,
+  businessId: string,
+  input: { kind: string; subject?: string; actor: string; inputs: Record<string, unknown> },
+  txHash: string | undefined,
+  decisionHash: string,
+): Promise<void> {
+  const needsBusiness = input.subject && (input.kind === "vendor_code_requested" || input.kind === "payee_added" || VENDOR_VERIFIED_KINDS.has(input.kind));
+  const [biz] = needsBusiness ? await db.select({ name: businesses.name }).from(businesses).where(eq(businesses.id, businessId)).limit(1) : [];
+
+  if (input.kind === "vendor_code_requested" && input.subject) {
+    await notifyVendor(db, input.subject, {
+      kind: "verification_requested", subject: input.subject, body: { businessId, businessName: biz?.name ?? null },
+      dedupeKey: `code:${String(input.inputs.verificationId ?? decisionHash)}`,
+    });
+  }
+  if (VENDOR_VERIFIED_KINDS.has(input.kind) && input.subject) {
+    await notifyVendor(db, input.subject, {
+      kind: "verified_by_business", subject: input.subject, body: { businessId, businessName: biz?.name ?? null },
+      dedupeKey: `verified:${businessId}:${input.subject.toLowerCase()}`,
+    });
+  }
+  if (input.kind === "payee_added" && input.subject) {
+    await notifyVendor(db, input.subject, {
+      kind: "added_as_payee", subject: input.subject,
+      body: { businessId, businessName: biz?.name ?? null, activeAt: input.inputs.activeAt ?? null },
+      dedupeKey: `payee:${businessId}:${txHash ?? decisionHash}`,
+    });
+  }
+
+  // money moved by a person: the rest of the team is told (owners and approvers), never the person themselves
+  const byPerson = input.kind !== "pay" || typeof input.inputs.caller === "string";
+  if (MONEY_ACTIONS.has(input.kind) && byPerson && input.actor) {
+    const [who] = await db.select({ email: users.email, displayName: users.displayName }).from(users).where(eq(users.id, input.actor)).limit(1);
+    await notifyBusiness(
+      db,
+      businessId,
+      {
+        kind: "money_moved",
+        subject: input.subject ?? null,
+        body: { action: input.kind, by: who?.displayName ?? who?.email ?? "A team member", amount: input.inputs.amount ?? input.inputs.paid ?? null, token: input.inputs.token ?? null },
+        dedupeKey: `money:${txHash ?? decisionHash}`,
+      },
+      { excludeUserId: input.actor },
+    );
   }
 }

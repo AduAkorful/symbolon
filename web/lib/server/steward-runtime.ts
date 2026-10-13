@@ -12,6 +12,7 @@ import { ensureVaultBlock, type ChainSettings } from "./business";
 import { AuthError } from "./errors";
 import { getStewardModel } from "./steward-model";
 import { ensureFresh } from "./sync";
+import { notifyPayeesActive } from "./payee-active";
 
 /**
  * 0.01 native USDC (18 decimals on Arc) minimum fee balance.
@@ -138,6 +139,9 @@ export async function runForBusiness(
 ): Promise<typeof stewardRuns.$inferSelect> {
   const [b] = await db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1);
   if (!b || !b.vault) throw new AuthError(404, "This business has no Vault yet.");
+
+  // vendors whose payee waiting period has now passed are told (plan 05zj E, D11 a); one notice each, never fatal to a run
+  await notifyPayeesActive(db, { businessId }).catch((e) => console.error("payee-active notices failed", e instanceof Error ? e.message : e));
 
   // Acquire lease
   let runId: string;

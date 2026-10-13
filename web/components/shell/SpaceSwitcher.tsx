@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { openBusiness } from "@/app/actions";
 import { Avatar } from "@/components/Avatar";
 import { postJson } from "@/lib/client/api";
+import { useConfirm } from "@/components/useConfirm";
 
 export interface SwitcherSpaces {
   seal: { handle: string; displayName: string } | null;
@@ -24,6 +25,7 @@ export function SpaceSwitcher({ spaces, current, who, compact = false }: { space
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [ask, confirmDialog] = useConfirm();
   const ref = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
 
@@ -67,6 +69,17 @@ export function SpaceSwitcher({ spaces, current, who, compact = false }: { space
 
   async function signOut(everywhere: boolean) {
     setProblem(null);
+    // "everywhere" ends every session of this person, on every device, and used to do it on the first click (plan 05zj G, SYM-41)
+    if (everywhere) {
+      setOpen(false);
+      const yes = await ask({
+        title: "Sign out everywhere?",
+        body: "This ends every session of yours on every device and browser, including this one. You will sign in again with your email or wallet.",
+        confirmLabel: "Sign out everywhere",
+        destructive: true,
+      });
+      if (!yes) return;
+    }
     try {
       await postJson(everywhere ? "/api/auth/signout-all" : "/api/auth/signout");
       await logout().catch(() => undefined);
@@ -79,6 +92,7 @@ export function SpaceSwitcher({ spaces, current, who, compact = false }: { space
 
   return (
     <div ref={ref} className="relative">
+      {confirmDialog}
       <button
         ref={trigger}
         onClick={() => setOpen(!open)}

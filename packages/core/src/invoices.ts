@@ -2,7 +2,9 @@ import { and, eq } from "drizzle-orm";
 import { getAddress, type Address, type Hex } from "viem";
 
 import { businesses, invoices, type Database } from "@symbolon/db";
-import { encodeSealedInvoice, verifySealedInvoice, type Issue, type SignatureClient } from "@symbolon/seal";
+import { encodeSealedInvoice, formatAmount, verifySealedInvoice, type Issue, type SignatureClient } from "@symbolon/seal";
+
+import { notifyBusiness } from "./domain-notifications.js";
 
 export type InvoiceSource = "link" | "email" | "upload" | "api" | "recurring";
 
@@ -31,7 +33,7 @@ export async function receiveInvoice(
   deployment: { chainId: number; ledger: Address },
   envelope: string | unknown,
   source: InvoiceSource,
-  opts: { signatureClient?: SignatureClient } = {},
+  opts: { signatureClient?: SignatureClient; /** the member adding it by hand: they aren't told about their own action */ excludeUserId?: string } = {},
 ): Promise<Intake> {
   const v = await verifySealedInvoice(envelope, {
     expected: deployment,
@@ -91,6 +93,19 @@ export async function receiveInvoice(
   const inserted = await db.insert(invoices).values(values).onConflictDoNothing().returning({ fingerprint: invoices.fingerprint });
   if (inserted.length === 0) {
     return { status, fingerprint: v.fingerprint, issues: v.issues, duplicate: true, ...(business ? { businessId: business.id } : {}) };
+  }
+  // The business's owners and approvers hear that an invoice arrived (plan 05zj E, D11 a); one notice per fingerprint.
+  if (business) {
+    await notifyBusiness(db, business.id, {
+      kind: "invoice_received",
+      subject: v.fingerprint,
+      body: {
+        invoiceNumber: v.document.invoiceNumber,
+        vendorName: v.document.vendor.name,
+        total: `${formatAmount(v.invoice.amount, v.document.currency.decimals)} ${v.document.currency.symbol}`,
+      },
+      dedupeKey: `invoice:${v.fingerprint}`,
+    }, opts.excludeUserId ? { excludeUserId: opts.excludeUserId } : {});
   }
   return { status, fingerprint: v.fingerprint, issues: v.issues, duplicate: false, ...(business ? { businessId: business.id } : {}) };
 }

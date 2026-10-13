@@ -114,6 +114,14 @@ export function TreasuryView({
   const eurcShortfall = state.shortfalls.find((s) => s.tokenSymbol === "EURC");
   const usdcShortfall = state.shortfalls.find((s) => s.tokenSymbol === "USDC");
 
+  // The buffer line is what the Steward keeps back: the bills due inside the buffer window (plan 05zj E, SYM-39). With none due there
+  // is nothing to keep back and no line is drawn; a made-up amount used to be drawn here.
+  const bufferLine = (() => {
+    const within = state.forecast.events.filter((e) => e.day <= state.forecast.bufferDays);
+    if (within.length === 0) return null;
+    return within.reduce((sum, e) => sum + Math.abs(e.delta), 0) / 1000;
+  })();
+
   // Chart data
   const chartEvents: ForecastEvent[] = state.forecast.events.map((e) => ({
     day: e.day,
@@ -180,7 +188,15 @@ export function TreasuryView({
         <div>
           <dt className="text-sm text-graphite">Runway</dt>
           <dd className="mt-1 font-display text-3xl leading-none">
-            {!state.availability.usdc || !state.availability.eurc ? "Unavailable" : state.shortfalls.length ? "Shortfall" : `${state.forecast.bufferDays} days`}
+            {!state.availability.usdc || !state.availability.eurc
+              ? "Unavailable"
+              : state.shortfalls.length
+                ? "Shortfall"
+                : state.forecast.events.length === 0
+                  ? "No bills due"
+                  : state.forecast.runwayDays !== null
+                    ? `${state.forecast.runwayDays} days`
+                    : `Covered for ${state.forecast.bufferDays} days`}
           </dd>
           <dd className="mt-1.5 text-sm text-graphite">{state.forecast.runwayStatement}</dd>
         </div>
@@ -237,7 +253,7 @@ export function TreasuryView({
         <section aria-labelledby="ahead" className="min-w-0">
           <SectionTitle id="ahead">The next five weeks</SectionTitle>
           <p className="mt-1 text-sm text-graphite">Based on invoices you’ve received. It doesn’t include money you expect to receive.</p>
-          <ForecastChart start={operatingUsdc / 1000} days={35} buffer={20} events={chartEvents} dates={chartDates} tableRows={state.forecast.days} />
+          <ForecastChart start={operatingUsdc / 1000} days={35} {...(bufferLine !== null ? { buffer: bufferLine } : {})} events={chartEvents} dates={chartDates} tableRows={state.forecast.days} />
         </section>
 
         <section aria-labelledby="budgets" className="min-w-0 space-y-8">

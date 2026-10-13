@@ -269,7 +269,7 @@ export function TeamView({
             {invitations.map((inv) => (
               <li key={inv.id} className="flex flex-wrap items-center justify-between gap-4 py-3">
                 <div>
-                  <p className="font-medium capitalize text-ink">{inv.role}{inv.label ? <span className="ml-2 font-normal text-graphite">{inv.label}</span> : null}</p>
+                  <p className="font-medium text-ink"><span className="capitalize">{inv.role}</span>{inv.label ? <span className="ml-2 font-normal text-graphite">{inv.label}</span> : null}</p>
                   <p className="text-sm text-graphite">Expires {formatDay(new Date(inv.expiresAt))}</p>
                 </div>
                 {isOwner ? <Button variant="danger" size="sm" onClick={() => setConfirm({ kind: "revoke", invitation: inv })}>Withdraw</Button> : null}

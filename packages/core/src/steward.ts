@@ -116,6 +116,12 @@ export async function runSteward(env: StewardEnv, businessId: string): Promise<S
     }
     if (status === "awaiting_approval") await notifyBusiness(db, businessId, { kind: "approval_needed", subject: fp,
       body: { invoiceNumber: row.invoiceNumber }, dedupeKey: `approval:${fp}` });
+    // an invoice the Steward newly holds is a thing a person has to look at (plan 05zj E, D11 a); one notice per reason
+    if (status === "held" && row.status !== "held") {
+      const reason = String(result.record.rule ?? "");
+      await notifyBusiness(db, businessId, { kind: "invoice_held", subject: fp,
+        body: { invoiceNumber: row.invoiceNumber, reason }, dedupeKey: `held:${fp}:${reason.slice(0, 80)}` });
+    }
     results.push(result);
   }
   return results;

@@ -86,6 +86,9 @@ export function Landing() {
               <Link href="/setup" className={buttonClass({ variant: "secondary" })}>
                 Set up your business
               </Link>
+              <Link href="/guide" className={buttonClass({ variant: "quiet" })}>
+                What you need
+              </Link>
             </div>
           </div>
 

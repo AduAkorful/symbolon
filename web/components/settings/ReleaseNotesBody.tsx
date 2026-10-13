@@ -1,12 +1,14 @@
 import { notesBlocks } from "@/lib/release-notes";
 
-/** `code` spans in the notes drawn as code, the rest as text */
+/** `code` spans drawn as code and **bold** as bold, the rest as text (plan 05zj G, SYM-47: the asterisks used to show) */
 function Inline({ text }: { text: string }) {
   return (
     <>
-      {text.split("`").map((part, i) =>
-        i % 2 === 1 ? <code key={i} className="font-mono text-[0.92em] text-ink">{part}</code> : <span key={i}>{part}</span>,
-      )}
+      {text.split(/(\*\*[^*]+\*\*|`[^`]+`)/).map((part, i) => {
+        if (part.startsWith("**") && part.endsWith("**") && part.length > 4) return <strong key={i} className="font-semibold text-ink">{part.slice(2, -2)}</strong>;
+        if (part.startsWith("`") && part.endsWith("`") && part.length > 2) return <code key={i} className="font-mono text-[0.92em] text-ink">{part.slice(1, -1)}</code>;
+        return <span key={i}>{part}</span>;
+      })}
     </>
   );
 }

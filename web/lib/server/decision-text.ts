@@ -1,6 +1,8 @@
 import "server-only";
 import { describeRule } from "../blockers";
 
+import { formatAmount } from "@symbolon/seal";
+import { showMoney } from "../format";
 import { usd } from "./policy-text";
 
 export interface DecisionSummary {
@@ -25,6 +27,7 @@ const RECORDED_ACTIONS: Record<string, string> = {
   early_pay_changed: "Changed Early Pay settings",
   credit_note: "Applied a credit note",
   invoice_cancelled: "Cancelled an invoice",
+  deposit_confirmed: "Added funds to the Vault",
   eurc_conversion: "Converted USDC to EURC",
   export_created: "Created an accounting export",
   member_removed: "Removed a team member",
@@ -152,6 +155,12 @@ export function summarizeDecision(record: Record<string, unknown>): DecisionSumm
     case "steward_fees_funded": {
       const amt = inputs.amount ? `${inputs.amount} units` : "";
       return { sentence: `Steward wallet funded with network fees ${amt}`.trim(), explanation };
+    }
+
+    case "deposit_confirmed": {
+      const symbol = String(inputs.token ?? "");
+      const raw = typeof inputs.amount === "string" && /^\d+$/.test(inputs.amount) ? BigInt(inputs.amount) : null;
+      return { sentence: raw !== null && symbol ? `Added ${showMoney(formatAmount(raw, 6), symbol)} to the Vault` : "Added funds to the Vault", explanation };
     }
 
     case "payee_added": {

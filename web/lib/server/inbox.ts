@@ -3,7 +3,7 @@ import "server-only";
 
 import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import { getAddress, keccak256, stringToBytes, type Address, type Hex, type PublicClient } from "viem";
-import { readVaultFacts, receiveInvoice, vaultFromPayerRef } from "@symbolon/core";
+import { notifyBusiness, readVaultFacts, receiveInvoice, vaultFromPayerRef } from "@symbolon/core";
 import { invoiceStatus, symbolonContracts } from "@symbolon/chain";
 import { businesses, deliveries, invoices, payees, purchaseOrders, seals, unsignedBills, type Database } from "@symbolon/db";
 import { decodeSealedInvoice, deriveInvoice, verifySealedInvoice, type InvoiceDocument } from "@symbolon/seal";
@@ -192,6 +192,19 @@ export async function claimInvoice(db: Database, cfg: ChainSettings, user: Pick<
   const payerRef = keccak256(stringToBytes(user.email.toLowerCase()));
   const changed = await db.update(invoices).set({ businessId: business.id }).where(and(eq(invoices.fingerprint, fingerprint), eq(invoices.payerRef, payerRef), isNull(invoices.businessId))).returning({ fingerprint: invoices.fingerprint });
   if (!changed[0]) throw new AuthError(404, "That invoice is not available to claim.");
+  // The rest of the team hears an invoice arrived; the person who claimed it knows (plan 05zj E, D11 a)
+  const [row] = await db.select({ envelope: invoices.envelope }).from(invoices).where(eq(invoices.fingerprint, fingerprint)).limit(1);
+  try {
+    const doc = decodeSealedInvoice(row!.envelope).document;
+    await notifyBusiness(db, business.id, {
+      kind: "invoice_received",
+      subject: fingerprint,
+      body: { invoiceNumber: doc.invoiceNumber, vendorName: doc.vendor.name },
+      dedupeKey: `invoice:${fingerprint}`,
+    }, { excludeUserId: user.id });
+  } catch (e) {
+    console.error("claim: couldn't notify the team", e instanceof Error ? e.message : e);
+  }
   return changed[0];
 }
 
@@ -202,7 +215,7 @@ export async function addSealedInvoice(db: Database, client: PublicClient, cfg: 
   let payer: Address | undefined;
   try { payer = vaultFromPayerRef(deriveInvoice(decodeSealedInvoice(envelope).document).payerRef); } catch { throw new AuthError(400, "That isn't a sealed invoice."); }
   if (!payer || getAddress(payer) !== getAddress(business.vault)) throw new AuthError(403, "That invoice isn't addressed to this business.");
-  const r = await receiveInvoice(db, { chainId: cfg.chainId, ledger: cfg.deployment.contracts.invoiceLedger }, envelope, source, { signatureClient: client });
+  const r = await receiveInvoice(db, { chainId: cfg.chainId, ledger: cfg.deployment.contracts.invoiceLedger }, envelope, source, { signatureClient: client, excludeUserId: user.id });
   if (r.status !== "verified" || !r.fingerprint) throw new AuthError(400, r.issues[0]?.message ?? "That sealed invoice didn't check out.");
   await db.update(invoices).set({ businessId: business.id }).where(and(eq(invoices.fingerprint, r.fingerprint), isNull(invoices.businessId)));
   return { fingerprint: r.fingerprint };

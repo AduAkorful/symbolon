@@ -21,7 +21,7 @@ export default async function BusinessActivityPage() {
   const client = getClient();
   const explorer = arcChain(config.chainId).blockExplorers!.default.url;
 
-  const feed = await loadActivity(db, client, session.user, where.business.id);
+  const feed = await loadActivity(db, client, session.user, where.business.id, {}, { deployment: getConfig().deployment });
 
   return (
     <Shell where={where} current={{ kind: "business", id: where.business.id }}>

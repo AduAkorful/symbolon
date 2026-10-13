@@ -418,8 +418,24 @@ export async function complianceReport(db: Database, businessId: string, from?: 
     "Decision",
   ];
 
+  // One row per counterparty (plan 05zj E, SYM-25): a vendor of this business that has never been screened is a row that says so,
+  // not an absent line. "Never" means no screening on record at all, whatever the date filter.
+  const everScreened = new Set(
+    (await db.select({ seal: screenings.seal }).from(screenings).where(eq(screenings.businessId, businessId))).map((r) => r.seal.toLowerCase()),
+  );
+  const unscreened = (
+    await db
+      .select({ seal: payees.seal, vendorName: seals.displayName })
+      .from(payees)
+      .leftJoin(seals, eq(seals.address, payees.seal))
+      .where(eq(payees.businessId, businessId))
+  ).filter((p) => !everScreened.has(p.seal.toLowerCase()));
+
   const lines = [
     headers.join(","),
+    ...unscreened.map((p) =>
+      [cleanCsvField(p.vendorName ?? p.seal), cleanCsvField(p.seal), "", "Not screened", "Not screened", "", "", "", ""].join(","),
+    ),
     ...rows.map((r) =>
       [
         cleanCsvField(r.vendorName ?? r.screening.seal),

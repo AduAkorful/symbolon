@@ -6,6 +6,7 @@ import { InvoiceDoc } from "@/components/InvoiceDoc";
 import { Shell } from "@/components/shell/Shell";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
+import { cancelCause } from "@/lib/server/cancel-cause";
 import { myInvoice } from "@/lib/server/invoice-send";
 import { signerPlanFor } from "@/lib/server/signer-plan";
 import { requireVendorPage } from "@/lib/server/vendor-page";
@@ -31,6 +32,7 @@ export default async function VendorInvoice({ params }: { params: Promise<{ fing
   const link = `${config.appOrigin}/invoice/${found.row.fingerprint}`;
   const isSettled = found.row.status === "paid" || found.row.credited > 0n;
   const isCancelled = found.row.status === "cancelled";
+  const cause = isCancelled ? await cancelCause(await getDb(), found.row.fingerprint) : { cause: "cancelled" as const };
 
   return (
     <Shell where={where} current={{ kind: "vendor" }}>
@@ -46,6 +48,14 @@ export default async function VendorInvoice({ params }: { params: Promise<{ fing
             </p>
           ) : null}
           <CopyLink link={link} />
+          {/* The sealed file itself, to send as an attachment or keep (plan 05zj G, SYM-48): the verify page reads it in the browser */}
+          <p className="mt-3 text-sm text-graphite">
+            Or send the sealed file:{" "}
+            <a href={`/invoice/${found.row.fingerprint}/file`} download className="underline decoration-rule underline-offset-4 hover:text-ink">
+              download the .symbolon file
+            </a>
+            . Anyone can drop it on the Verify page.
+          </p>
 
           {/* Early pay and cancel actions for unpaid invoices */}
           {!isSettled && !isCancelled ? (
@@ -105,7 +115,13 @@ export default async function VendorInvoice({ params }: { params: Promise<{ fing
                   <span className="mt-1 h-2 w-2 rounded-full bg-red flex-shrink-0" />
                   <div>
                     <p className="font-medium text-red">Cancelled onchain</p>
-                    <p className="text-graphite">Replacement or credit note registered</p>
+                    <p className="text-graphite">
+                      {cause.cause === "replaced"
+                        ? "Replaced by a newer invoice"
+                        : cause.cause === "credit_note"
+                          ? "Closed by a credit note"
+                          : "Cancelled by you. It can never be paid."}
+                    </p>
                   </div>
                 </li>
               ) : (

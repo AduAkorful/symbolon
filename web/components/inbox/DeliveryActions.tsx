@@ -1,11 +1,13 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useWallets } from "@privy-io/react-auth";
 import type { Hex } from "viem";
 import { buttonClass } from "@/components/ui/button";
 import { controlClass } from "@/components/ui/Field";
 import { postJson, postRecord } from "@/lib/client/api";
+import { refreshAfterChain } from "@/lib/client/refresh";
 import { SentTransactionNotice, useSentTransaction, type SentTransaction } from "@/components/wallet/useSentTransaction";
 
 type Step = "idle" | "signing" | "recording" | "done" | "error";
@@ -33,6 +35,7 @@ export function DeliveryActions({
   explorer?: string;
 }) {
   const { wallets } = useWallets();
+  const router = useRouter();
   const tx = useSentTransaction();
   const [step, setStep] = useState<Step>("idle");
   const [msg, setMsg] = useState<string | null>(null);
@@ -67,7 +70,7 @@ export function DeliveryActions({
             businessId={businessId}
             fingerprint={fingerprint}
             wallets={wallets}
-            onDone={() => { setState("confirmed"); }}
+            onDone={() => { setState("confirmed"); refreshAfterChain(router); }}
             setStep={setStep}
             setMsg={setMsg}
             step={step}
@@ -94,7 +97,7 @@ export function DeliveryActions({
             businessId={businessId}
             fingerprint={fingerprint}
             wallets={wallets}
-            onDone={() => { setState("confirmed"); }}
+            onDone={() => { setState("confirmed"); refreshAfterChain(router); }}
             setStep={setStep}
             setMsg={setMsg}
             step={step}
@@ -145,6 +148,7 @@ export function DeliveryActions({
                   setRejectionReason(why);
                   setStep("done");
                   setRejecting(false);
+                  refreshAfterChain(router);
                 },
               });
               if (!finished) setStep("idle");

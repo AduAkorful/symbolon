@@ -6,10 +6,10 @@ import { decodeFunctionData, encodeAbiParameters, encodeFunctionData, encodeEven
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { arcTestnet, getDeployment, vaultFactoryAbi } from "@symbolon/chain";
 import { policyTemplate } from "@symbolon/core";
-import { businesses, createTestDb, members, users } from "@symbolon/db";
-import { eq } from "drizzle-orm";
+import { businesses, createTestDb, decisions, members, users } from "@symbolon/db";
+import { and, eq } from "drizzle-orm";
 import { AuthError } from "@/lib/server/errors";
-import { MAX_BUSINESSES, confirmVault, createBusiness, findBusinessConflict, parseUsdcAmount, prepareFund, prepareVault, prepareVaultSwitch, vaultStanding } from "@/lib/server/business";
+import { MAX_BUSINESSES, confirmVault, createBusiness, findBusinessConflict, recordDeposit, parseUsdcAmount, prepareFund, prepareVault, prepareVaultSwitch, vaultStanding } from "@/lib/server/business";
 import { pauseStateOf, readVaultState, stewardStanding } from "@/lib/server/vault-read";
 import { TEMPLATES, describePolicy, duration, usd } from "@/lib/server/policy-text";
 
@@ -63,6 +63,53 @@ function chain(rc: { r: object; vault: string }, opts: { isVault?: boolean; owne
     },
   } as unknown as PublicClient;
 }
+
+describe("recordDeposit (plan 05zj E, SYM-14)", () => {
+  const TRANSFER = { abi: erc20Abi, eventName: "Transfer" } as const;
+  function depositChain(o: { status?: "success" | "reverted"; token?: string; from: string; to: string; value?: bigint; logs?: number }) {
+    const log = {
+      address: o.token ?? cfg.deployment.tokens.usdc,
+      topics: encodeEventTopics({ ...TRANSFER, args: { from: getAddress(o.from), to: getAddress(o.to) } }),
+      data: encodeAbiParameters([{ type: "uint256" }], [o.value ?? 25_000_000n]),
+    };
+    const receipt = { status: o.status ?? "success", to: o.token ?? cfg.deployment.tokens.usdc, blockNumber: 10n, logs: Array.from({ length: o.logs ?? 1 }, () => log) };
+    return { getTransactionReceipt: async () => receipt } as unknown as PublicClient;
+  }
+  async function owned() {
+    const u = await person();
+    const vault = fresh();
+    const b = await ownedBusiness(u);
+    await db.update(businesses).set({ vault: vault.toLowerCase() }).where(eq(businesses.id, b.id));
+    return { u, b, vault };
+  }
+
+  it("records the owner's token transfer into the Vault once, with the token and the exact amount", async () => {
+    const { u, b, vault } = await owned();
+    const client = depositChain({ from: u.wallet!, to: vault });
+    const first = await recordDeposit(db, client, cfg, u, b.id, HASH(7));
+    expect(first).toMatchObject({ recorded: true, token: "USDC", amount: "25000000" });
+    const again = await recordDeposit(db, client, cfg, u, b.id, HASH(7));
+    expect(again.recorded).toBe(false);
+    const rows = await db.select().from(decisions).where(and(eq(decisions.businessId, b.id), eq(decisions.kind, "deposit_confirmed")));
+    expect(rows).toHaveLength(1);
+
+    const eurc = await recordDeposit(db, depositChain({ from: u.wallet!, to: vault, token: cfg.deployment.tokens.eurc, value: 1_500_000n }), cfg, u, b.id, HASH(8));
+    expect(eurc).toMatchObject({ token: "EURC", amount: "1500000" });
+  });
+
+  it("refuses a failed transaction, someone else's transfer, a transfer to elsewhere, and no transfer at all", async () => {
+    const { u, b, vault } = await owned();
+    const status = async (client: PublicClient) => (await err(recordDeposit(db, client, cfg, u, b.id, HASH(9)))).status;
+    expect(await status(depositChain({ status: "reverted", from: u.wallet!, to: vault }))).toBe(409);
+    expect(await status(depositChain({ from: fresh(), to: vault }))).toBe(403);
+    expect(await status(depositChain({ from: u.wallet!, to: fresh() }))).toBe(409);
+    expect(await status(depositChain({ from: u.wallet!, to: vault, logs: 2 }))).toBe(409);
+    expect((await err(recordDeposit(db, depositChain({ from: u.wallet!, to: vault }), cfg, u, b.id, "nope"))).status).toBe(400);
+    // another member can't record for this business
+    const stranger = await person();
+    expect((await err(recordDeposit(db, depositChain({ from: u.wallet!, to: vault }), cfg, stranger, b.id, HASH(9)))).status).toBe(403);
+  });
+});
 
 describe("findBusinessConflict (plan 05zj D8)", () => {
   it("offers to continue a business with no Vault, and notices the same name on a finished one", async () => {

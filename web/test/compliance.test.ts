@@ -388,6 +388,17 @@ describe("Compliance screening service (05s Part A)", () => {
     ).rejects.toBeInstanceOf(AuthError);
   });
 
+  it("complianceReport: a counterparty never screened is a row that says so (SYM-25)", async () => {
+    const { business } = await fixture();
+    const other = address(77);
+    await db.insert(payees).values({ businessId: business.id, seal: other, status: "verified", verificationMethod: "invitation", verifiedAt: new Date() }).onConflictDoNothing();
+    const csv = await complianceReport(db, business.id);
+    const rows = csv.split("\r\n").slice(1);
+    const never = rows.find((r) => r.includes(other.toLowerCase()) || r.includes(other));
+    expect(never).toBeDefined();
+    expect(never).toContain("Not screened");
+  });
+
   it("complianceReport: exports sanitized CSV with headers and row data", async () => {
     const { owner, business, seal } = await fixture();
     const screenedAt = new Date("2026-09-30T10:00:00Z");

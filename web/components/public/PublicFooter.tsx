@@ -11,6 +11,9 @@ export function PublicFooter() {
           <Link href="/status" className="underline decoration-rule underline-offset-4 hover:text-ink">Read the contracts</Link>
         </p>
         <nav aria-label="Footer" className="flex items-center gap-6">
+          <Link href="/guide" className="inline-flex min-h-10 items-center hover:text-ink">
+            Get started
+          </Link>
           <Link href="/verify" className="inline-flex min-h-10 items-center hover:text-ink">
             Verify
           </Link>

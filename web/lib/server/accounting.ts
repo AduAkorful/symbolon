@@ -205,14 +205,16 @@ export async function loadAccounting(
     .orderBy(desc(decisions.createdAt))
     .limit(10);
 
+  // the export's own facts are stored under `inputs` (appendAppDecision); reading them from the top level made every export "csv"
+  // with no row count (plan 05zj E, SYM-24)
   const recentExports: AccountingExportRecord[] = exportDecisions.map((d) => {
-    const rec = d.record as Record<string, unknown> | null;
+    const inputs = ((d.record as Record<string, unknown> | null)?.inputs ?? {}) as { format?: unknown; rowCount?: unknown };
     return {
       id: d.id,
-      format: String(rec?.format ?? "csv"),
+      format: inputs.format === "beancount" ? "beancount" : "csv",
       sha256: d.subject ?? "",
       createdAt: d.createdAt.toISOString(),
-      rowCount: rec?.rowCount ? Number(rec.rowCount) : undefined,
+      rowCount: typeof inputs.rowCount === "number" ? inputs.rowCount : undefined,
     };
   });
 
@@ -239,6 +241,7 @@ export async function exportAccounting(
   businessId: string,
   format: "csv" | "beancount",
   opts: { from?: string; to?: string } = {},
+  live?: { contracts: SymbolonContracts; client: PublicClient; deployment: Deployment },
 ): Promise<{ content: string; filename: string; sha256: string }> {
   await requireMember(db, user.id, businessId);
 
@@ -252,9 +255,14 @@ export async function exportAccounting(
   const [check] = await db.select().from(decisions).where(and(eq(decisions.businessId, businessId), eq(decisions.kind, "accounting_reconciliation"))).orderBy(desc(decisions.createdAt)).limit(1);
   const saved = (check?.record as { inputs?: { comparison?: AccountingViewData["reconciliation"]; invoiceDigest?: string } } | undefined)?.inputs;
   const [cursor] = await db.select().from(syncCursors).where(eq(syncCursors.key, `ledger:${biz.chainId}:${bizInvoices[0]?.ledger.toLowerCase() ?? ""}`));
-  const comparison = saved?.comparison && saved.invoiceDigest === accountingInvoiceDigest(bizInvoices)
+  // The file carries the same comparison the page shows: made now, against Arc, by the same code (plan 05zj E, SYM-24). Without a
+  // chain to ask, the last explicit re-sync is used only while the invoices and the ledger copy are exactly what it compared.
+  const liveComparison = live
+    ? (await loadAccounting(db, live.contracts, live.client, live.deployment, user, businessId).catch(() => undefined))?.reconciliation
+    : undefined;
+  const comparison = liveComparison ?? (saved?.comparison && saved.invoiceDigest === accountingInvoiceDigest(bizInvoices)
     && (!cursor || cursor.block.toString() === saved.comparison.syncedBlock)
-    ? saved.comparison : { status: "unavailable", comparedBlock: "unknown", syncedBlock: cursor?.block.toString() ?? "unknown", totalCompared: 0, mismatches: [] };
+    ? saved.comparison : { status: "unavailable", comparedBlock: "unknown", syncedBlock: cursor?.block.toString() ?? "unknown", totalCompared: 0, mismatches: [] });
   const warning = comparison.status === "unavailable"
     ? `UNRECONCILED: comparison unavailable; ledger copy block ${comparison.syncedBlock}`
     : comparison.status === "mismatched"

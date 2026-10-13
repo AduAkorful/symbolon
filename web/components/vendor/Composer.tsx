@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import type { InvoiceDocument } from "@symbolon/seal";
 import { InvoiceDoc } from "@/components/InvoiceDoc";
@@ -16,6 +16,7 @@ import { buttonClass } from "@/components/ui/button";
 import { InlineError } from "@/components/ui/States";
 import { Eyebrow, PageTitle } from "@/components/ui/Type";
 import { controlClass } from "@/components/ui/Field";
+import { showAmount } from "@/lib/format";
 
 export interface ClientOption {
   id: string;
@@ -44,6 +45,52 @@ interface Prepared {
   warnings?: string[];
 }
 
+
+// ── Checks the form makes itself, so a mistake is said at its field and not at the foot of the page (plan 05zj F, SYM-32) ──────────
+// A minus sign used to be deleted as it was typed (`replace(/\D/g, "")`), so "-5" quietly became "5".
+
+const DECIMAL = /^\d+(\.\d+)?$/;
+
+/** Exact decimal to a scaled integer (6 places), or null when it isn't a plain decimal with at most 6 places */
+function scaled(text: string): bigint | null {
+  const t = text.trim();
+  if (!DECIMAL.test(t)) return null;
+  const [whole = "0", frac = ""] = t.split(".");
+  if (frac.length > 6) return null;
+  return BigInt(whole) * 1_000_000n + BigInt(frac.padEnd(6, "0"));
+}
+
+function lineProblem(l: { quantity: string; unitPrice: string }): { quantity?: string; unitPrice?: string } {
+  const out: { quantity?: string; unitPrice?: string } = {};
+  const q = scaled(l.quantity);
+  if (l.quantity.trim() !== "" && (q === null || q <= 0n)) out.quantity = "A quantity more than zero, up to 6 decimals.";
+  const p = scaled(l.unitPrice);
+  if (l.unitPrice.trim() !== "" && p === null) out.unitPrice = "A price of zero or more, like 250 or 250.50 (no minus sign).";
+  return out;
+}
+
+const whole = (text: string) => /^\d+$/.test(text.trim());
+
+/** What the lines come to, as exact digits, once every line parses: `null` while something is still wrong or empty */
+function subtotalOf(lines: { quantity: string; unitPrice: string }[]): bigint | null {
+  let sum = 0n;
+  for (const l of lines) {
+    const q = scaled(l.quantity);
+    const p = scaled(l.unitPrice);
+    if (q === null || p === null || q <= 0n) return null;
+    sum += q * p; // scale 1e12
+  }
+  return sum;
+}
+
+/** A scale-1e12 integer as a decimal string, trailing zeros trimmed to at least two places */
+function fromTwelve(raw: bigint): string {
+  const digits = raw.toString().padStart(13, "0");
+  return showAmount(`${digits.slice(0, -12)}.${digits.slice(-12)}`);
+}
+
+const DRAFT_KEY = (handle: string) => `symbolon:invoice-draft:${handle}`;
+
 const box = controlClass;
 const label = "block text-sm font-medium text-ink";
 const primary = buttonClass();
@@ -58,7 +105,11 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
   const [busy, setBusy] = useState(false);
 
   // A draft read from an uploaded file fills these in; the vendor confirms every one (plan 05i, V13). It never sets the currency.
-  const [clientId, setClientId] = useState(prefill ? NEW : (clients[0]?.id ?? NEW));
+  // A file's client is matched to a saved one only on an exact name (ignoring case and spacing), and is still shown for the
+  // vendor to confirm (plan 05zj F, SYM-34): it never picks a client the vendor didn't see.
+  const sameName = (a: string, b: string) => a.normalize("NFC").trim().replace(/\s+/g, " ").toLowerCase() === b.normalize("NFC").trim().replace(/\s+/g, " ").toLowerCase();
+  const matchedClient = prefill?.client.name ? clients.find((c) => sameName(c.name, prefill.client.name)) : undefined;
+  const [clientId, setClientId] = useState(prefill ? (matchedClient?.id ?? NEW) : (clients[0]?.id ?? NEW));
   const [newName, setNewName] = useState(prefill?.client.name ?? "");
   const [newBy, setNewBy] = useState<"vault" | "email">(prefill?.client.email ? "email" : "vault");
   const [newValue, setNewValue] = useState(prefill?.client.email ?? "");
@@ -79,6 +130,51 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
   const [copied, setCopied] = useState(false);
   const nextId = useRef((prefill?.lines.length ?? 1) + 1);
   const sealedDoc = useRef<HTMLDivElement>(null);
+
+  // An unsent draft survives a reload or a closed tab for this session (plan 05zj F, SYM-32). A file's draft takes priority, and a
+  // browser that won't keep it just doesn't: nothing depends on it.
+  const [restored, setRestored] = useState(false);
+  const hydrated = useRef(false);
+  useEffect(() => {
+    if (prefill || hydrated.current) return;
+    hydrated.current = true;
+    try {
+      const raw = sessionStorage.getItem(DRAFT_KEY(handle));
+      if (!raw) return;
+      const d = JSON.parse(raw) as Record<string, unknown>;
+      if (typeof d.clientId === "string" && (d.clientId === NEW || clients.some((c) => c.id === d.clientId))) setClientId(d.clientId);
+      if (typeof d.newName === "string") setNewName(d.newName);
+      if (d.newBy === "vault" || d.newBy === "email") setNewBy(d.newBy);
+      if (typeof d.newValue === "string") setNewValue(d.newValue);
+      if (d.currency === "USDC" || d.currency === "EURC") setCurrency(d.currency);
+      if (typeof d.number === "string" && d.number) setNumber(d.number);
+      if (typeof d.dueDays === "string") setDueDays(d.dueDays);
+      if (typeof d.po === "string") setPo(d.po);
+      if (Array.isArray(d.lines) && d.lines.length) {
+        const ls = d.lines.filter((l): l is Line => !!l && typeof l === "object" && typeof (l as Line).id === "number").slice(0, 100);
+        if (ls.length) {
+          setLines(ls);
+          nextId.current = Math.max(nextId.current, ...ls.map((l) => l.id)) + 1;
+        }
+      }
+      if (typeof d.tax === "string") setTax(d.tax);
+      if (typeof d.earlyOn === "boolean") setEarlyOn(d.earlyOn);
+      if (Array.isArray(d.tiers) && d.tiers.length) setTiers((d.tiers as Tier[]).filter((t) => t && typeof t.id === "number").slice(0, 3));
+      if (typeof d.notes === "string") setNotes(d.notes);
+      setRestored(true);
+    } catch {
+      /* no saved draft, or a browser that won't give it back */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (prefill || !hydrated.current || step === "sent") return;
+    try {
+      sessionStorage.setItem(DRAFT_KEY(handle), JSON.stringify({ clientId, newName, newBy, newValue, currency, number, dueDays, po, lines, tax, earlyOn, tiers, notes }));
+    } catch {
+      /* private window or storage full: the draft just isn't kept */
+    }
+  }, [prefill, handle, step, clientId, newName, newBy, newValue, currency, number, dueDays, po, lines, tax, earlyOn, tiers, notes]);
 
   // The stamp strikes once the invoice is signed and saved
   useLayoutEffect(() => {
@@ -107,6 +203,20 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
     earlyPay: earlyOn ? tiers.map((t) => ({ percent: t.percent, days: Number(t.days) })) : [],
   });
 
+  // field-level checks; nothing is submitted while one is open
+  const lineProblems = lines.map((l) => lineProblem(l));
+  const dueProblem = dueDays.trim() === "" || whole(dueDays) ? null : "Whole days, zero or more.";
+  const taxProblem = tax.trim() === "" || (scaled(tax) !== null && scaled(tax)! <= 100_000_000n) ? null : "A percentage from 0 to 100, like 7.5 (no minus sign).";
+  const tierProblems = tiers.map((t) => ({
+    percent: !earlyOn || t.percent.trim() === "" || (scaled(t.percent) !== null && scaled(t.percent)! > 0n && scaled(t.percent)! < 10_000_000n) ? undefined : "More than 0 and under 10.",
+    days: !earlyOn || t.days.trim() === "" || (whole(t.days) && Number(t.days) >= 1) ? undefined : "Whole days, 1 or more.",
+  }));
+  const hasProblem =
+    lineProblems.some((p) => p.quantity || p.unitPrice) || dueProblem !== null || taxProblem !== null || tierProblems.some((p) => p.percent || p.days);
+  const subtotal = subtotalOf(lines);
+  const taxScaled = scaled(tax === "" ? "0" : tax);
+  const estimatedTax = subtotal !== null && taxScaled !== null ? (subtotal * taxScaled) / 100_000_000n : null; // 1e12 × 1e6 ÷ (100 × 1e6)
+
   const fail = (e: unknown) => setProblem(wasRejected(e) ? "You closed the wallet’s request, so nothing was signed." : e instanceof Error ? e.message : "Something went wrong.");
 
   async function review(e: React.FormEvent) {
@@ -132,6 +242,7 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
       const signature = await signInvoice(signer, prepared, discover);
       setSent(await postJson<{ fingerprint: string; path: string }>("/api/vendor/invoice", { action: "send", document: prepared.document, signature }));
       setStep("sent");
+      try { sessionStorage.removeItem(DRAFT_KEY(handle)); } catch { /* nothing to clear */ }
     } catch (err) {
       fail(err);
       setStep("review");
@@ -152,7 +263,7 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
             Check it, then sign.
           </PageTitle>
           <p className="mt-3 max-w-[52ch] text-graphite">
-            This is the exact text your wallet will be asked to sign. Signing seals it: a sealed invoice can’t be edited, and the fingerprint under it changes with any change to a word or a number.
+            This is the invoice you are sealing. Your wallet will show the same facts in its own raw form: the amount as a whole number in the token’s smallest unit (276.80 appears as 276800000) and the token as an address. Signing seals it: a sealed invoice can’t be edited, and the fingerprint under it changes with any change to a word or a number.
           </p>
           {signer.kind === "none" ? (
             <p role="status" className="mt-6 rounded-doc border border-rule p-4 text-sm text-graphite">
@@ -237,6 +348,21 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
         </p>
       </div>
       {fromFile ? <FromFileNotes f={fromFile} /> : null}
+      {restored ? (
+        <p role="status" className="rounded-doc border border-rule bg-paper-raised px-4 py-3 text-sm text-graphite">
+          Your unsent draft was restored.{" "}
+          <button
+            type="button"
+            className="underline decoration-rule underline-offset-4"
+            onClick={() => {
+              try { sessionStorage.removeItem(DRAFT_KEY(handle)); } catch { /* nothing to clear */ }
+              window.location.reload();
+            }}
+          >
+            Start over
+          </button>
+        </p>
+      ) : null}
 
       <fieldset className="space-y-3">
         <legend className="mb-1.5 text-sm font-medium text-ink">Client</legend>
@@ -284,7 +410,8 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
         </label>
         <label className={label}>
           Due in (days)
-          <input className={`${box} mt-1 w-full`} inputMode="numeric" value={dueDays} onChange={(e) => setDueDays(e.target.value.replace(/\D/g, ""))} required />
+          <input className={`${box} mt-1 w-full`} inputMode="numeric" value={dueDays} onChange={(e) => setDueDays(e.target.value)} required aria-invalid={dueProblem ? true : undefined} />
+          {dueProblem ? <span role="alert" className="mt-1 block text-sm font-normal text-red">{dueProblem}</span> : null}
         </label>
         <label className={label}>
           Currency
@@ -303,11 +430,13 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
             <textarea className={`${box} sm:col-span-4`} rows={2} value={l.description} onChange={(e) => setLine(l.id, { description: e.target.value })} placeholder={`Line ${i + 1}: what you did`} aria-label={`Line ${i + 1} description`} required />
             <label className="text-sm text-graphite sm:col-start-2 sm:row-start-2">
               Qty
-              <input className={`${box} mt-1 w-full`} inputMode="decimal" value={l.quantity} onChange={(e) => setLine(l.id, { quantity: e.target.value })} required />
+              <input className={`${box} mt-1 w-full`} inputMode="decimal" value={l.quantity} onChange={(e) => setLine(l.id, { quantity: e.target.value })} required aria-invalid={lineProblems[i]?.quantity ? true : undefined} />
+              {lineProblems[i]?.quantity ? <span role="alert" className="mt-1 block text-xs text-red">{lineProblems[i]!.quantity}</span> : null}
             </label>
             <label className="text-sm text-graphite sm:col-start-3 sm:row-start-2">
               Unit price
-              <input className={`${box} mt-1 w-full`} inputMode="decimal" value={l.unitPrice} onChange={(e) => setLine(l.id, { unitPrice: e.target.value })} placeholder="0.00" required />
+              <input className={`${box} mt-1 w-full`} inputMode="decimal" value={l.unitPrice} onChange={(e) => setLine(l.id, { unitPrice: e.target.value })} placeholder="0.00" required aria-invalid={lineProblems[i]?.unitPrice ? true : undefined} />
+              {lineProblems[i]?.unitPrice ? <span role="alert" className="mt-1 block text-xs text-red">{lineProblems[i]!.unitPrice}</span> : null}
             </label>
             {lines.length > 1 ? (
               <button type="button" onClick={() => setLines((ls) => ls.filter((x) => x.id !== l.id))} className="min-h-9 self-end text-sm text-graphite underline decoration-rule underline-offset-4 sm:col-start-4 sm:row-start-2">
@@ -323,10 +452,19 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
         ) : null}
       </fieldset>
 
+      {subtotal !== null ? (
+        <p className="-mt-4 text-sm text-graphite" aria-live="polite">
+          Lines come to <span className="text-ink">{fromTwelve(subtotal)} {currency}</span>
+          {estimatedTax !== null && taxScaled !== null && taxScaled > 0n ? <> · with tax about <span className="text-ink">{fromTwelve(subtotal + estimatedTax)} {currency}</span></> : null}
+          . The review shows the exact sealed figures.
+        </p>
+      ) : null}
+
       <div className="grid gap-4 sm:grid-cols-2">
         <label className={label}>
           Tax (%), if any
-          <input className={`${box} mt-1 w-full`} inputMode="decimal" value={tax} onChange={(e) => setTax(e.target.value)} placeholder="0" />
+          <input className={`${box} mt-1 w-full`} inputMode="decimal" value={tax} onChange={(e) => setTax(e.target.value)} placeholder="0" aria-invalid={taxProblem ? true : undefined} />
+          {taxProblem ? <span role="alert" className="mt-1 block text-sm font-normal text-red">{taxProblem}</span> : null}
         </label>
         <label className={label}>
           PO number, if they gave you one
@@ -346,11 +484,13 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
               <div key={t.id} className="flex flex-wrap items-end gap-3">
                 <label className="text-sm text-graphite">
                   Discount (%)
-                  <input className={`${box} mt-1 block w-24`} inputMode="decimal" value={t.percent} onChange={(e) => setTier(t.id, { percent: e.target.value })} aria-label={`Tier ${i + 1} discount`} />
+                  <input className={`${box} mt-1 block w-24`} inputMode="decimal" value={t.percent} onChange={(e) => setTier(t.id, { percent: e.target.value })} aria-label={`Tier ${i + 1} discount`} aria-invalid={tierProblems[i]?.percent ? true : undefined} />
+                  {tierProblems[i]?.percent ? <span role="alert" className="mt-1 block max-w-[10rem] text-xs text-red">{tierProblems[i]!.percent}</span> : null}
                 </label>
                 <label className="text-sm text-graphite">
                   Paid within (days)
-                  <input className={`${box} mt-1 block w-28`} inputMode="numeric" value={t.days} onChange={(e) => setTier(t.id, { days: e.target.value.replace(/\D/g, "") })} aria-label={`Tier ${i + 1} days`} />
+                  <input className={`${box} mt-1 block w-28`} inputMode="numeric" value={t.days} onChange={(e) => setTier(t.id, { days: e.target.value })} aria-label={`Tier ${i + 1} days`} aria-invalid={tierProblems[i]?.days ? true : undefined} />
+                  {tierProblems[i]?.days ? <span role="alert" className="mt-1 block max-w-[10rem] text-xs text-red">{tierProblems[i]!.days}</span> : null}
                 </label>
                 {tiers.length > 1 ? (
                   <button type="button" onClick={() => setTiers((ts) => ts.filter((x) => x.id !== t.id))} className="min-h-9 pb-2 text-sm text-graphite underline decoration-rule underline-offset-4">
@@ -376,9 +516,10 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
       {problem ? (
         <InlineError>{problem}</InlineError>
       ) : null}
-      <button disabled={busy} className={primary}>
+      <button disabled={busy || hasProblem} className={primary}>
         {busy ? "Preparing…" : "Review the sealed text"}
       </button>
+      {hasProblem ? <p className="-mt-4 text-sm text-graphite">Fix the fields marked above to continue.</p> : null}
     </form>
   );
 }

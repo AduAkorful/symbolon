@@ -9,6 +9,7 @@ import { TxLink } from "@/components/TxLink";
 import { Button } from "@/components/ui/button";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { postJson } from "@/lib/client/api";
+import { refreshAfterChain } from "@/lib/client/refresh";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -62,7 +63,9 @@ export function PauseControl({ businessId, paused, block, known = true, signer, 
           setCurPaused(want);
           setCurBlock(BigInt(j.block));
           setConfirming(false);
-          router.refresh();
+          // the header chip and the rest of the page read the chain on the server; Arc's endpoints lag each other, so a single refresh
+          // can redraw the old state and leave "Paused" up (plan 05zj E, SYM-27)
+          refreshAfterChain(router);
           return;
         }
         await wait(2000);

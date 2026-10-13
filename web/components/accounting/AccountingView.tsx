@@ -131,7 +131,7 @@ export function AccountingView({
           <div className="min-w-0">
             <SectionTitle id="rec-heading">Ledger reconciliation</SectionTitle>
             <p className="mt-1 text-sm text-graphite">
-              Compared with Arc just now · {data.reconciliation.totalCompared} {data.reconciliation.totalCompared === 1 ? "invoice" : "invoices"} compared ·{" "}
+              {unavailable ? "Couldn’t compare with Arc just now" : "Compared with Arc just now"} · {data.reconciliation.totalCompared} {data.reconciliation.totalCompared === 1 ? "invoice" : "invoices"} compared ·{" "}
               {unavailable ? "the comparison is unavailable; re-sync to retry" : hasMismatches ? `${data.reconciliation.mismatches.length} ${data.reconciliation.mismatches.length === 1 ? "mismatch" : "mismatches"} found` : "every line matches"}
             </p>
           </div>

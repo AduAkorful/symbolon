@@ -85,6 +85,23 @@ export async function registerMySeal(
   return { handle: h.handle, address: address.toLowerCase() };
 }
 
+/**
+ * The name on invoices and the website can be changed (plan 05zj F, SYM-33). The handle can't: it is in public links. Invoices
+ * already sealed keep the name they were signed with; only new ones use the new name.
+ */
+export async function updateVendorProfile(
+  db: Database,
+  user: Pick<SessionUser, "id">,
+  input: Record<string, unknown>,
+): Promise<{ displayName: string; website: string | null }> {
+  const seal = await requireMySeal(db, user.id);
+  const displayName = cleanLine(input.displayName, "The name on your invoices", 2, 80);
+  const websiteText = typeof input.website === "string" ? input.website.trim() : "";
+  const website = websiteText === "" ? null : cleanLine(websiteText, "The website", 3, 200);
+  await db.update(seals).set({ displayName, website }).where(eq(seals.address, seal.address));
+  return { displayName, website };
+}
+
 /** The payout address new invoices start with (null = the Seal's own address) */
 export async function saveVendorSettings(db: Database, user: Pick<SessionUser, "id">, input: Record<string, unknown>): Promise<{ payoutAddress: string | null }> {
   const seal = await requireMySeal(db, user.id);

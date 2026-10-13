@@ -160,7 +160,7 @@ export function SettingsView({
               ["Implementation", vaultDetails.currentImplementation ? <Address key="i" value={vaultDetails.currentImplementation} full /> : "Can’t read it right now"],
               ["Owner", <Address key="o" value={vaultDetails.owner} full />],
               ["Steward wallet", vaultDetails.steward === zero ? "No Steward is set in this Vault" : <Address key="s" value={vaultDetails.steward} full />],
-              ["Compliance screener", vaultDetails.screener === zero ? "None; only the built-in checks apply" : <Address key="c" value={vaultDetails.screener} full />],
+              ["Others who can record screenings", vaultDetails.screener === zero ? "Only you, the owner. Screenings come from Circle through the Compliance page." : <Address key="c" value={vaultDetails.screener} full />],
               ["Accounting decimals", vaultDetails.accountingDecimals],
             ].map(([label, value]) => (
               <div key={String(label)} className="grid gap-1 py-3.5 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4">

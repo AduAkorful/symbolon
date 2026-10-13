@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { checkPolicyInput } from "@/lib/policy-check";
 import { arcTestnet, getDeployment, symbolonVaultAbi } from "@symbolon/chain";
 import { businesses, createTestDb, decisions, members, queuedChanges, users } from "@symbolon/db";
 import { eq } from "drizzle-orm";
@@ -361,5 +362,31 @@ describe("audit C2 queued budget boundary", () => {
     expect(await prepareChange(db, client, deployment, f.owner, f.biz.id, { kind: "setBudget", args: [zero, 20n, 86400n] })).toMatchObject({ state: "will-queue", loosening: true });
     chainState.getBudget.mockRejectedValue(new Error("RPC unavailable"));
     await expect(prepareChange(db, client, deployment, f.owner, f.biz.id, { kind: "setBudget", args: [zero, 20n, 86400n] })).rejects.toThrow();
+  });
+});
+
+describe("checkPolicyInput (plan 05zj E, SYM-28)", () => {
+  const ok = { perTxCap: 500_000_000n, autoPayLimit: 50_000_000n, ownerThreshold: 250_000_000n, newVendorMinPaid: 3, screeningMaxAge: 2_592_000n, newPayeeDelay: 86_400n, changeCooldown: 259_200n, looseningDelay: 86_400n, maxBridgeFee: 5_000_000n };
+
+  it("accepts a sensible policy without comment", () => {
+    expect(checkPolicyInput(ok)).toEqual({ errors: [], warnings: [] });
+  });
+
+  it("refuses negatives, a zero cap, silly counts and delays, in plain words", () => {
+    expect(checkPolicyInput({ ...ok, perTxCap: -1n }).errors.join(" ")).toMatch(/largest single payment can't be negative/);
+    expect(checkPolicyInput({ ...ok, perTxCap: 0n }).errors.join(" ")).toMatch(/can't be zero/);
+    expect(checkPolicyInput({ ...ok, newVendorMinPaid: -2 }).errors.join(" ")).toMatch(/whole number, zero or more/);
+    expect(checkPolicyInput({ ...ok, newVendorMinPaid: 1.5 }).errors).toHaveLength(1);
+    expect(checkPolicyInput({ ...ok, newVendorMinPaid: Number.NaN }).errors).toHaveLength(1);
+    expect(checkPolicyInput({ ...ok, newPayeeDelay: -5n }).errors.join(" ")).toMatch(/new-payee wait can't be negative/);
+    expect(checkPolicyInput({ ...ok, looseningDelay: 400n * 86_400n }).errors.join(" ")).toMatch(/longer than a year/);
+    expect(checkPolicyInput({ ...ok, ownerThreshold: 10n ** 30n }).errors.join(" ")).toMatch(/larger than this app accepts/);
+  });
+
+  it("warns, without refusing, when the tiers are out of order", () => {
+    const warned = checkPolicyInput({ ...ok, perTxCap: 100_000_000n });
+    expect(warned.errors).toEqual([]);
+    expect(warned.warnings.join(" ")).toMatch(/can never be reached/);
+    expect(checkPolicyInput({ ...ok, autoPayLimit: 300_000_000n }).warnings.join(" ")).toMatch(/auto-pay limit is above/);
   });
 });

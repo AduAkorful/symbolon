@@ -14,7 +14,7 @@ export interface PolicyText {
 
 const NAMES: Record<PolicyTemplate, { name: string; blurb: string }> = {
   starter: { name: "Starter", blurb: "A founder paying a handful of vendors. Fewer people in the loop; every onchain guard still on." },
-  standard: { name: "Standard", blurb: "A team with budgets and approvers. The spec’s example policy." },
+  standard: { name: "Standard", blurb: "A team with budgets and approvers. Screening and a waiting period for new payees." },
   strict: { name: "Strict", blurb: "Lower limits and longer delays. New vendors’ first invoices go to a person." },
 };
 

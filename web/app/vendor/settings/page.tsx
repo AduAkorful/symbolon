@@ -1,5 +1,6 @@
 import { ChangePayoutAddressSection } from "@/components/vendor/ChangePayoutAddressSection";
 import { PayoutForm } from "@/components/vendor/PayoutForm";
+import { ProfileForm } from "@/components/vendor/ProfileForm";
 import { Shell } from "@/components/shell/Shell";
 import { getConfig } from "@/lib/server/config";
 import { signerPlanFor } from "@/lib/server/signer-plan";
@@ -19,18 +20,13 @@ export default async function VendorSettings() {
       <div>
         <PageTitle>Settings</PageTitle>
         <dl className="mt-8 divide-y divide-rule-soft rounded-doc border border-rule px-5 text-sm">
-          {([
-            ["Name on invoices", seal.displayName],
-            ["Handle", `@${seal.handle}`],
-            ["Seal (your wallet)", <Address key="a" value={seal.address} full copy />],
-            ["Website", seal.website ?? "—"],
-          ] as [string, React.ReactNode][]).map(([label, v]) => (
-            <div key={label} className="grid gap-1 py-3.5 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4">
-              <dt className="text-graphite">{label}</dt>
-              <dd className="min-w-0 break-words">{v}</dd>
-            </div>
-          ))}
+          <div className="grid gap-1 py-3.5 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4">
+            <dt className="text-graphite">Seal (your wallet)</dt>
+            <dd className="min-w-0 break-words"><Address value={seal.address} full copy /></dd>
+          </div>
         </dl>
+        <SectionTitle className="mt-12">Your profile</SectionTitle>
+        <ProfileForm initialName={seal.displayName} initialWebsite={seal.website} handle={seal.handle} />
         <SectionTitle className="mt-12">Default payout address</SectionTitle>
         <PayoutForm initial={seal.payoutAddress} sealAddress={seal.address} />
 

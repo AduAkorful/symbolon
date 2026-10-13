@@ -10,7 +10,8 @@ import { SentTransactionNotice, useSentTransaction } from "@/components/wallet/u
 import type { PolicyViewData } from "@/lib/server/policy-edit";
 import type { BudgetViewItem } from "@/lib/server/budgets";
 import { policyTemplate, type PolicyTemplate } from "@/lib/policy-template";
-import { moneyDraft, moneyInput } from "@/lib/money-draft";
+import { inputAmount, moneyDraft } from "@/lib/money-draft";
+import { checkPolicyInput } from "@/lib/policy-check";
 import { usd, duration } from "@/lib/format";
 import { isLooseningPolicy } from "@/lib/server/loosening";
 import { Overlay } from "@/components/Overlay";
@@ -77,15 +78,15 @@ export function PolicyView({
   const [error, setError] = useState<string | null>(null);
 
   // Form draft state in user-friendly units
-  const [draftPerTxCap, setDraftPerTxCap] = useState(moneyInput(policy.perTxCap, accountingDecimals));
-  const [draftOwnerThreshold, setDraftOwnerThreshold] = useState(moneyInput(policy.ownerThreshold, accountingDecimals));
-  const [draftAutoPayLimit, setDraftAutoPayLimit] = useState(moneyInput(policy.autoPayLimit, accountingDecimals));
+  const [draftPerTxCap, setDraftPerTxCap] = useState(inputAmount(policy.perTxCap, accountingDecimals));
+  const [draftOwnerThreshold, setDraftOwnerThreshold] = useState(inputAmount(policy.ownerThreshold, accountingDecimals));
+  const [draftAutoPayLimit, setDraftAutoPayLimit] = useState(inputAmount(policy.autoPayLimit, accountingDecimals));
   const [draftNewVendorMinPaid, setDraftNewVendorMinPaid] = useState(policy.newVendorMinPaid);
   const [draftScreeningMaxAge, setDraftScreeningMaxAge] = useState(policy.screeningMaxAge);
   const [draftNewPayeeDelay, setDraftNewPayeeDelay] = useState(policy.newPayeeDelay);
   const [draftChangeCooldown, setDraftChangeCooldown] = useState(policy.changeCooldown);
   const [draftLooseningDelay, setDraftLooseningDelay] = useState(policy.looseningDelay);
-  const [draftMaxBridgeFee, setDraftMaxBridgeFee] = useState(moneyInput(policy.maxBridgeFee, accountingDecimals));
+  const [draftMaxBridgeFee, setDraftMaxBridgeFee] = useState(inputAmount(policy.maxBridgeFee, accountingDecimals));
 
   // Budgets state
   const [budgets, setBudgets] = useState<BudgetViewItem[]>(initialBudgets);
@@ -99,15 +100,15 @@ export function PolicyView({
   // Template prefill
   function handlePrefillTemplate(tmpl: PolicyTemplate) {
     const t = policyTemplate(tmpl);
-    setDraftPerTxCap(moneyInput(t.perTxCap, accountingDecimals));
-    setDraftOwnerThreshold(moneyInput(t.ownerThreshold, accountingDecimals));
-    setDraftAutoPayLimit(moneyInput(t.autoPayLimit, accountingDecimals));
+    setDraftPerTxCap(inputAmount(t.perTxCap, accountingDecimals));
+    setDraftOwnerThreshold(inputAmount(t.ownerThreshold, accountingDecimals));
+    setDraftAutoPayLimit(inputAmount(t.autoPayLimit, accountingDecimals));
     setDraftNewVendorMinPaid(t.newVendorMinPaid);
     setDraftScreeningMaxAge(t.screeningMaxAge.toString());
     setDraftNewPayeeDelay(t.newPayeeDelay.toString());
     setDraftChangeCooldown(t.changeCooldown.toString());
     setDraftLooseningDelay(t.looseningDelay.toString());
-    setDraftMaxBridgeFee(moneyInput(t.maxBridgeFee, accountingDecimals));
+    setDraftMaxBridgeFee(inputAmount(t.maxBridgeFee, accountingDecimals));
   }
 
   // Compute draft bigints and whether proposed is looser
@@ -139,6 +140,8 @@ export function PolicyView({
   };
 
   const isLooser = draftPolicyRaw ? isLooseningPolicy(currentPolicyRaw, draftPolicyRaw) : false;
+  // the same range checks the server makes, said before anything is signed (plan 05zj E, SYM-28)
+  const policyCheck = draftPolicyRaw ? checkPolicyInput(draftPolicyRaw) : { errors: [] as string[], warnings: [] as string[] };
 
   async function handleSavePolicy(e: React.FormEvent) {
     e.preventDefault();
@@ -330,7 +333,7 @@ export function PolicyView({
                 {(a) => <input {...a} type="number" step="any" value={draftAutoPayLimit} onChange={(e) => setDraftAutoPayLimit(e.target.value)} className={controlClass} required />}
               </PolicyField>
               <PolicyField id="newVendorMinPaid" label="Invoices before a vendor is trusted" current={currentPolicyRaw.newVendorMinPaid} draft={draftNow.newVendorMinPaid} looserWhen="lower" hint="How many invoices a vendor must have been paid for before auto-pay applies.">
-                {(a) => <input {...a} type="number" min="0" step="1" value={draftNewVendorMinPaid} onChange={(e) => setDraftNewVendorMinPaid(Number(e.target.value))} className={controlClass} required />}
+                {(a) => <input {...a} type="number" min="0" step="1" value={draftNewVendorMinPaid} onChange={(e) => setDraftNewVendorMinPaid(e.target.value.trim() === "" ? Number.NaN : Number(e.target.value))} className={controlClass} required />}
               </PolicyField>
               <PolicyField id="screeningMaxAge" label="Newest screening allowed" current={currentPolicyRaw.screeningMaxAge} draft={draftNow.screeningMaxAge} looserWhen="higher" hint={<>Payees must have been screened within this time. See <Link href="/business/compliance" className="underline underline-offset-2">Compliance</Link>.</>}>
                 {(a) => (
@@ -369,6 +372,9 @@ export function PolicyView({
               </PolicyField>
             </div>
 
+            {policyCheck.errors.map((m) => <InlineError key={m}>{m}</InlineError>)}
+            {policyCheck.warnings.map((m) => <p key={m} role="status" className="text-warn">{m}</p>)}
+
             <p className={isLooser ? "text-warn" : "text-ok"}>
               {isLooser
                 ? `A looser policy: it is queued and has to wait ${duration(BigInt(policy.looseningDelay))} before you can apply it.`
@@ -379,7 +385,7 @@ export function PolicyView({
 
             <Overlay.Footer>
               <Button variant="secondary" disabled={busy} onClick={() => setEditing(false)}>{policyTx.locked ? "Close" : "Cancel"}</Button>
-              <Button type="submit" busy={busy || policyTx.busy} disabled={policyTx.locked}>{busy || policyTx.busy ? "Working…" : isLooser ? "Queue the change" : "Apply now"}</Button>
+              <Button type="submit" busy={busy || policyTx.busy} disabled={policyTx.locked || draftPolicyRaw === null || policyCheck.errors.length > 0}>{busy || policyTx.busy ? "Working…" : isLooser ? "Queue the change" : "Apply now"}</Button>
             </Overlay.Footer>
           </form>
         </Overlay>

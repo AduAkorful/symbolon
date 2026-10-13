@@ -2,6 +2,7 @@ import { Shell } from "@/components/shell/Shell";
 import { SeriesClient } from "@/components/vendor/SeriesClient";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
+import { nextInvoiceNumber } from "@/lib/server/invoice-send";
 import { listSeries, releaseDueSafe } from "@/lib/server/series";
 import { signerPlanFor } from "@/lib/server/signer-plan";
 import { listClients, requireMySeal } from "@/lib/server/vendor";
@@ -31,6 +32,7 @@ export default async function VendorSeriesPage() {
     <Shell where={where} current={{ kind: "vendor" }}>
       <SeriesClient
         initialSeries={series}
+        nextNumber={await nextInvoiceNumber(db, seal.address)}
         clients={clients}
         signer={signer}
       />

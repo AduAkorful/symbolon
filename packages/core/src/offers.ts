@@ -3,7 +3,7 @@ import { getAddress, type Address, type Hex } from "viem";
 
 import { earlyPayOffers, invoices, type Database } from "@symbolon/db";
 import { digest, MAX_DISCOUNT_BPS, sealDomain, verifySealSignature, type SignatureClient } from "@symbolon/seal";
-import { notifyVendor } from "./domain-notifications.js";
+import { notifyBusiness, notifyVendor } from "./domain-notifications.js";
 
 /**
  * Stores a vendor's cash-now offer (spec §6.3, §10) after checking it's signed by the invoice's own Seal over the exact
@@ -31,6 +31,15 @@ export async function recordOffer(
     .insert(earlyPayOffers)
     .values({ fingerprint: o.fingerprint.toLowerCase(), discountBps: o.discountBps, validUntil: new Date(Number(o.validUntil) * 1000), signature: o.signature.toLowerCase() })
     .returning({ id: earlyPayOffers.id });
+  // the business is told a signed offer arrived (plan 05zj E, D11 a)
+  if (inv.businessId) {
+    await notifyBusiness(db, inv.businessId, {
+      kind: "offer_received",
+      subject: inv.fingerprint,
+      body: { invoiceNumber: inv.invoiceNumber, discountPercent: (o.discountBps / 100).toString() },
+      dedupeKey: `offer:${row!.id}`,
+    });
+  }
   return { id: row!.id };
 }
 

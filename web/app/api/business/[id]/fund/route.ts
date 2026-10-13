@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getClient } from "@/lib/server/chain";
-import { prepareFund } from "@/lib/server/business";
+import { prepareFund, recordDeposit } from "@/lib/server/business";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
 import { readBody, requireSession, routeWith } from "@/lib/server/http";
@@ -14,9 +14,10 @@ import { erc20Abi, getAddress } from "viem";
 /** The call that moves USDC from the owner's wallet into the Vault. The balance itself is only ever read from the chain. */
 export const POST = routeWith<{ params: Promise<{ id: string }> }>(async (request, ctx) => {
   const { id } = await ctx.params;
-  const { amount } = await readBody(request);
+  const body = await readBody(request);
   const s = await requireSession();
-  return NextResponse.json(await prepareFund(await getDb(), getConfig(), s.user, id, amount));
+  if (body.action === "record") return NextResponse.json(await recordDeposit(await getDb(), getClient(), getConfig(), s.user, id, body.txHash));
+  return NextResponse.json(await prepareFund(await getDb(), getConfig(), s.user, id, body.amount));
 });
 
 /** The Vault's USDC balance, read live. Answers with the failure, never a made-up number. (A GET: it reads only.) */
@@ -41,5 +42,9 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
     ? await client.readContract({ address: deployment.tokens.usdc, abi: erc20Abi, functionName: "balanceOf", args: [getAddress(s.user.wallet)], blockNumber: r.block }).then((v) => v.toString(), () => null)
     : null;
   const funding = await readFundingMode(client, b.vault).catch(() => ({ walletSends: false, release: null }));
-  return NextResponse.json({ ok: true, usdc: r.usdc.toString(), decimals: r.decimals, block: r.block.toString(), walletUsdc, funding });
+  const tokens = [
+    { address: deployment.tokens.usdc, symbol: "USDC", decimals: 6 },
+    { address: deployment.tokens.eurc, symbol: "EURC", decimals: 6 },
+  ];
+  return NextResponse.json({ ok: true, usdc: r.usdc.toString(), decimals: r.decimals, block: r.block.toString(), walletUsdc, funding, tokens });
 }

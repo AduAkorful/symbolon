@@ -57,6 +57,53 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
       };
     }
 
+    case "invoice_received": {
+      const invoiceNumber = typeof body.invoiceNumber === "string" ? body.invoiceNumber : "An invoice";
+      const vendorName = typeof body.vendorName === "string" ? body.vendorName : "A vendor";
+      const total = typeof body.total === "string" ? body.total : "";
+      return {
+        title: `New invoice: ${invoiceNumber}`,
+        body: `${vendorName}${total ? ` sent ${total}` : " sent an invoice"}.`,
+        href: subject ? `/business/inbox/${subject}` : "/business/inbox",
+      };
+    }
+
+    case "invoice_held": {
+      const invoiceNumber = typeof body.invoiceNumber === "string" ? body.invoiceNumber : "An invoice";
+      const reason = typeof body.reason === "string" && body.reason.trim() ? truncate(body.reason) : "It needs a person to look at it.";
+      return {
+        title: `Held: ${invoiceNumber}`,
+        body: reason.charAt(0).toUpperCase() + reason.slice(1),
+        href: subject ? `/business/inbox/${subject}` : "/business/inbox",
+      };
+    }
+
+    case "offer_received": {
+      const vendorName = typeof body.vendorName === "string" ? body.vendorName : "A vendor";
+      const percent = typeof body.discountPercent === "string" ? body.discountPercent : null;
+      return {
+        title: "Early Pay offer",
+        body: `${vendorName} offered ${percent ? `${percent}% off` : "a discount"} to be paid early.`,
+        href: subject ? `/business/inbox/${subject}` : "/business/inbox",
+      };
+    }
+
+    case "money_moved": {
+      const by = typeof body.by === "string" ? body.by : "A team member";
+      const what: Record<string, string> = {
+        withdrawn: "withdrew funds from the Vault",
+        deposit_confirmed: "added funds to the Vault",
+        steward_fees_funded: "topped up the Steward's network fees",
+        eurc_conversion: "converted USDC to EURC",
+        pay: "paid an invoice from their wallet",
+      };
+      return {
+        title: "Money moved",
+        body: `${by} ${what[String(body.action)] ?? "moved money"}.`,
+        href: "/business/activity",
+      };
+    }
+
     case "vendor_payout_change": {
       return {
         title: "Payout address change requested",
@@ -90,6 +137,30 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
     }
 
     // ─── Vendor-side notifications ────────────────────────────────────────────
+    case "verification_requested": {
+      const name = typeof body.businessName === "string" ? body.businessName : "A business";
+      return {
+        title: "A business asked to verify you",
+        body: `${name} requested a verification code for your Seal. They will contact you over a channel they already trust.`,
+        href: "/vendor",
+      };
+    }
+
+    case "verified_by_business": {
+      const name = typeof body.businessName === "string" ? body.businessName : "A business";
+      return { title: "You're verified", body: `${name} verified you as a vendor.`, href: "/vendor" };
+    }
+
+    case "added_as_payee": {
+      const name = typeof body.businessName === "string" ? body.businessName : "A business";
+      return { title: "You were added as a payee", body: `${name} added you as a payee. Their invoices to you can be paid once the waiting period passes.`, href: "/vendor" };
+    }
+
+    case "payee_active": {
+      const name = typeof body.businessName === "string" ? body.businessName : "A business";
+      return { title: "You can be paid now", body: `${name}'s waiting period is over. Your invoices to them can be paid.`, href: "/vendor" };
+    }
+
     case "invoice_paid": {
       const invoiceNumber = typeof body.invoiceNumber === "string" ? body.invoiceNumber : subject;
       return {
@@ -100,9 +171,10 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
     }
 
     case "invoice_cancelled": {
+      const invoiceNumber = typeof body.invoiceNumber === "string" && body.invoiceNumber ? body.invoiceNumber : null;
       return {
-        title: "Invoice cancelled",
-        body: `Invoice ${subject ?? ""} was marked cancelled on the ledger.`,
+        title: invoiceNumber ? `Invoice cancelled: ${invoiceNumber}` : "Invoice cancelled",
+        body: `${invoiceNumber ? `Invoice ${invoiceNumber}` : "An invoice"} was cancelled on the ledger and can no longer be paid.`,
         href: subject ? `/vendor/invoices/${subject}` : "/vendor",
       };
     }

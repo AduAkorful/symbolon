@@ -29,11 +29,14 @@ export function ProtocolNumbers({ stats }: { stats: ProtocolStats }) {
     `${n.payingVaults === 1 ? "1 Vault has" : `${WHOLE.format(n.payingVaults)} Vaults have`} paid`,
     ...(n.firstSettlement ? [`first settlement ${formatDay(n.firstSettlement, { year: "always" })}`] : []),
   ];
-  // value locked: the first token is the headline, the others follow in the note, and tokens are never added together
-  const [headline, ...rest] = n.locked?.tokens ?? [];
+  // value locked: one tile per token, all the same size (plan 05zj G, SYM-40: the first token used to dominate the others); tokens
+  // are never added together
+  const lockedTokens = n.locked?.tokens ?? [];
+  const columns = 2 + lockedTokens.length;
+  const LG_COLUMNS: Record<number, string> = { 2: "lg:grid-cols-2", 3: "lg:grid-cols-3", 4: "lg:grid-cols-4" };
   return (
     <div className="mt-10">
-      <dl className={`grid gap-x-12 gap-y-8 sm:grid-cols-2 ${n.locked ? "lg:grid-cols-3" : ""}`}>
+      <dl className={`grid gap-x-12 gap-y-8 sm:grid-cols-2 ${LG_COLUMNS[Math.min(columns, 4)] ?? "lg:grid-cols-3"}`}>
         <div className="border-t border-rule pt-4">
           <dt className="text-sm text-graphite">Vaults created</dt>
           <dd className="mt-1 font-display text-6xl leading-none text-ink">{WHOLE.format(n.vaultsCreated)}</dd>
@@ -44,18 +47,20 @@ export function ProtocolNumbers({ stats }: { stats: ProtocolStats }) {
           <dd className="mt-1 font-display text-6xl leading-none text-ink">{WHOLE.format(n.invoicesSettled)}</dd>
           <p className="mt-3 max-w-[40ch] text-sm text-graphite">Payments the ledger has recorded, each an invoice paid in full or in part.</p>
         </div>
-        {n.locked && headline ? (
-          <div className="border-t border-rule pt-4">
-            <dt className="text-sm text-graphite">Value locked in Vaults</dt>
-            <dd className="mt-1 font-display text-6xl leading-none text-ink">
-              {groupedAmount(headline.amount)}
-              <span className="ml-2 font-sans text-base text-graphite">{headline.token}</span>
-            </dd>
-            <p className="mt-3 max-w-[40ch] text-sm text-graphite">
-              {rest.length > 0 ? `${rest.map((t) => `${groupedAmount(t.amount)} ${t.token}`).join(" · ")}. ` : ""}Held by {count(n.locked.vaults, "Vault", "Vaults")} right now, read from Arc. Each token is counted alone.
-            </p>
-          </div>
-        ) : null}
+        {n.locked
+          ? lockedTokens.map((t) => (
+              <div key={t.token} className="border-t border-rule pt-4">
+                <dt className="text-sm text-graphite">{t.token} locked in Vaults</dt>
+                <dd className="mt-1 font-display text-6xl leading-none text-ink">
+                  {groupedAmount(t.amount)}
+                  <span className="ml-2 font-sans text-base text-graphite">{t.token}</span>
+                </dd>
+                <p className="mt-3 max-w-[40ch] text-sm text-graphite">
+                  Held by {count(n.locked!.vaults, "Vault", "Vaults")} right now, read from Arc. Each token is counted alone.
+                </p>
+              </div>
+            ))
+          : null}
       </dl>
 
       {n.invoicesSettled === 0 ? (

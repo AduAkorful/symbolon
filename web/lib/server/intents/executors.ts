@@ -548,8 +548,11 @@ export const whyDecisionIntent: IntentHandler = {
     }
 
     const sum = summarizeDecision(dec.record as Record<string, unknown>);
+    // A scheduled decision made before blockers were recorded can't say what is in the way; the invoice page checks it live (plan 05zj E, SYM-23)
+    const rec = dec.record as { kind?: string; inputs?: { blockers?: unknown } };
+    const askLive = rec.kind === "schedule" && !Array.isArray(rec.inputs?.blockers) ? " What is in the way today is on the invoice page." : "";
     return {
-      text: `Invoice ${matched.invoiceNumber ?? matched.fingerprint.slice(0, 8)}: ${sum.sentence}.`,
+      text: `Invoice ${matched.invoiceNumber ?? matched.fingerprint.slice(0, 8)}: ${sum.sentence}.${askLive}`,
       links: [
         ["View decision detail", `/business/decisions/${dec.id}`],
         ["View in inbox", `/business/inbox/${matched.fingerprint}`],

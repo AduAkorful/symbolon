@@ -12,6 +12,7 @@ import { requirePageSession } from "@/lib/server/http";
 import { describePolicyLines } from "@/lib/server/policy-text";
 import { signerPlanFor } from "@/lib/server/signer-plan";
 import { loadSpaces } from "@/lib/server/space";
+import { subjectRefs } from "@/lib/server/subject-label";
 import { feeBalance, formatFeeBalance, lastRun, lastScheduledRun, listRunDecisions, STEWARD_RUN_LEASE_MS } from "@/lib/server/steward-runtime";
 import { readVaultState, stewardStanding } from "@/lib/server/vault-read";
 import { PageTitle } from "@/components/ui/Type";
@@ -107,10 +108,13 @@ export default async function BusinessStewardPage() {
     : null;
 
   const rawDecisions = await listRunDecisions(db, business.id, 25);
+  const refs = await subjectRefs(db, business.id, rawDecisions.map((d) => d.subject));
   const recentDecisions: DecisionView[] = rawDecisions.map((d) => ({
     id: d.id,
     kind: d.kind,
     subject: d.subject,
+    subjectLabel: d.subject ? (refs.get(d.subject)?.label ?? null) : null,
+    subjectHref: d.subject ? (refs.get(d.subject)?.href ?? null) : null,
     txHash: d.txHash,
     createdAt: d.createdAt.toISOString(),
     summary: summarizeDecision(d.record as Record<string, unknown>),

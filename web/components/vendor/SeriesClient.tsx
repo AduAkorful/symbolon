@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { Overlay } from "@/components/Overlay";
 import { Callout } from "@/components/ui/Callout";
@@ -25,11 +25,13 @@ export interface ClientOption {
 
 interface Props {
   initialSeries: SeriesDisplay[];
+  /** The next number in the vendor's own sequence, the base the series' invoices are numbered from */
+  nextNumber?: string;
   clients: ClientOption[];
   signer: SignerPlan;
 }
 
-export function SeriesClient({ initialSeries, clients, signer }: Props) {
+export function SeriesClient({ initialSeries, clients, signer, nextNumber = "" }: Props) {
   const discover = useWalletProviders();
   const [ask, confirmDialog] = useConfirm();
   const [seriesList, setSeriesList] = useState<SeriesDisplay[]>(initialSeries);
@@ -41,12 +43,15 @@ export function SeriesClient({ initialSeries, clients, signer }: Props) {
   const [selectedClient, setSelectedClient] = useState(clients[0]?.id ?? "");
   const [description, setDescription] = useState("");
   const [currency, setCurrency] = useState<"USDC" | "EURC">("USDC");
-  const [periods, setPeriods] = useState<number>(6);
+  // Nothing is made up for the vendor to sign (plan 05zj F, SYM-35): the fields start empty with a hint of what goes there, the
+  // invoice numbers continue the vendor's own sequence, and a series can have several lines like any invoice.
+  const [periods, setPeriods] = useState("");
   const [intervalType, setIntervalType] = useState<"monthly" | "days">("monthly");
-  const [intervalDays, setIntervalDays] = useState<number>(14);
-  const [dueAfterDays, setDueAfterDays] = useState<number>(30);
-  const [itemDesc, setItemDesc] = useState("Monthly Retainer");
-  const [itemPrice, setItemPrice] = useState("2000.00");
+  const [intervalDays, setIntervalDays] = useState("");
+  const [dueAfterDays, setDueAfterDays] = useState("");
+  const [numberBase, setNumberBase] = useState(nextNumber);
+  const [seriesLines, setSeriesLines] = useState<{ id: number; description: string; quantity: string; unitPrice: string }[]>([{ id: 1, description: "", quantity: "1", unitPrice: "" }]);
+  const nextLineId = useRef(2);
 
   // Signing flow state
   const [prepared, setPrepared] = useState<PreparedPeriod[] | null>(null);
@@ -83,6 +88,21 @@ export function SeriesClient({ initialSeries, clients, signer }: Props) {
     }
   }
 
+  /** What is wrong with the form, in one sentence, or null; the server checks again */
+  function seriesProblem(): string | null {
+    const whole = (t: string) => /^\d+$/.test(t.trim());
+    if (!numberBase.trim()) return "Give the invoices a number to start from.";
+    if (!whole(periods) || Number(periods) < 1 || Number(periods) > 60) return "The number of invoices is a whole number from 1 to 60.";
+    if (!whole(dueAfterDays) || Number(dueAfterDays) > 365) return "Due after is a whole number of days, 0 to 365.";
+    if (intervalType === "days" && (!whole(intervalDays) || Number(intervalDays) < 1 || Number(intervalDays) > 365)) return "Every is a whole number of days, 1 to 365.";
+    for (const [i, l] of seriesLines.entries()) {
+      if (!l.description.trim()) return `Line ${i + 1} needs a description.`;
+      if (!/^\d+(\.\d{1,6})?$/.test(l.quantity.trim()) || Number(l.quantity) <= 0) return `Line ${i + 1}: the quantity is a number more than zero.`;
+      if (!/^\d+(\.\d{1,6})?$/.test(l.unitPrice.trim())) return `Line ${i + 1}: the amount is a number of zero or more, like 2000 or 2000.50 (no minus sign).`;
+    }
+    return null;
+  }
+
   async function handlePreview(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -95,6 +115,13 @@ export function SeriesClient({ initialSeries, clients, signer }: Props) {
       return;
     }
 
+    const problem = seriesProblem();
+    if (problem) {
+      setError(problem);
+      setBusy(false);
+      return;
+    }
+
     const templateDraft = {
       client: {
         name: client.name,
@@ -102,24 +129,18 @@ export function SeriesClient({ initialSeries, clients, signer }: Props) {
         ...(client.email ? { email: client.email } : {}),
       },
       currency,
-      invoiceNumber: description ? description.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10) || "RET" : "RET",
-      dueDays: dueAfterDays,
-      lines: [
-        {
-          description: itemDesc.trim(),
-          quantity: "1",
-          unitPrice: itemPrice.trim(),
-        },
-      ],
+      invoiceNumber: numberBase.trim(),
+      dueDays: Number(dueAfterDays),
+      lines: seriesLines.map((l) => ({ description: l.description.trim(), quantity: l.quantity.trim(), unitPrice: l.unitPrice.trim() })),
       notes: description.trim() || undefined,
     };
 
     const startEpoch = Math.floor(Date.now() / 1000);
     const schedule = {
       start: startEpoch,
-      periods,
-      every: intervalType === "monthly" ? "monthly" : { days: intervalDays },
-      dueAfterDays,
+      periods: Number(periods),
+      every: intervalType === "monthly" ? "monthly" : { days: Number(intervalDays) },
+      dueAfterDays: Number(dueAfterDays),
     };
 
     try {
@@ -273,7 +294,7 @@ export function SeriesClient({ initialSeries, clients, signer }: Props) {
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Number of invoices">
-                  {(a) => <input {...a} type="number" min={1} max={60} value={periods} onChange={(e) => setPeriods(Number(e.target.value))} className={controlClass} />}
+                  {(a) => <input {...a} type="text" inputMode="numeric" placeholder="6" value={periods} onChange={(e) => setPeriods(e.target.value)} className={controlClass} />}
                 </Field>
                 <Field label="Currency">
                   {(a) => (
@@ -296,24 +317,43 @@ export function SeriesClient({ initialSeries, clients, signer }: Props) {
                 </Field>
                 {intervalType === "days" ? (
                   <Field label="Every (days)">
-                    {(a) => <input {...a} type="number" min={1} max={365} value={intervalDays} onChange={(e) => setIntervalDays(Number(e.target.value))} className={controlClass} />}
+                    {(a) => <input {...a} type="text" inputMode="numeric" placeholder="14" value={intervalDays} onChange={(e) => setIntervalDays(e.target.value)} className={controlClass} />}
                   </Field>
                 ) : null}
                 <Field label="Due after (days)">
-                  {(a) => <input {...a} type="number" min={1} max={365} value={dueAfterDays} onChange={(e) => setDueAfterDays(Number(e.target.value))} className={controlClass} />}
+                  {(a) => <input {...a} type="text" inputMode="numeric" placeholder="30" value={dueAfterDays} onChange={(e) => setDueAfterDays(e.target.value)} className={controlClass} />}
                 </Field>
               </div>
 
+              <Field label="Invoice numbers start from" hint={`Each invoice is numbered ${numberBase.trim() || "…"}-01, ${numberBase.trim() || "…"}-02, and so on.`}>
+                {(a) => <input {...a} type="text" value={numberBase} onChange={(e) => setNumberBase(e.target.value)} maxLength={90} className={controlClass} />}
+              </Field>
+
               <fieldset className="space-y-3 border-t border-rule pt-4">
-                <legend className="mb-1 text-sm font-medium text-ink">Line item</legend>
-                <div className="grid gap-4 sm:grid-cols-[1fr_9rem]">
-                  <Field label="Description">
-                    {(a) => <input {...a} type="text" value={itemDesc} onChange={(e) => setItemDesc(e.target.value)} className={controlClass} />}
-                  </Field>
-                  <Field label="Amount">
-                    {(a) => <input {...a} type="text" inputMode="decimal" value={itemPrice} onChange={(e) => setItemPrice(e.target.value)} className={controlClass} />}
-                  </Field>
-                </div>
+                <legend className="mb-1 text-sm font-medium text-ink">Lines on each invoice</legend>
+                {seriesLines.map((l, i) => (
+                  <div key={l.id} className="grid gap-3 rounded-doc border border-rule p-3 sm:grid-cols-[1fr_5rem_7rem_auto]">
+                    <input className={`${controlClass} sm:col-span-4`} type="text" value={l.description} placeholder={i === 0 ? "What you do each period, e.g. Design retainer" : "Another line"} aria-label={`Line ${i + 1} description`} onChange={(e) => setSeriesLines((ls) => ls.map((x) => (x.id === l.id ? { ...x, description: e.target.value } : x)))} />
+                    <label className="text-sm text-graphite sm:col-start-2 sm:row-start-2">
+                      Qty
+                      <input className={`${controlClass} mt-1 w-full`} inputMode="decimal" value={l.quantity} onChange={(e) => setSeriesLines((ls) => ls.map((x) => (x.id === l.id ? { ...x, quantity: e.target.value } : x)))} />
+                    </label>
+                    <label className="text-sm text-graphite sm:col-start-3 sm:row-start-2">
+                      Amount
+                      <input className={`${controlClass} mt-1 w-full`} inputMode="decimal" placeholder="2000.00" value={l.unitPrice} onChange={(e) => setSeriesLines((ls) => ls.map((x) => (x.id === l.id ? { ...x, unitPrice: e.target.value } : x)))} />
+                    </label>
+                    {seriesLines.length > 1 ? (
+                      <button type="button" onClick={() => setSeriesLines((ls) => ls.filter((x) => x.id !== l.id))} className="min-h-9 self-end text-sm text-graphite underline decoration-rule underline-offset-4 sm:col-start-4 sm:row-start-2">
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+                {seriesLines.length < 20 ? (
+                  <Button type="button" variant="secondary" size="sm" onClick={() => setSeriesLines((ls) => [...ls, { id: nextLineId.current++, description: "", quantity: "1", unitPrice: "" }])}>
+                    Add a line
+                  </Button>
+                ) : null}
               </fieldset>
 
               <Overlay.Footer>

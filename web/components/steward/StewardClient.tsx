@@ -68,6 +68,9 @@ export interface DecisionView {
   id: string;
   kind: string;
   subject: string | null;
+  /** What the subject is called to a person, and where it lives, when it has a page (plan 05zj E, SYM-29) */
+  subjectLabel?: string | null;
+  subjectHref?: string | null;
   txHash: string | null;
   createdAt: string;
   summary: {
@@ -124,6 +127,8 @@ export interface StewardClientProps {
   explorer: string;
 }
 
+const MODE_NAMES: Record<string, string> = { shadow: "Shadow", assist: "Assisted", auto: "Autonomous" };
+
 export function StewardClient({
   business,
   standing,
@@ -148,6 +153,7 @@ export function StewardClient({
   const canRun = isOwner || isApprover;
 
   const [currentMode, setCurrentMode] = useState(business.mode);
+  const [modeUndo, setModeUndo] = useState<{ from: "shadow" | "assist"; to: string } | null>(null);
   const [modePending, setModePending] = useState(false);
   const [modeError, setModeError] = useState<string | null>(null);
   const [autoModalOpen, setAutoModalOpen] = useState(false);
@@ -201,15 +207,34 @@ export function StewardClient({
     }
 
     setModePending(true);
+    const previous = currentMode;
     try {
       await postJson(`/api/business/${business.id}/steward`, {
         action: "mode",
         mode: nextMode,
       });
       setCurrentMode(nextMode);
+      // going back to Autonomous needs its own confirmation, so only a step to or between the other two can be undone from here
+      setModeUndo(previous === "auto" ? null : { from: previous as "shadow" | "assist", to: nextMode });
       router.refresh();
     } catch (err) {
       setModeError(err instanceof Error ? err.message : "Could not update mode.");
+    } finally {
+      setModePending(false);
+    }
+  }
+
+  async function undoMode() {
+    if (!modeUndo) return;
+    setModePending(true);
+    setModeError(null);
+    try {
+      await postJson(`/api/business/${business.id}/steward`, { action: "mode", mode: modeUndo.from });
+      setCurrentMode(modeUndo.from);
+      setModeUndo(null);
+      router.refresh();
+    } catch (err) {
+      setModeError(err instanceof Error ? err.message : "Could not undo that.");
     } finally {
       setModePending(false);
     }
@@ -403,6 +428,14 @@ export function StewardClient({
             );
           })}
         </div>
+        {modeUndo ? (
+          <p role="status" className="text-sm text-graphite">
+            Mode changed to {MODE_NAMES[modeUndo.to] ?? modeUndo.to}.{" "}
+            <button type="button" disabled={modePending} onClick={() => void undoMode()} className="underline decoration-rule underline-offset-4">
+              Undo
+            </button>
+          </p>
+        ) : null}
         {!isOwner ? <p className="text-sm text-graphite">Only the business owner can change the Steward’s mode.</p> : null}
       </section>
 
@@ -542,10 +575,14 @@ export function StewardClient({
                 {d.summary.explanation ? <p className="mt-1 text-graphite">{d.summary.explanation}</p> : null}
                 <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-graphite">
                   <span>{humanKey(d.kind)}</span>
-                  {d.subject ? (
-                    <Link href={`/business/inbox/${d.subject}`} className="underline decoration-rule underline-offset-4 hover:text-ink">
-                      Invoice {d.subject.slice(0, 8)}…
-                    </Link>
+                  {d.subjectLabel ? (
+                    d.subjectHref ? (
+                      <Link href={d.subjectHref} className="underline decoration-rule underline-offset-4 hover:text-ink">
+                        {d.subjectLabel}
+                      </Link>
+                    ) : (
+                      <span>{d.subjectLabel}</span>
+                    )
                   ) : null}
                   {d.txHash ? (
                     <TxLink href={`${explorer}/tx/${d.txHash}`} label="View transaction on explorer">
