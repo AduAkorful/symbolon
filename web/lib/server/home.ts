@@ -90,6 +90,10 @@ export interface TodaySummary {
 }
 
 export interface AheadSummary {
+  /** What is still owed on every unpaid invoice, per currency: the list below shows only the next few, so this is what reconciles with a shortfall (plan 05zl, QA retest 2) */
+  dueTotals: Array<{ tokenSymbol: string; totalFormatted: string; count: number }>;
+  /** Unpaid invoices not in the list below */
+  moreCount: number;
   upcomingInvoices: Array<{
     fingerprint: string;
     invoiceNumber: string;
@@ -499,6 +503,8 @@ export async function loadAhead(
   const [biz] = await db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1);
   if (!biz || !biz.vault) {
     return {
+      dueTotals: [],
+      moreCount: 0,
       upcomingInvoices: [],
       shortfalls: [],
       runwayStatement: "No Vault created yet.",
@@ -579,7 +585,19 @@ export async function loadAhead(
     runwayStatement = `USDC and EURC cash cover recorded bills in the selected ${biz.bufferDays ?? 30}-day buffer.`;
   }
 
-  const upcomingInvoices = unpaid.slice(0, 5).map((inv) => ({
+  const symbolOf = (token: string) => (token.toLowerCase() === eurcAddress ? "EURC" : token.toLowerCase() === usdcAddress ? "USDC" : "Unknown token");
+  const totals = new Map<string, { raw: bigint; count: number }>();
+  for (const inv of unpaid) {
+    const owed = inv.total > inv.credited ? inv.total - inv.credited : 0n;
+    const key = symbolOf(inv.token);
+    const cur = totals.get(key) ?? { raw: 0n, count: 0 };
+    totals.set(key, { raw: cur.raw + owed, count: cur.count + 1 });
+  }
+  const dueTotals = [...totals].map(([tokenSymbol, t]) => ({ tokenSymbol, totalFormatted: formatAmount(t.raw, 6), count: t.count }));
+  const SHOWN = 8;
+  const soonest = [...unpaid].sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
+
+  const upcomingInvoices = soonest.slice(0, SHOWN).map((inv) => ({
     fingerprint: inv.fingerprint,
     invoiceNumber: inv.invoiceNumber,
     vendorName: inv.vendorName || inv.vendorHandle || inv.seal,
@@ -589,6 +607,8 @@ export async function loadAhead(
   }));
 
   return {
+    dueTotals,
+    moreCount: Math.max(0, unpaid.length - SHOWN),
     upcomingInvoices,
     shortfalls: shortfallsList,
     runwayStatement,

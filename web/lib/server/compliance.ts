@@ -112,7 +112,7 @@ export async function screenPayee(
     throw new AuthError(502, "Can't confirm this Vault's payees right now. Try again shortly.");
   }
   if (!payee.exists) {
-    throw new AuthError(404, "That vendor is not an active payee on the Vault.");
+    throw new AuthError(404, "Add this vendor as a payee first: a screening is saved against the payee's record in the Vault, which doesn't exist yet.");
   }
 
   // Screen the pending payout when asked for it, else the active one
@@ -225,7 +225,7 @@ export async function prepareScreeningWrite(
   });
 
   if (!payee.exists) {
-    throw new AuthError(409, "This vendor is not an active payee on the Vault.");
+    throw new AuthError(409, "Add this vendor as a payee first: a screening is saved against the payee's record in the Vault, which doesn't exist yet.");
   }
 
   const call = vaultCall(vault, "setScreening", [seal, screening.risk, screenedAtSec]);

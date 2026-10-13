@@ -144,10 +144,11 @@ export function ComplianceView({
                           <StatusPill tone={row.status === "due" ? "danger" : "neutral"}>{row.statusLabel}</StatusPill>
                         </p>
                         <p className="mt-2 text-sm text-graphite">Screened {row.screenedAt ? formatDay(new Date(row.screenedAt)) : "never"}</p>
+                        {row.status === "not_payee" ? <p className="mt-1 text-sm text-graphite">Add this vendor as a payee first, then screen it here.</p> : null}
                         {canScreen || (canWrite && row.latestScreeningId) ? (
                           <div className="mt-3 flex flex-wrap gap-2 md:justify-end">
                             {canScreen ? (
-                              <Button variant="secondary" size="sm" disabled={isScreening || isRecording} busy={isScreening} onClick={() => handleScreen(row.seal)}>
+                              <Button variant="secondary" size="sm" disabled={isScreening || isRecording || row.status === "not_payee"} busy={isScreening} title={row.status === "not_payee" ? "Add this vendor as a payee first" : undefined} onClick={() => handleScreen(row.seal)}>
                                 {isScreening ? "Screening…" : "Screen"}
                               </Button>
                             ) : null}

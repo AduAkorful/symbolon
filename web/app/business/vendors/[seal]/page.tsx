@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { and, desc, eq } from "drizzle-orm";
-import { vendorRequests } from "@symbolon/db";
+import { seals as sealsTable, vendorRequests } from "@symbolon/db";
 import { VendorRequestsSection } from "@/components/business/VendorRequestsSection";
 import { AddPayee } from "@/components/inbox/AddPayee";
 import { ManageVendorBlock } from "@/components/inbox/ManageVendorBlock";
@@ -41,6 +41,13 @@ export default async function BusinessVendorDetailPage({ params }: { params: Pro
   const { seal } = await params;
   const config = getConfig();
   const db = await getDb();
+  // a vendor's @handle is what the list shows beside the name, so it works as an address here too (it leads to the Seal's own page)
+  if (!/^0x[0-9a-fA-F]{40}$/.test(seal)) {
+    const handle = decodeURIComponent(seal).replace(/^@/, "").toLowerCase();
+    const [found] = await db.select({ address: sealsTable.address }).from(sealsTable).where(eq(sealsTable.handle, handle)).limit(1);
+    if (!found) notFound();
+    redirect(`/business/vendors/${found.address}`);
+  }
   let vendor;
   try {
     vendor = await vendorDetail(db, getClient(), config.deployment, session.user, business.id, seal);

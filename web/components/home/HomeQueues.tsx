@@ -208,6 +208,16 @@ export function HomeQueues({ needsYou, today, ahead }: Props) {
             </div>
           ) : null}
 
+          {ahead.dueTotals.length > 0 ? (
+            <p className="text-sm text-graphite">
+              Still owed:{" "}
+              {ahead.dueTotals
+                .map((t) => `${showMoney(t.totalFormatted, t.tokenSymbol)} across ${t.count} invoice${t.count === 1 ? "" : "s"}`)
+                .join(" · ")}
+              . A shortfall above counts only what falls due within your buffer, so it can be less than this.
+            </p>
+          ) : null}
+
           {ahead.upcomingInvoices.length === 0 ? (
             <EmptyState title="No unpaid invoices coming due">Invoices that fall due in the forecast period are listed here.</EmptyState>
           ) : (
@@ -226,6 +236,11 @@ export function HomeQueues({ needsYou, today, ahead }: Props) {
               ))}
             </ul>
           )}
+          {ahead.moreCount > 0 ? (
+            <p className="text-sm text-graphite">
+              {ahead.moreCount} more unpaid invoice{ahead.moreCount === 1 ? "" : "s"} are due later. <Link href="/business/treasury" className="underline decoration-rule underline-offset-4 hover:text-ink">See them all in Treasury</Link>.
+            </p>
+          ) : null}
         </section>
       ) : null}
     </div>

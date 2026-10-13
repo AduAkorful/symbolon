@@ -498,6 +498,23 @@ describe("Compliance screening service (05s Part A)", () => {
     expect(row!.screenedAt).toBeNull();
   });
 
+  it("loadComplianceView: the latest screening counts as saved only once the Vault holds one at or after it (QA retest 2)", async () => {
+    const { owner, business, seal } = await fixture();
+    chainState.getVaultState.mockResolvedValue({ exists: true, policy: { screeningMaxAge: 30n * 86400n, ownerThreshold: 10_000n, autoPayLimit: 1_000n, newVendorMinPaid: 3 } });
+    const screenedAt = new Date(1_790_000_000 * 1000);
+    await db.insert(screenings).values({ businessId: business.id, seal, address: address(21), risk: 0, result: "APPROVED", provider: "circle", screenedAt, createdBy: owner.id });
+    const payee = (screenedAtSec: bigint) => ({
+      exists: true, payout: address(21), payoutDomain: 26, risk: 0, screenedAt: screenedAtSec, activeAt: 100n, paidCount: 0,
+      terms: { budget: hash(1), requirePo: false, requireDelivery: false, monthlyCap: 1000n },
+    });
+    // the Vault holds an older screening, so the new one still has to be saved
+    chainState.getPayee.mockResolvedValue(payee(1_789_000_000n));
+    expect((await loadComplianceView(db, clientFor({}), deployment, owner, business.id)).counterparties[0]!.latestWritten).toBe(false);
+    // once the Vault holds this screening (the write carries its own time), there is nothing left to save
+    chainState.getPayee.mockResolvedValue(payee(1_790_000_000n));
+    expect((await loadComplianceView(db, clientFor({}), deployment, owner, business.id)).counterparties[0]!.latestWritten).toBe(true);
+  });
+
   it("loadComplianceView: a payee on the Vault that was never screened is 'Not screened', not 'Low' (A5)", async () => {
     const { owner, business } = await fixture();
     chainState.getVaultState.mockResolvedValue({ exists: true, policy: { screeningMaxAge: 30n * 86400n, ownerThreshold: 10_000n, autoPayLimit: 1_000n, newVendorMinPaid: 3 } });

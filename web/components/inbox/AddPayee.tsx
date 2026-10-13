@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { controlClass, Field } from "@/components/ui/Field";
 import { InlineError, InlineLoading } from "@/components/ui/States";
 import { Callout } from "@/components/ui/Callout";
+import { TxLink } from "@/components/TxLink";
 import { checksum, duration, formatDateTime, showMoney } from "@/lib/format";
 import { refreshAfterChain } from "@/lib/client/refresh";
 
@@ -41,14 +42,15 @@ function capHint(setup: Setup | null): string {
  * The Vault's wait on a new payee, said before anyone signs (plan 05zj C, SYM-10). It is a Vault rule so that a stolen session
  * can't add a payee and pay it in the same minute; shortening it is a delayed change, so it can't be skipped from here.
  */
-function WaitNotice({ delaySeconds }: { delaySeconds: bigint }) {
+function WaitNotice({ delaySeconds, asOf }: { delaySeconds: bigint; asOf: number }) {
   if (delaySeconds === 0n) {
     return <Callout tone="neutral">This Vault has no waiting period for new payees. This vendor can be paid as soon as the transaction is confirmed.</Callout>;
   }
-  const from = new Date(Date.now() + Number(delaySeconds) * 1000);
+  // fixed when the dialog was read, so the time doesn't creep while it is open; the confirmed time below is the Vault's own
+  const from = new Date(asOf + Number(delaySeconds) * 1000);
   return (
     <Callout tone="info" title={`A new payee waits ${duration(delaySeconds)} before it can be paid`}>
-      After you sign, this vendor can be paid from about {formatDateTime(from)}. Their invoices wait until then. The waiting period is part
+      If you sign now, this vendor can be paid from about {formatDateTime(from)}. Their invoices wait until then. The waiting period is part
       of this Vault&apos;s policy; shortening it is itself a change that waits.
     </Callout>
   );
@@ -67,11 +69,14 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
   const [busy, setBusy] = useState(false);
   // while a transaction is being sent or its receipt recorded the dialog stays; reading the payout choices can be abandoned
   const [sending, setSending] = useState(false);
+  const [asOf, setAsOf] = useState(0);
+  // what the Vault says once the transaction is confirmed: when this payee can first be paid
+  const [added, setAdded] = useState<{ activeAt: string; txHash: string } | null>(null);
   const router = useRouter();
   const path = `/api/business/${businessId}/payee`;
   async function loadOptions() {
     setBusy(true); setError("");
-    try { const result = await postJson<ChoiceResult>(path, { action: "options", seal }); setOptions(result.options); setSelected(result.options[0] ? `${result.options[0].address}:${result.options[0].domain}` : ""); setSetup(result.setup); setCap(result.defaults.monthlyCap ? moneyInput(result.defaults.monthlyCap, 6) : ""); setRequirePo(result.defaults.requirePo); setRequireDelivery(result.defaults.requireDelivery); }
+    try { const result = await postJson<ChoiceResult>(path, { action: "options", seal }); setAsOf(Date.now()); setOptions(result.options); setSelected(result.options[0] ? `${result.options[0].address}:${result.options[0].domain}` : ""); setSetup(result.setup); setCap(result.defaults.monthlyCap ? moneyInput(result.defaults.monthlyCap, 6) : ""); setRequirePo(result.defaults.requirePo); setRequireDelivery(result.defaults.requireDelivery); }
     catch (e) { setError(e instanceof Error ? e.message : "Couldn't load payout choices."); }
     finally { setBusy(false); }
   }
@@ -82,8 +87,10 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
       const call = await postJson<{ to: string; data: string }>(path, { action: "prepare", seal, payout, domain: Number(domainText), requirePo, requireDelivery, monthlyCap: capRaw(cap) });
       await tx.run({
         send: () => sendCall(signer, call, discover),
-        record: (hash) => postRecord(path, { action: "record", txHash: hash, seal }),
-        onDone: () => { refreshAfterChain(router); setOpen(false); },
+        record: (hash) => postRecord<{ activeAt: string; txHash: string }>(path, { action: "record", txHash: hash, seal }),
+        // stay open and say it is done: the dialog used to close the moment it was submitted, so nothing showed it had worked
+        // the page is refreshed only on Done: once this payee exists the page stops drawing this component, which would close the dialog
+        onDone: (r) => { setAdded({ activeAt: r.activeAt, txHash: r.txHash }); },
       });
     } catch (e) { setError(e instanceof Error ? e.message : "Couldn't add this payee."); }
     finally { setBusy(false); setSending(false); }
@@ -94,7 +101,7 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
     <div className="mt-3">
       <Button variant="secondary" size="sm" onClick={openDialog}>Set up as a payee</Button>
       {open ? (
-        <Overlay title="Add this vendor as a payee" description="You sign one transaction that lets your Vault pay this vendor, within the terms below." onClose={() => { if (!sending && !tx.busy) { setOpen(false); if (tx.phase === "done") tx.reset(); } }}>
+        <Overlay title="Add this vendor as a payee" description="You sign one transaction that lets your Vault pay this vendor, within the terms below." onClose={() => { if (!sending && !tx.busy) { setOpen(false); if (tx.phase === "done") { tx.reset(); setAdded(null); refreshAfterChain(router); } } }}>
           {error ? (
             <InlineError>
               {error}
@@ -118,11 +125,25 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
                 <label className="flex min-h-9 items-center gap-2"><input type="checkbox" checked={requirePo} onChange={(e) => setRequirePo(e.target.checked)} className="h-4 w-4 accent-[var(--seal)]" />Require a purchase order</label>
                 <label className="flex min-h-9 items-center gap-2"><input type="checkbox" checked={requireDelivery} onChange={(e) => setRequireDelivery(e.target.checked)} className="h-4 w-4 accent-[var(--seal)]" />Require delivery confirmation</label>
               </div>
-              {setup ? <WaitNotice delaySeconds={BigInt(setup.newPayeeDelay)} /> : null}
+              {setup && !added ? <WaitNotice delaySeconds={BigInt(setup.newPayeeDelay)} asOf={asOf} /> : null}
+              {added ? (
+                <Callout tone="ok" title="Payee added">
+                  {BigInt(added.activeAt) === 0n || Number(added.activeAt) * 1000 <= Date.now()
+                    ? "This vendor can be paid now."
+                    : `This vendor can be paid from ${formatDateTime(new Date(Number(added.activeAt) * 1000))}. Their invoices wait until then.`}{" "}
+                  <TxLink href={`${explorer}/tx/${added.txHash}`} label="View the transaction on the Arc explorer">{added.txHash.slice(0, 10)}…{added.txHash.slice(-8)}</TxLink>
+                </Callout>
+              ) : null}
               <SentTransactionNotice tx={tx} explorer={explorer} />
               <Overlay.Footer>
-                {tx.locked ? null : <Button variant="secondary" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>}
-                <Button busy={busy || tx.busy} disabled={signer.kind === "none" || !selected || tx.locked} onClick={add}>{busy || tx.busy ? "Waiting…" : "Sign the transaction"}</Button>
+                {added ? (
+                  <Button onClick={() => { setOpen(false); setAdded(null); tx.reset(); refreshAfterChain(router); }}>Done</Button>
+                ) : (
+                  <>
+                    {tx.locked ? null : <Button variant="secondary" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>}
+                    <Button busy={busy || tx.busy} disabled={signer.kind === "none" || !selected || tx.locked} onClick={add}>{busy || tx.busy ? "Waiting…" : "Sign the transaction"}</Button>
+                  </>
+                )}
               </Overlay.Footer>
             </div>
           )}
