@@ -437,7 +437,7 @@ function Fund({ business, props, standing, run, busy, discover }: { business: { 
     <div className="grid gap-12 lg:grid-cols-2">
       <div>
         <PageTitle>Fund it</PageTitle>
-        <p className="mt-3 text-graphite">Send USDC on Arc into the Vault. Network fees are paid in USDC too, so the wallet needs a little beyond what you put in.</p>
+        <p className="mt-3 text-graphite">Deposit USDC from your wallet into the Vault with the button below. Network fees are paid in USDC too, so the wallet needs a little beyond what you put in.</p>
         {props.signer.kind !== "none" ? (
           <form onSubmit={deposit} className="mt-8">
             <label className="block text-sm">

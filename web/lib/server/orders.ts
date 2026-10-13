@@ -10,7 +10,7 @@ import {
   type Hex,
   type PublicClient,
 } from "viem";
-import { poRef as computePoRef, formatAmount, parseAmount } from "@symbolon/seal";
+import { decodeSealedInvoice, poRef as computePoRef, formatAmount, parseAmount } from "@symbolon/seal";
 import { scanLogs, symbolonContracts, symbolonVaultAbi, vaultCall, type Deployment } from "@symbolon/chain";
 import { businesses, decisions, invoices, payees, purchaseOrders, type Database } from "@symbolon/db";
 import { requireMember } from "./access";
@@ -81,6 +81,7 @@ export async function listOrders(
   if (!business?.vault) return [];
 
   const vault = getAddress(business.vault);
+  await reconcileOrders(db, client, deployment, user, businessId, vault);
   const pos = await db
     .select()
     .from(purchaseOrders)
@@ -319,6 +320,64 @@ export async function prepareOpenPo(
       signerSuffix: "your wallet",
     },
   };
+}
+
+const RECONCILE_MAX = 10;
+const ZERO_BYTES32 = "0x" + "00".repeat(32);
+
+/**
+ * Saves orders the Vault holds that this app has no row for, when one of the business's own invoices names them (plan 05zl 1.2,
+ * QA 3). A purchase-order reference is a hash, so the number comes from the invoice's signed document, and it is accepted only
+ * if it hashes to the reference; then the same receipt checks as a person's record apply (`recordOpenPo`). Owner only, because a
+ * row is written; anyone else reads what is there. A failure is logged and the list is shown as it is.
+ */
+async function reconcileOrders(
+  db: Database,
+  client: PublicClient,
+  deployment: Deployment,
+  user: Pick<SessionUser, "id">,
+  businessId: string,
+  vault: Address,
+): Promise<void> {
+  try {
+    await requireMember(db, user.id, businessId, "owner");
+  } catch {
+    return; // not the owner: nothing is written on a read
+  }
+  const rows = await db
+    .select({ poRef: invoices.poRef, envelope: invoices.envelope })
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.businessId, businessId),
+        sql`${invoices.poRef} is not null`,
+        sql`${invoices.poRef} <> ${ZERO_BYTES32}`,
+        sql`${invoices.status} not in ('rejected', 'cancelled')`,
+        sql`not exists (select 1 from ${purchaseOrders} where ${purchaseOrders.businessId} = ${businessId} and ${purchaseOrders.poRef} = ${invoices.poRef})`,
+      ),
+    )
+    .limit(50);
+  const wanted = new Map<string, string>();
+  for (const r of rows) {
+    if (!r.poRef || wanted.has(r.poRef)) continue;
+    try {
+      const number = decodeSealedInvoice(r.envelope).document.poNumber;
+      if (number && computePoRef(number) === r.poRef) wanted.set(r.poRef, number);
+    } catch {
+      // an envelope that doesn't decode can't name an order; the invoice itself is shown as failing elsewhere
+    }
+    if (wanted.size >= RECONCILE_MAX) break;
+  }
+  const contracts = symbolonContracts(client, deployment);
+  for (const [ref, number] of wanted) {
+    try {
+      const held = await withDeadline(contracts.lens.read.getPurchaseOrder([vault, ref as Hex]), CHAIN_READ_DEADLINE_MS, "Reading the order");
+      if (held.seal === "0x0000000000000000000000000000000000000000") continue;
+      await adoptOpenedPo(db, client, deployment, user, businessId, vault, ref as Hex, number, null);
+    } catch (e) {
+      console.error("orders: reconciling an unrecorded order failed", e);
+    }
+  }
 }
 
 /**

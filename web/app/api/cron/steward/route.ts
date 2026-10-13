@@ -46,6 +46,6 @@ async function run(request: Request) {
   });
 }
 
-// POST for GitHub Actions and cron services; GET because Vercel Cron only sends GET (same secret, same work)
+// POST for an external scheduler (Better Stack monitors); GET because Vercel Cron only sends GET (same secret, same work)
 export const POST = run;
 export const GET = run;

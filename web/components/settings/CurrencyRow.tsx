@@ -40,6 +40,8 @@ export function CurrencyRow({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // a turn-on that was queued stays queued until it is applied: asking again would queue the same change twice
+  const [queued, setQueued] = useState(false);
   const next = !token.supported;
 
   async function change() {
@@ -55,9 +57,10 @@ export function CurrencyRow({
         send: () => sendCall(signer, { to: prep.to, data: prep.data }, discover),
         record: (hash) => recordQueuedChange(businessId, hash),
         onDone: () => {
+          if (prep.loosening) setQueued(true);
           setNote(
             prep.loosening
-              ? `Queued. ${token.symbol} turns on after your Vault's waiting period; apply it under “Changes waiting” below.`
+              ? `Queued. ${token.symbol} turns on after your Vault's waiting period; apply it under “Changes waiting” further down this page.`
               : `${token.symbol} is off.`,
           );
           onChanged();
@@ -77,8 +80,8 @@ export function CurrencyRow({
         <span className="text-graphite">{token.address.slice(0, 6)}…{token.address.slice(-4)}</span>
         <StatusPill tone={token.supported ? "ok" : "neutral"}>{token.supported ? "On" : "Off"}</StatusPill>
         {isOwner && (next || canTurnOff) ? (
-          <Button variant="secondary" size="sm" busy={busy || tx.busy} disabled={tx.locked} onClick={() => void change()}>
-            {busy || tx.busy ? "Waiting…" : next ? `Turn on ${token.symbol}` : `Turn off ${token.symbol}`}
+          <Button variant="secondary" size="sm" busy={busy || tx.busy} disabled={tx.locked || (next && queued)} onClick={() => void change()}>
+            {busy || tx.busy ? "Waiting…" : next && queued ? "Queued" : next ? `Turn on ${token.symbol}` : `Turn off ${token.symbol}`}
           </Button>
         ) : null}
       </div>

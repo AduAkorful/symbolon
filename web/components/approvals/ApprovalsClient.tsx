@@ -196,7 +196,22 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
         </SectionTitle>
 
         {data.items.length === 0 ? (
-          <EmptyState title="Nothing is waiting for you">Payments that need a person show up here. Everything else is processed or up to date.</EmptyState>
+          <EmptyState title="Nothing is waiting for you">
+            Payments that need a person show up here.{" "}
+            {data.notYetApprovable.count === 0
+              ? "Everything else is processed or up to date."
+              : `${data.notYetApprovable.count} open invoice${data.notYetApprovable.count === 1 ? " isn’t" : "s aren’t"} here yet because something stops ${data.notYetApprovable.count === 1 ? "it" : "them"} first:`}
+            {data.notYetApprovable.count > 0 ? (
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-left">
+                {data.notYetApprovable.reasons.map((r) => (
+                  <li key={r.title}>
+                    {r.title} ({r.count})
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {data.notYetApprovable.count > 0 ? <span className="mt-2 block">They appear here when the Steward can propose paying them. <a href="/business/inbox" className="underline decoration-rule underline-offset-4 hover:text-ink">Open the inbox</a>.</span> : null}
+          </EmptyState>
         ) : (
           <div className="grid gap-5 xl:grid-cols-2">
             {data.items.map((item) => (

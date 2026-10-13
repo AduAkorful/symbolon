@@ -61,11 +61,7 @@ async function Where({ session, next }: { session: NonNullable<Awaited<ReturnTyp
       <PageTitle>Where to?</PageTitle>
       {empty ? (
         <p className="mt-6 text-graphite">
-          You’re signed in, but you don’t belong to a Seal or a business yet.{" "}
-          <Link href="/setup" className="text-ink underline decoration-rule underline-offset-4">
-            Set up a business
-          </Link>
-          .
+          You’re signed in, but you don’t belong to a Seal or a business yet. Choose what you want to do:
         </p>
       ) : (
         <ul className="mt-8 space-y-3">
@@ -96,6 +92,27 @@ async function Where({ session, next }: { session: NonNullable<Awaited<ReturnTyp
           ))}
         </ul>
       )}
+      {/* Nobody is steered to one side by how they signed in: a person with only a business can start sending invoices, and the other way round */}
+      {!spaces.seal || spaces.businesses.length === 0 ? (
+        <ul className="mt-6 space-y-3">
+          {!spaces.seal ? (
+            <li>
+              <Link href="/vendor/start" data-pick className="block rounded-doc border border-rule p-4 hover:border-ink">
+                <span className="block font-medium">Send invoices</span>
+                <span className="block text-sm text-graphite">Set up your Seal and get paid by a business</span>
+              </Link>
+            </li>
+          ) : null}
+          {spaces.businesses.length === 0 ? (
+            <li>
+              <Link href="/setup" data-pick className="block rounded-doc border border-rule p-4 hover:border-ink">
+                <span className="block font-medium">Set up a business</span>
+                <span className="block text-sm text-graphite">Create a Vault and pay the bills you receive</span>
+              </Link>
+            </li>
+          ) : null}
+        </ul>
+      ) : null}
     </div>
   );
 }

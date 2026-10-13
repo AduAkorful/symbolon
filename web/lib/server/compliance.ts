@@ -38,6 +38,8 @@ export interface CounterpartyScreeningRow {
   statusLabel: string;
   hasAddressMismatch: boolean;
   latestScreeningId: string | null;
+  /** The Vault already holds a screening made at or after this one, so there is nothing left to save (plan 05zl 5) */
+  latestWritten: boolean;
 }
 
 export interface TierDescription {
@@ -602,6 +604,7 @@ export async function loadComplianceView(
         statusLabel,
         hasAddressMismatch,
         latestScreeningId: latest?.id ?? null,
+        latestWritten: Boolean(latest && screenedAtSec > 0n && BigInt(Math.floor(latest.screenedAt.getTime() / 1000)) <= screenedAtSec),
       };
     }),
   );

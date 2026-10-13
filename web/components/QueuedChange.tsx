@@ -31,6 +31,8 @@ interface QueuedChangeProps {
   signer: SignerPlan;
   explorer?: string;
   onRefresh?: () => void;
+  /** Changes when something on the page has queued a change, so the list reads again instead of showing what it first loaded */
+  version?: number;
 }
 
 export function QueuedChangeList({
@@ -38,6 +40,7 @@ export function QueuedChangeList({
   signer,
   explorer = "https://explorer.testnet.arc.io",
   onRefresh,
+  version = 0,
 }: QueuedChangeProps) {
   const [changes, setChanges] = useState<QueuedChangeRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,7 +66,7 @@ export function QueuedChangeList({
 
   useEffect(() => {
     loadChanges();
-  }, [businessId]);
+  }, [businessId, version]);
 
   async function handleApply(change: QueuedChangeRow) {
     if (!change.calldata || !change.to || signer.kind !== "wallet") return;

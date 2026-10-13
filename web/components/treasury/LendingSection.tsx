@@ -82,7 +82,10 @@ export function LendingSection({ businessId, signer, explorer, isOwner }: { busi
       <section aria-labelledby="lending" className="mt-14 min-w-0">
         {title}
         <EmptyState title="Not available on this Vault" className="mt-4">
-          This Vault’s release doesn’t have the lending reserve. Upgrading it adds the option; it stays off until you switch it on.
+          {view.currentRelease
+            ? `This Vault runs release ${view.currentRelease}; the lending reserve is in release 4. Upgrading it adds the option, and it stays off until you switch it on.`
+            : "This Vault’s release doesn’t have the lending reserve. Upgrading it adds the option; it stays off until you switch it on."}{" "}
+          {isOwner ? <a href="/business/settings" className="underline decoration-rule underline-offset-4 hover:text-ink">Go to Settings to upgrade</a> : null}
         </EmptyState>
       </section>
     );

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { usePrivy } from "@privy-io/react-auth";
+import { useExportWallet, usePrivy, useWallets } from "@privy-io/react-auth";
 import { Avatar } from "@/components/Avatar";
 import { postJson } from "@/lib/client/api";
 import type { ProfileData } from "@/lib/server/profile";
@@ -17,6 +17,12 @@ import { Lead, PageTitle, SectionTitle } from "@/components/ui/Type";
 export function ProfileView({ initialData }: { initialData: ProfileData }) {
   const router = useRouter();
   const { logout } = usePrivy();
+  const { wallets } = useWallets();
+  const { exportWallet } = useExportWallet();
+  // only a wallet Privy made for an email sign-in can be exported from here; one the person brought has its own app
+  const primary = initialData.user.wallet?.toLowerCase() ?? null;
+  const embedded = primary ? wallets.find((w) => w.address.toLowerCase() === primary && w.walletClientType === "privy") : undefined;
+  const [exportProblem, setExportProblem] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState(initialData.user.displayName ?? "");
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -99,6 +105,35 @@ export function ProfileView({ initialData }: { initialData: ProfileData }) {
           </div>
         </div>
       </section>
+
+      {embedded ? (
+        <section aria-labelledby="wallet-heading" className="space-y-4">
+          <SectionTitle id="wallet-heading">Your wallet</SectionTitle>
+          <div className="space-y-3 rounded-doc border border-rule px-6 py-5 text-sm">
+            <p className="max-w-[62ch] text-graphite">
+              You signed in with an email, so Symbolon’s sign-in partner made this wallet for you. It starts empty. Arc charges its network
+              fees in USDC, so anything you do as an owner (creating or funding a Vault, upgrades, changes) needs a little USDC in it first.
+              Signing an invoice or a payout request costs nothing.
+            </p>
+            <p className="max-w-[62ch] text-graphite">
+              You can take the wallet’s key with you and use it in any wallet app. Keep it safe: anyone who has it controls the wallet,
+              and Symbolon can’t recover it for you.
+            </p>
+            <div>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setExportProblem(null);
+                  exportWallet({ address: embedded.address }).catch((e) => setExportProblem(e instanceof Error ? e.message : "Couldn’t open the export."));
+                }}
+              >
+                Export your wallet’s key
+              </Button>
+              {exportProblem ? <p role="alert" className="mt-2 text-red">{exportProblem}</p> : null}
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section aria-labelledby="accounts-heading" className="space-y-4">
         <SectionTitle id="accounts-heading">Accounts you belong to</SectionTitle>

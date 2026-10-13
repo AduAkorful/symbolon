@@ -13,7 +13,7 @@ import { describePolicyLines } from "@/lib/server/policy-text";
 import { signerPlanFor } from "@/lib/server/signer-plan";
 import { loadSpaces } from "@/lib/server/space";
 import { subjectRefs } from "@/lib/server/subject-label";
-import { feeBalance, formatFeeBalance, lastRun, lastScheduledRun, listRunDecisions, STEWARD_RUN_LEASE_MS } from "@/lib/server/steward-runtime";
+import { feeBalance, formatFeeBalance, lastRun, lastScheduledRun, listRunDecisions, listRuns, STEWARD_RUN_LEASE_MS } from "@/lib/server/steward-runtime";
 import { readVaultState, stewardStanding } from "@/lib/server/vault-read";
 import { PageTitle } from "@/components/ui/Type";
 
@@ -107,6 +107,18 @@ export default async function BusinessStewardPage() {
       }
     : null;
 
+  const runRows = await listRuns(db, business.id, 10);
+  const runs: RunView[] = runRows.map((r) => ({
+    id: r.id,
+    trigger: r.trigger,
+    mode: r.mode,
+    status: r.status === "running" && Date.now() - r.startedAt.getTime() > STEWARD_RUN_LEASE_MS ? "stalled" : r.status,
+    startedAt: r.startedAt.toISOString(),
+    finishedAt: r.finishedAt?.toISOString() ?? null,
+    summary: r.summary as Record<string, unknown>,
+    error: r.error,
+  }));
+
   const rawDecisions = await listRunDecisions(db, business.id, 25);
   const refs = await subjectRefs(db, business.id, rawDecisions.map((d) => d.subject));
   const recentDecisions: DecisionView[] = rawDecisions.map((d) => ({
@@ -153,6 +165,7 @@ export default async function BusinessStewardPage() {
         fee={fee}
         policyLines={policyLines}
         lastRun={lastRunView}
+        runs={runs}
         lastScheduledAt={scheduled?.startedAt.toISOString() ?? null}
         recentDecisions={recentDecisions}
         shadow={shadow}

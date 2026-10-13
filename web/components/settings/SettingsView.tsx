@@ -46,7 +46,11 @@ export function SettingsView({
 
   const { business, vaultDetails, release, nudge } = data;
 
+  // bumped after every refresh so "Changes waiting" reads again: a change queued from this page appears in it at once
+  const [queueVersion, setQueueVersion] = useState(0);
+
   async function handleRefresh() {
+    setQueueVersion((v) => v + 1);
     try {
       const res = await fetch(`/api/business/${business.id}/settings`);
       if (!res.ok) throw new Error(String(res.status));
@@ -245,7 +249,7 @@ export function SettingsView({
           Every change that loosens a limit (a relaxed policy, a bigger budget, a new currency, automatic updates) is queued onchain and waits your delay before it applies.
         </p>
         <div className="mt-4">
-          <QueuedChangeList businessId={business.id} signer={signer} explorer={explorer} onRefresh={handleRefresh} />
+          <QueuedChangeList businessId={business.id} signer={signer} explorer={explorer} onRefresh={handleRefresh} version={queueVersion} />
         </div>
       </section>
     </div>

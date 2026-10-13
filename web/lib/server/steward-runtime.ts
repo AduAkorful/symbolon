@@ -309,6 +309,11 @@ export async function lastRun(db: Database, businessId: string): Promise<typeof 
   return row ?? null;
 }
 
+/** The latest runs for a business, newest first (plan 05zl 1.5: the Steward page showed only the last one, so a run could seem to be missing) */
+export async function listRuns(db: Database, businessId: string, limit = 10): Promise<(typeof stewardRuns.$inferSelect)[]> {
+  return db.select().from(stewardRuns).where(eq(stewardRuns.businessId, businessId)).orderBy(desc(stewardRuns.startedAt)).limit(limit);
+}
+
 /**
  * The most recent run a scheduler started (an uptime monitor or cron calling `/api/cron/steward`), as stored. Whether the Steward
  * runs on its own is a fact about what calls it, so the screen says what the runs show and never claims a schedule (plan 05zj D14).

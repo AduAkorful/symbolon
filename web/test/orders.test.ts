@@ -1,7 +1,8 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { arcTestnet, getDeployment, symbolonVaultAbi } from "@symbolon/chain";
-import { createTestDb, businesses, decisions, members, payees, purchaseOrders, seals, users } from "@symbolon/db";
-import { poRef as computePoRef } from "@symbolon/seal";
+import { createTestDb, businesses, decisions, invoices, members, payees, purchaseOrders, seals, users } from "@symbolon/db";
+import { completeTotals, encodeSealedInvoice, poRef as computePoRef, sealInvoice } from "@symbolon/seal";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { eq } from "drizzle-orm";
 import { encodeAbiParameters, encodeEventTopics, getAddress, type Hex, type PublicClient } from "viem";
 
@@ -449,5 +450,85 @@ describe("adoptUnrecordedPo (plan 05zj A, SYM-08)", () => {
     expect(await adoptUnrecordedPo(db, mismatched, deployment, owner, business.id, { poNumber: "PO-TYPED-WRONG" })).toBeNull();
     const rows = await db.select().from(purchaseOrders).where(eq(purchaseOrders.poRef, computePoRef("PO-TYPED-WRONG")));
     expect(rows).toHaveLength(0);
+  });
+});
+
+describe("order list recovers an order from the business's own invoice (plan 05zl 1.2, QA 3)", () => {
+  async function invoiceNaming(businessVault: string, poNumber: string, businessId: string) {
+    const sealKey = privateKeyToAccount(generatePrivateKey());
+    const document = completeTotals({
+      schema: "symbolon.invoice.v1",
+      seal: sealKey.address.toLowerCase(),
+      vendor: { name: "Accra Cold Chain" },
+      payer: { name: "Kente", vault: businessVault },
+      invoiceNumber: "ACCS-" + crypto.randomUUID().slice(0, 6),
+      poNumber,
+      issuedAt: 1_790_000_000,
+      dueDate: 1_792_592_000,
+      currency: { chainId: arcTestnet.id, token: deployment.tokens.usdc.toLowerCase(), symbol: "USDC", decimals: 6 },
+      lineItems: [{ description: "Work", quantity: "1", unitPrice: "276.80" }],
+      taxes: [],
+      discounts: [],
+      payout: { address: privateKeyToAccount(generatePrivateKey()).address.toLowerCase(), domain: 26 },
+      earlyPay: [],
+      attachments: [],
+    } as never);
+    const { sealed, fingerprint } = await sealInvoice({
+      signer: sealKey,
+      chainId: arcTestnet.id,
+      ledger: deployment.contracts.invoiceLedger,
+      document,
+    });
+    await db.insert(invoices).values({
+      fingerprint,
+      chainId: arcTestnet.id,
+      ledger: deployment.contracts.invoiceLedger.toLowerCase(),
+      seal: sealKey.address.toLowerCase(),
+      businessId,
+      payerRef: ("0x" + "00".repeat(12) + businessVault.slice(2).toLowerCase()) as Hex,
+      poRef: computePoRef(poNumber),
+      invoiceNumber: document.invoiceNumber,
+      token: deployment.tokens.usdc.toLowerCase(),
+      total: 276_800000n,
+      dueDate: new Date(1_792_592_000 * 1000),
+      issuedAt: new Date(1_790_000_000 * 1000),
+      envelope: encodeSealedInvoice(sealed),
+      source: "upload",
+      status: "verified",
+    });
+    return sealKey.address;
+  }
+
+  it("lists an order the Vault holds and the app never saved, using the invoice's own PO number", async () => {
+    const { owner, business, vendorSeal } = await fixture();
+    chainDouble.enabled = true;
+    const poNum = "PO-KL-2026-0107";
+    const ref = computePoRef(poNum);
+    await invoiceNaming(business.vault!, poNum, business.id);
+    const amount = 276_800000n;
+
+    chainState.getPurchaseOrder.mockResolvedValue({ open: true, seal: vendorSeal, remaining: amount, releaseAfter: 0n });
+    chainState.scanLogs.mockResolvedValue({ logs: [{ transactionHash: hash(91) }], scannedTo: 1n });
+    const client = mockClient({
+      getTransactionReceipt: async () => ({
+        status: "success",
+        to: getAddress(business.vault!),
+        logs: [openPoLog(business.vault!, ref, vendorSeal, hash(0), amount, 0n)],
+      }),
+    });
+
+    const list = await listOrders(db, client, deployment, owner, business.id);
+    expect(list.map((o) => o.poNumber)).toEqual([poNum]);
+  });
+
+  it("saves nothing when the Vault does not hold the order the invoice names, and only the owner's read writes", async () => {
+    const { owner, member, business } = await fixture();
+    chainDouble.enabled = true;
+    await invoiceNaming(business.vault!, "PO-NOT-OPENED", business.id);
+    chainState.getPurchaseOrder.mockResolvedValue({ open: false, seal: "0x0000000000000000000000000000000000000000", remaining: 0n, releaseAfter: 0n });
+    const client = mockClient();
+    expect(await listOrders(db, client, deployment, owner, business.id)).toEqual([]);
+    expect(await listOrders(db, client, deployment, member, business.id)).toEqual([]);
+    expect(await db.select().from(purchaseOrders).where(eq(purchaseOrders.businessId, business.id))).toHaveLength(0);
   });
 });

@@ -104,8 +104,16 @@ export interface HumanResponseMetric {
   text: string;
 }
 
+/** Open invoices that are not in the list because a rule stops them before anyone could approve (plan 05zl 1.5, QA 8) */
+export interface NotYetApprovable {
+  count: number;
+  /** Why, by the Steward's latest recorded finding for each: one line per reason with how many invoices it holds back */
+  reasons: { title: string; count: number }[];
+}
+
 export interface ApprovalsListResult {
   items: ApprovalItem[];
+  notYetApprovable: NotYetApprovable;
   recentAnswers: RecentAnswer[];
   humanMetric: HumanResponseMetric | null;
   mode: string;
@@ -116,6 +124,37 @@ export interface ApprovalsListResult {
 function formatAmount(raw: bigint, decimals: number): string {
   const s = raw.toString().padStart(decimals + 1, "0");
   return decimals === 0 ? s : `${s.slice(0, -decimals)}.${s.slice(-decimals)}`;
+}
+
+const NOT_YET_STATUSES = ["verified", "held", "scheduled", "partially_paid"] as const;
+
+/**
+ * Open invoices that can't reach this list yet, and why, from the Steward's latest recorded finding for each (the rules it
+ * mirrored from the Vault). Reads only the database; an invoice with no finding is counted with "no recommendation yet".
+ */
+async function loadNotYetApprovable(db: Database, businessId: string): Promise<NotYetApprovable> {
+  const open = await db
+    .select({ fingerprint: invoices.fingerprint })
+    .from(invoices)
+    .where(and(eq(invoices.businessId, businessId), inArray(invoices.status, [...NOT_YET_STATUSES])));
+  if (open.length === 0) return { count: 0, reasons: [] };
+  const subjects = open.map((o) => o.fingerprint.toLowerCase());
+  const rows = await db
+    .select({ subject: decisions.subject, record: decisions.record })
+    .from(decisions)
+    .where(and(eq(decisions.businessId, businessId), inArray(decisions.subject, subjects)))
+    .orderBy(desc(decisions.createdAt));
+  const latest = new Map<string, Record<string, unknown>>();
+  for (const r of rows) if (r.subject && !latest.has(r.subject)) latest.set(r.subject, r.record as Record<string, unknown>);
+
+  const counts = new Map<string, number>();
+  for (const fp of subjects) {
+    const failures = (latest.get(fp)?.inputs as { policy?: { failures?: { rule: string; detail: string }[] } } | undefined)?.policy?.failures ?? [];
+    const named = failures.filter((f) => f.rule !== "ApprovalRequired").map((f) => describeRule(f, { seal: "" }).title);
+    const reasons = named.length > 0 ? [...new Set(named)] : [latest.has(fp) ? "The Steward is holding it for another reason" : "The Steward hasn’t looked at it yet"];
+    for (const title of reasons) counts.set(title, (counts.get(title) ?? 0) + 1);
+  }
+  return { count: open.length, reasons: [...counts].map(([title, count]) => ({ title, count })).sort((a, b) => b.count - a.count) };
 }
 
 /**
@@ -307,8 +346,11 @@ export async function listApprovals(
     text: `You agreed with ${metric.agreed} of ${metric.total} recommendations`,
   } : null;
 
+  const notYetApprovable = await loadNotYetApprovable(db, businessId);
+
   return {
     items,
+    notYetApprovable,
     recentAnswers,
     humanMetric,
     mode: biz.stewardMode,

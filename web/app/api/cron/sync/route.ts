@@ -47,6 +47,6 @@ async function run(request: Request) {
   return new NextResponse(JSON.stringify({ ...report, protocol, vaults, askExpired }, (_key: string, value: unknown) => typeof value === "bigint" ? value.toString() : value), { headers: { "content-type": "application/json" } });
 }
 
-// POST for GitHub Actions and cron services; GET because Vercel Cron only sends GET (same secret, same work)
+// POST for an external scheduler (Better Stack monitors); GET because Vercel Cron only sends GET (same secret, same work)
 export const POST = run;
 export const GET = run;

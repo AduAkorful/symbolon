@@ -6,9 +6,10 @@ import { decodeFunctionData, encodeAbiParameters, encodeFunctionData, encodeEven
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { arcTestnet, getDeployment, vaultFactoryAbi } from "@symbolon/chain";
 import { policyTemplate } from "@symbolon/core";
-import { businesses, createTestDb, decisions, members, users } from "@symbolon/db";
+import { businesses, createTestDb, decisions, members, syncCursors, users } from "@symbolon/db";
 import { and, eq } from "drizzle-orm";
 import { AuthError } from "@/lib/server/errors";
+import { backfillDeposits } from "@/lib/server/deposit-backfill";
 import { MAX_BUSINESSES, confirmVault, createBusiness, findBusinessConflict, recordDeposit, parseUsdcAmount, prepareFund, prepareVault, prepareVaultSwitch, vaultStanding } from "@/lib/server/business";
 import { pauseStateOf, readVaultState, stewardStanding } from "@/lib/server/vault-read";
 import { TEMPLATES, describePolicy, duration, usd } from "@/lib/server/policy-text";
@@ -468,5 +469,59 @@ describe("policy text comes from the code that builds the policy", () => {
     expect(duration(12n * 3600n)).toBe("12 hours");
     expect(duration(48n * 3600n)).toBe("2 days");
     expect(duration(86_400n)).toBe("1 day");
+  });
+});
+
+describe("backfillDeposits (plan 05zl 1.3, QA Still-broken 6)", () => {
+  const usdc = cfg.deployment.tokens.usdc;
+  function chainWith(logsByToken: Record<string, { tx: Hex; from: string; value: bigint; block: bigint }[]>, head = 1_100n) {
+    return {
+      getBlockNumber: async () => head,
+      getLogs: async (o: { address: string }) =>
+        (logsByToken[o.address.toLowerCase()] ?? []).map((l, i) => ({
+          address: o.address,
+          args: { from: getAddress(l.from), value: l.value },
+          transactionHash: l.tx,
+          blockNumber: l.block,
+          logIndex: i,
+        })),
+      getBlock: async ({ blockNumber }: { blockNumber: bigint }) => ({ timestamp: 1_790_000_000n + blockNumber }),
+    } as unknown as PublicClient;
+  }
+  async function vaulted() {
+    const u = await person();
+    const vault = fresh();
+    const [b] = await db.insert(businesses).values({ name: "Backfill Co", chainId: cfg.chainId, vault: vault.toLowerCase(), vaultBlock: 1000n }).returning();
+    await db.insert(members).values({ businessId: b!.id, userId: u.id, role: "owner" });
+    return { b: b!, vault };
+  }
+
+  it("records deposits made before the app watched, once, dated by the block, and moves the cursor", async () => {
+    const { b, vault } = await vaulted();
+    const sender = fresh();
+    const client = chainWith({
+      [usdc.toLowerCase()]: [{ tx: HASH(21), from: sender, value: 25_000_000n, block: 1010n }],
+      [cfg.deployment.tokens.eurc.toLowerCase()]: [{ tx: HASH(22), from: sender, value: 5_000_000n, block: 1020n }],
+    });
+    await backfillDeposits(db, client, cfg.deployment, b.id, getAddress(vault));
+    const rows = await db.select().from(decisions).where(and(eq(decisions.businessId, b.id), eq(decisions.kind, "deposit_confirmed")));
+    expect(rows.map((r) => (r.record.inputs as { token: string; amount: string }).token).sort()).toEqual(["EURC", "USDC"]);
+    expect(rows.find((r) => r.txHash === HASH(21))?.createdAt.toISOString()).toBe(new Date((1_790_000_000 + 1010) * 1000).toISOString());
+    const [cursor] = await db.select().from(syncCursors).where(eq(syncCursors.key, `deposits:${cfg.chainId}:${vault.toLowerCase()}`));
+    expect(cursor?.block).toBe(1_100n);
+
+    // reading the same window again, or a deposit the app already recorded, adds nothing
+    await db.delete(syncCursors).where(eq(syncCursors.key, `deposits:${cfg.chainId}:${vault.toLowerCase()}`));
+    await backfillDeposits(db, client, cfg.deployment, b.id, getAddress(vault));
+    expect(await db.select().from(decisions).where(and(eq(decisions.businessId, b.id), eq(decisions.kind, "deposit_confirmed")))).toHaveLength(2);
+  });
+
+  it("leaves the cursor where it was when the chain can't be read", async () => {
+    const { b, vault } = await vaulted();
+    const broken = { getBlockNumber: async () => 1_100n, getLogs: async () => { throw new Error("boom"); }, getBlock: async () => ({ timestamp: 1n }) } as unknown as PublicClient;
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await backfillDeposits(db, broken, cfg.deployment, b.id, getAddress(vault));
+    log.mockRestore();
+    expect(await db.select().from(syncCursors).where(eq(syncCursors.key, `deposits:${cfg.chainId}:${vault.toLowerCase()}`))).toHaveLength(0);
   });
 });

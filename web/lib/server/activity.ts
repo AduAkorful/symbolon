@@ -18,6 +18,7 @@ import {
 import { getAddress, type Address, type PublicClient } from "viem";
 import { requireMember } from "./access";
 import { ensureVaultBlock } from "./business";
+import { backfillDeposits } from "./deposit-backfill";
 import { summarizeDecision } from "./decision-text";
 import { AuthError } from "./errors";
 import type { SessionUser } from "./session";
@@ -261,6 +262,7 @@ export async function loadActivity(
   // deadline; what it hasn't read yet arrives on the next view.
   if (client && vault && opts.deployment) {
     await syncVaultForView(db, client, opts.deployment, businessId, vault);
+    await backfillDeposits(db, client, opts.deployment, businessId, getAddress(vault));
   }
 
   // Perform bounded lazy backfill of block times if client is available
@@ -322,6 +324,8 @@ export async function loadActivity(
     const rec = d.record as Record<string, unknown> | null;
     const recInputs = rec?.inputs as Record<string, unknown> | null;
     const actorId = (recInputs as { actor?: string } | null)?.actor;
+    // a record written from the chain's own logs (no person or Steward did it)
+    if (actorId === "chain") return { kind: "system", label: "Read from Arc" };
     if (actorId) {
       const mem = memberByUserId.get(actorId);
       if (mem) {

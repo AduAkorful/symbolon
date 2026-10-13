@@ -116,7 +116,7 @@ export function ChangePayoutAddressSection({ currentPayout, sealAddress, signer 
       <SectionTitle>Change payout address across businesses</SectionTitle>
       <p className="mt-2 text-sm text-graphite max-w-xl">
         To change where your existing Vault counterparties deliver payments, your Seal signs an onchain PayoutChange request.
-        Each business must confirm it with their owner key, and the change takes effect only after that Vault&apos;s cooldown (72h default).
+        Each business must confirm it with their owner key, and the change takes effect only after that Vault&apos;s cooldown (72h default). Signing here is free: your wallet signs a message and sends no transaction, so it needs no USDC for network fees. The business owner&apos;s confirmation is a transaction, and they pay that fee.
       </p>
 
       {error ? (

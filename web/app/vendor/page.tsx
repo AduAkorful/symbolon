@@ -14,7 +14,7 @@ import { LinkButton } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/States";
 import { StatusPill } from "@/components/ui/StatusPill";
-import { Eyebrow, PageTitle, SectionTitle } from "@/components/ui/Type";
+import { PageTitle, SectionTitle } from "@/components/ui/Type";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +32,7 @@ export default async function VendorHome() {
       <div>
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
           <div className="min-w-0">
-            <Eyebrow>@{seal.handle}</Eyebrow>
+            <p className="font-mono text-sm text-graphite">@{seal.handle}</p>
             <PageTitle className="mt-1">{seal.displayName}</PageTitle>
           </div>
           <LinkButton href="/vendor/new">New invoice</LinkButton>

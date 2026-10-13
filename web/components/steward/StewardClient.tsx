@@ -118,6 +118,8 @@ export interface StewardClientProps {
   };
   policyLines: string[];
   lastRun: RunView | null;
+  /** The latest runs, newest first, so an earlier one is never hidden by the latest */
+  runs?: RunView[];
   /** When a scheduler last started a run for this business, if one ever did */
   lastScheduledAt?: string | null;
   recentDecisions: DecisionView[];
@@ -135,6 +137,7 @@ export function StewardClient({
   fee,
   policyLines,
   lastRun,
+  runs = [],
   lastScheduledAt = null,
   recentDecisions,
   shadow,
@@ -493,6 +496,31 @@ export function StewardClient({
         ) : (
           <EmptyState title="No runs yet">Press “Run now” and the Steward will look at every invoice waiting for it.</EmptyState>
         )}
+
+        {runs.filter((r) => r.id !== lastRun?.id).length > 0 ? (
+          <div>
+            <Eyebrow as="p">Earlier runs</Eyebrow>
+            <ul className="mt-2 divide-y divide-rule-soft rounded-doc border border-rule text-sm">
+              {runs
+                .filter((r) => r.id !== lastRun?.id)
+                .map((r) => {
+                  const counts = Object.entries(r.summary ?? {})
+                    .flatMap(([k, v]) => (typeof v === "object" && v !== null ? Object.entries(v as Record<string, number>) : [[k, v] as const]))
+                    .map(([k, v]) => `${humanKey(k)} ${String(v)}`)
+                    .join(" · ");
+                  return (
+                    <li key={r.id} className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-5 py-3">
+                      <span className="flex flex-wrap items-center gap-3">
+                        <StatusPill tone={runTone(r.status)}>{runLabel(r.status)}</StatusPill>
+                        <span className="text-graphite">{r.trigger}, {r.mode} mode{counts ? ` · ${counts}` : ""}</span>
+                      </span>
+                      <span className="text-graphite">{formatDateTime(new Date(r.startedAt))}</span>
+                    </li>
+                  );
+                })}
+            </ul>
+          </div>
+        ) : null}
       </section>
 
       {/* Agreement with the Steward's recommendations */}

@@ -54,6 +54,22 @@ export function DecisionView({ decision: d, explorerUrl }: Props) {
 
         <PageTitle className="mt-4">{d.sentence}</PageTitle>
 
+        {d.since ? (
+          <p role="note" className="mt-3 text-sm text-graphite">
+            This is what the Steward found on {formatDateTime(new Date(d.at))}, and it stays as written.{" "}
+            {d.since.newerId ? (
+              <>
+                A later record for this invoice exists ({d.since.newerAt ? formatDateTime(new Date(d.since.newerAt)) : "newer"}):{" "}
+                <Link href={`/business/decisions/${d.since.newerId}`} className="underline decoration-rule underline-offset-4 hover:text-ink">open it</Link>.{" "}
+              </>
+            ) : null}
+            {d.since.invoiceStatus ? `The invoice is now ${d.since.invoiceStatus.replace(/_/g, " ")}. ` : ""}
+            {d.since.invoiceHref ? (
+              <Link href={d.since.invoiceHref} className="underline decoration-rule underline-offset-4 hover:text-ink">See what stands in the way now</Link>
+            ) : null}
+          </p>
+        ) : null}
+
         {d.explanation ? (
           <p className="mt-3 border-l-2 border-seal/50 py-1 pl-4 text-base text-graphite">
             {d.explanation}

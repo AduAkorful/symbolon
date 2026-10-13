@@ -151,7 +151,10 @@ export function ComplianceView({
                                 {isScreening ? "Screening…" : "Screen"}
                               </Button>
                             ) : null}
-                            {canWrite && row.latestScreeningId ? (
+                            {canWrite && row.latestScreeningId && row.latestWritten ? (
+                              <span className="self-center text-sm text-graphite">Saved in the Vault</span>
+                            ) : null}
+                            {canWrite && row.latestScreeningId && !row.latestWritten ? (
                               <Button size="sm" disabled={isScreening || isRecording || signer.kind === "none"} busy={isRecording} title="Write the latest screening result to the Vault" onClick={() => handleRecordWrite(row.latestScreeningId!)}>
                                 {isRecording ? "Recording…" : row.latestScreeningId && sent.get(row.latestScreeningId) ? "Check again" : "Save in the Vault"}
                               </Button>

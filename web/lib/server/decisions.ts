@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { getAddress, type Hex, type PublicClient } from "viem";
 
 import { businesses, decisions, invoices, type Database } from "@symbolon/db";
@@ -51,6 +51,12 @@ export interface DecisionDetailView {
   }>;
   txHash: string | null;
   anchor: DecisionAnchorInfo;
+  /**
+   * What has happened to the invoice since this record was written (plan 05zl 1.4, QA 5): a decision is history and stays true
+   * as written, so the page says when it was found and points to anything newer, never presents it as the present state.
+   * Null for a decision that isn't about an invoice.
+   */
+  since: { newerId: string | null; newerAt: Date | null; invoiceStatus: string | null; invoiceHref: string | null } | null;
 }
 
 /**
@@ -133,6 +139,27 @@ export async function loadDecision(
   // Anchor status and proof (Decision A10)
   const anchor = await anchorState(db, client, cfg, businessId, row.hash as Hex);
 
+  let since: DecisionDetailView["since"] = null;
+  if (row.subject && /^0x[0-9a-fA-F]{64}$/.test(row.subject)) {
+    const [newer] = await db
+      .select({ id: decisions.id, createdAt: decisions.createdAt })
+      .from(decisions)
+      .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, row.subject), gt(decisions.createdAt, row.createdAt)))
+      .orderBy(desc(decisions.createdAt))
+      .limit(1);
+    const [inv] = await db
+      .select({ status: invoices.status })
+      .from(invoices)
+      .where(and(eq(invoices.businessId, businessId), eq(invoices.fingerprint, row.subject.toLowerCase() as Hex)))
+      .limit(1);
+    since = {
+      newerId: newer?.id ?? null,
+      newerAt: newer?.createdAt ?? null,
+      invoiceStatus: inv?.status ?? null,
+      invoiceHref: inv ? `/business/inbox/${row.subject.toLowerCase()}` : null,
+    };
+  }
+
   const rawOptions = Array.isArray(rec.options) ? (rec.options as DecisionOptionView[]) : [];
 
   return {
@@ -154,6 +181,7 @@ export async function loadDecision(
     humanResponses,
     txHash,
     anchor,
+    since,
   };
 }
 

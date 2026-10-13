@@ -431,6 +431,7 @@ export function TreasuryView({
         <FundModal
           businessId={businessId}
           signer={signer}
+          eurcSupported={eurcSupported}
           onClose={() => setActiveModal(null)}
           onSuccess={() => {
             setActiveModal(null);

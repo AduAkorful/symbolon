@@ -17,6 +17,7 @@ import { businesses, decisions, type Database } from "@symbolon/db";
 import { hashRecord, type DecisionRecord } from "@symbolon/steward";
 
 import { requireMember } from "./access";
+import { readCurrentImplementation } from "./release";
 import { AuthError } from "./errors";
 import { percentToBps } from "./reserve-policy";
 import { prepareChange, type PreparedChangeResult } from "./queued-change";
@@ -27,6 +28,33 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 const MAX_LENDING_BPS = 5_000;
 const DEFAULT_SLIPPAGE_BPS = 50;
 const DECIMALS = 6;
+/** The first Vault release that has the lending functions (plan 05zk) */
+const LENDING_FROM_RELEASE = 4;
+
+/**
+ * The release number of the implementation this Vault runs, from the registry's own record of it; null when it can't be read or
+ * isn't a published release. The release-4 lens reads any Vault's storage without error, so "the lens answered" says nothing
+ * about whether the Vault has the lending functions (plan 05zl 1.1, QA new 2).
+ */
+async function vaultRelease(client: PublicClient, deployment: Deployment, vault: Address): Promise<number | null> {
+  const impl = await readCurrentImplementation(client, vault);
+  if (!impl) return null;
+  try {
+    const r = await symbolonContracts(client, deployment).registry.read.release([impl]);
+    return r.publishedAt > 0n ? Number(r.version) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Refuses any lending action for a Vault that doesn't run release 4 or later, in words that say what to do */
+async function requireLendingRelease(client: PublicClient, deployment: Deployment, vault: Address): Promise<void> {
+  const version = await vaultRelease(client, deployment, vault);
+  if (version === null) throw new AuthError(503, "Can't confirm which release this Vault runs right now. Try again shortly.");
+  if (version < LENDING_FROM_RELEASE) {
+    throw new AuthError(400, `This Vault runs release ${version}. The lending reserve needs release ${LENDING_FROM_RELEASE}; upgrade it in Settings first.`);
+  }
+}
 
 export interface LendingVenueView {
   address: string;
@@ -38,6 +66,8 @@ export interface LendingVenueView {
 export interface LendingView {
   /** False when this Vault's release (or the lens in the registry) has no lending reserve */
   supported: boolean;
+  /** The release number this Vault runs when it is older than the one with lending; null otherwise */
+  currentRelease?: number | null;
   /** False when the chain couldn't be read this time: the screen says so and shows no numbers */
   readOk: boolean;
   policy: { enabled: boolean; maxLendingBps: number; venue: string | null };
@@ -95,6 +125,11 @@ export async function loadLending(
   };
   const contracts = symbolonContracts(client, deployment);
 
+  const release = await vaultRelease(client, deployment, vault);
+  // a release that can't be confirmed is a failed read, never "available" and never a silent "not available"
+  if (release === null) return { ...empty, supported: true, readOk: false };
+  if (release < LENDING_FROM_RELEASE) return { ...empty, currentRelease: release };
+
   let status;
   try {
     status = await contracts.lens.read.lendingStatus([vault]);
@@ -147,6 +182,7 @@ export async function prepareLendingPolicy(
   const maxLendingBps = percentToBps(input.maxPercent);
   if (maxLendingBps > MAX_LENDING_BPS) throw new AuthError(400, "The Vault allows at most 50% of its cash in a lending vault.");
 
+  await requireLendingRelease(client, deployment, vault);
   const choice = listed(deployment).find((v) => v.address.toLowerCase() === String(input.venue).toLowerCase());
   const contracts = symbolonContracts(client, deployment);
   const current = await contracts.lens.read.getLendingPolicy([vault]).catch(() => {
@@ -215,6 +251,7 @@ export async function prepareLendingDeposit(
 ) {
   await requireMember(db, user.id, businessId, "owner");
   const vault = await vaultOf(db, businessId);
+  await requireLendingRelease(client, deployment, vault);
   const contracts = symbolonContracts(client, deployment);
   const status = await contracts.lens.read.lendingStatus([vault]).catch(() => {
     throw new AuthError(400, "This Vault's release doesn't have a lending reserve.");
@@ -263,6 +300,7 @@ export async function prepareLendingRedeem(
 ) {
   await requireMember(db, user.id, businessId, "owner");
   const vault = await vaultOf(db, businessId);
+  await requireLendingRelease(client, deployment, vault);
   const contracts = symbolonContracts(client, deployment);
   const status = await contracts.lens.read.lendingStatus([vault]).catch(() => {
     throw new AuthError(400, "This Vault's release doesn't have a lending reserve.");

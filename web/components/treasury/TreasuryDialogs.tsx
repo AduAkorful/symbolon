@@ -113,11 +113,14 @@ export function WithdrawModal({
 export function FundModal({
   businessId,
   signer,
+  eurcSupported = null,
   onClose,
   onSuccess,
 }: {
   businessId: string;
   signer: SignerPlan;
+  /** False when this Vault isn't set to pay in EURC: adding EURC then would sit unused, so it is stopped with the reason */
+  eurcSupported?: boolean | null;
   onClose: () => void;
   onSuccess: () => void;
 }) {
@@ -149,8 +152,11 @@ export function FundModal({
 
   const typed = amount.trim() === "" ? null : moneyDraft(amount.trim(), 6);
   const walletRaw = mode?.walletUsdc != null && tokenSymbol === "USDC" ? BigInt(mode.walletUsdc) : null;
+  const eurcOff = tokenSymbol === "EURC" && eurcSupported === false;
   const amountProblem =
-    typed === null
+    eurcOff
+      ? "EURC is off for this Vault, so it can’t pay in it. Turn EURC on in Settings (it waits your Vault’s delay), then add it."
+      : typed === null
       ? null
       : typed.error !== undefined
         ? "Enter an amount more than zero, like 100 or 100.50 (up to 6 decimals)."
