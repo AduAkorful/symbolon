@@ -27,6 +27,10 @@ struct VaultStorage {
     bool applyingRelease;
     // release 2
     ISymbolonVault.ReservePolicy reserve;
+    // release 4 (plan 05zk)
+    ISymbolonVault.LendingPolicy lending;
+    /// @dev the venue's asset, recorded when the venue is set
+    address lendingAsset;
 }
 
 /// @title VaultStorageLib

@@ -167,7 +167,7 @@ describe("05t Part A: Change Kinds Registry (Q4)", () => {
       .filter((item) => item.type === "event")
       .map((e: any) => e.name);
 
-    expect(GATED_FUNCTION_NAMES).toHaveLength(10);
+    expect(GATED_FUNCTION_NAMES).toHaveLength(11);
 
     for (const fn of GATED_FUNCTION_NAMES) {
       expect(abiFunctionNames).toContain(fn);

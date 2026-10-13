@@ -9,6 +9,7 @@ export { createInvoiceInputReader, type InvoiceInputsEnv } from "./invoice-input
 export * from "./anchor.js";
 export * from "./changes.js";
 export * from "./treasury.js";
+export * from "./lending.js";
 export * from "./exports.js";
 export * from "./series.js";
 export * from "./delivery.js";

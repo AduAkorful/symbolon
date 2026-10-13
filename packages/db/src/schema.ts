@@ -194,6 +194,30 @@ export const payees = pgTable(
   ],
 );
 
+/**
+ * Share-price samples of a Vault's lending venue (plan 05zk): the only source of a lending yield shown anywhere. One row
+ * per (venue, block); `assets` is the venue's `convertToAssets` of one whole share, in the asset's raw units.
+ */
+export const lendingSamples = pgTable(
+  "lending_samples",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    chainId: integer("chain_id").notNull(),
+    venue: address("venue").notNull(),
+    blockNumber: bigint("block_number", { mode: "bigint" }).notNull(),
+    sampledAt: timestamp("sampled_at", { withTimezone: true }).notNull(),
+    shareDecimals: smallint("share_decimals").notNull(),
+    /** raw asset units that one whole share converts to */
+    assets: amount("assets").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("lending_samples_venue_block_uq").on(t.chainId, t.venue, t.blockNumber),
+    index("lending_samples_venue_time_idx").on(t.chainId, t.venue, t.sampledAt),
+    check("lending_samples_venue_format", sql`${t.venue} ~ ${sql.raw(`'${ADDRESS}'`)}`),
+  ],
+);
+
 /** Counterparty compliance screenings (spec §12, plan 05s K1). Rows are never updated. */
 export const screenings = pgTable(
   "screenings",

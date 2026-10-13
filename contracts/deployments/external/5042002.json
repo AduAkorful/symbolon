@@ -11,5 +11,15 @@
   "explorer": "https://explorer.testnet.arc.io",
   "usyc": "0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C",
   "usycTeller": "0x9fdF14c5B14173D74C08Af27AebFf39240dC105A",
-  "usycEntitlements": "0xcc205224862c7641930c87679e98999d23c26113"
+  "usycEntitlements": "0xcc205224862c7641930c87679e98999d23c26113",
+  "lendingVenues": [
+    {
+      "address": "0xAabbeF1D3971c710276ed41eC791BbE14CdB8E88",
+      "name": "EarnKit USDC Vault (Arc testnet)",
+      "asset": "0x3600000000000000000000000000000000000000",
+      "kind": "test",
+      "source": "Circle Earn API GET /v1/earnKit/vaults/explore?chain=ARC-TESTNET (name), and the chain: Morpho Vault V2, explorer-verified, no gates, fake collateral, EOA curator (plan 05zk section 2.2)",
+      "readAt": "2026-10-13"
+    }
+  ]
 }

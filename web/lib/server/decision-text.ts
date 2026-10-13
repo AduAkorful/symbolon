@@ -138,10 +138,16 @@ export function summarizeDecision(record: Record<string, unknown>): DecisionSumm
     }
 
     case "sweep": {
+      if (outcome === "depositing" || inputs.venue !== undefined) {
+        return { sentence: outcome === "depositing" ? "Moving excess cash into the lending vault" : "Proposed move of cash into the lending vault", explanation };
+      }
       return { sentence: outcome === "subscribing" ? "Sweeping excess cash into USYC reserve" : "Proposed sweep into USYC reserve", explanation };
     }
 
     case "redeem": {
+      if (inputs.venue !== undefined) {
+        return { sentence: outcome === "redeeming" ? "Taking cash out of the lending vault ahead of upcoming bills" : "Proposed withdrawal from the lending vault", explanation };
+      }
       return { sentence: outcome === "redeeming" ? "Redeeming USYC reserve ahead of upcoming bills" : "Proposed USYC redemption", explanation };
     }
 

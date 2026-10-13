@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { decodeFunctionData, keccak256, type PublicClient } from "viem";
+import { decodeFunctionData, getAddress, keccak256, type PublicClient } from "viem";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -13,6 +13,7 @@ import {
   offerDiscount,
   payCall,
   scanLogs,
+  simulateLendingExit,
   symbolonVaultAbi,
   tierDiscount,
   toTransaction,
@@ -33,6 +34,39 @@ describe("generated files", () => {
   });
 });
 
+
+describe("lending venues (plan 05zk)", () => {
+  it("are listed with checksummed addresses, a kind, and an asset the chain pays in", () => {
+    const d = getDeployment(5042002);
+    expect(d.lendingVenues.length).toBeGreaterThan(0);
+    for (const v of d.lendingVenues) {
+      expect(v.address).toBe(getAddress(v.address));
+      expect(v.asset).toBe(getAddress(v.asset));
+      expect([d.tokens.usdc, d.tokens.eurc]).toContain(v.asset);
+      expect(["test", "production"]).toContain(v.kind);
+    }
+  });
+
+  it("simulates an exit from the Vault's own address and reports a refusal in words", async () => {
+    const calls: unknown[] = [];
+    const ok = { simulateContract: async (a: unknown) => (calls.push(a), { result: 999_999n }) } as unknown as PublicClient;
+    const vault = "0x00000000000000000000000000000000000000aa" as const;
+    const venue = "0x00000000000000000000000000000000000000bb" as const;
+    expect(await simulateLendingExit(ok, venue, vault, 5n)).toEqual({ ok: true, assets: 999_999n });
+    expect((calls[0] as { account: string }).account).toBe(vault);
+    expect(await simulateLendingExit(ok, venue, vault, 0n)).toEqual({ ok: true, assets: 0n });
+
+    const blocked = {
+      simulateContract: async () => {
+        throw Object.assign(new Error("long"), { shortMessage: "execution reverted: CannotSendShares" });
+      },
+    } as unknown as PublicClient;
+    expect(await simulateLendingExit(blocked, venue, vault, 5n)).toEqual({
+      ok: false,
+      reason: "execution reverted: CannotSendShares",
+    });
+  });
+});
 
 describe("chains", () => {
   it("uses docs.arc.io URLs, never viem's stale ones", () => {

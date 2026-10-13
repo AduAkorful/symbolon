@@ -7,6 +7,7 @@ import { anchorDecisions } from "./anchor.js";
 import { releaseDue } from "./series.js";
 import { runSteward, type StewardEnv } from "./steward.js";
 import { syncLedger, syncVault } from "./sync.js";
+import { runLending } from "./lending.js";
 import { DEFAULT_TREASURY, runTreasury, type TreasuryOptions } from "./treasury.js";
 
 export interface CycleReport {
@@ -35,6 +36,8 @@ export async function runCycle(
       await syncVault(env.db, env.client, env.deployment, vault);
       const decisions = await runSteward(env, biz.id);
       const treasury = await runTreasury(env, biz.id, opts.treasury ?? DEFAULT_TREASURY);
+      // the lending pass is separate and never stops the rest of the cycle for this business
+      await runLending(env, biz.id, opts.treasury ?? DEFAULT_TREASURY).catch(() => undefined);
       const wallet = (env.walletFor ? await env.walletFor({ id: biz.id, vault, stewardWallet: biz.stewardWallet }) : undefined) ?? env.wallet;
       const anchored = opts.anchor && wallet ? await anchorDecisions(env.db, biz.id, wallet, { client: env.client }) : undefined;
       report.businesses.push({ id: biz.id, decisions: decisions.length, treasury: treasury.action, ...(anchored ? { anchored: anchored.count } : {}) });

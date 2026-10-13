@@ -54,6 +54,16 @@ interface ISymbolonVault {
         uint256 minOperating;
     }
 
+    /// @notice How much of the Vault may sit in one owner-approved ERC-4626 lending vault (plan 05zk)
+    /// @param enabled Whether the Steward or owner may move cash into the venue
+    /// @param maxLendingBps Largest share of (cash + venue value) that may be held in the venue after a deposit
+    /// @param venue The ERC-4626 vault; it cannot change or be cleared while this Vault holds its shares
+    struct LendingPolicy {
+        bool enabled;
+        uint16 maxLendingBps;
+        address venue;
+    }
+
     /// @notice How the business deals with one payee
     /// @param budget Budget the payee's invoices are charged to (bytes32(0) is the operating budget)
     /// @param requirePo Every invoice must reference an open purchase order
@@ -167,6 +177,9 @@ interface ISymbolonVault {
     event ReservePolicySet(ReservePolicy policy);
     event ReserveSubscribed(address indexed caller, uint256 assets, uint256 shares, bytes32 decisionHash);
     event ReserveRedeemed(address indexed caller, uint256 shares, uint256 assets, bytes32 decisionHash);
+    event LendingPolicySet(LendingPolicy policy);
+    event LendingDeposited(address indexed caller, uint256 assets, uint256 shares, bytes32 decisionHash);
+    event LendingRedeemed(address indexed caller, uint256 shares, uint256 assets, bytes32 decisionHash);
     /// @notice USDC arrived as Arc's native coin; `value` is in the native coin's 18 decimals, not the token's 6
     event NativeReceived(address indexed from, uint256 value);
 
@@ -222,6 +235,11 @@ interface ISymbolonVault {
     error OperatingFloor(uint256 minOperating, uint256 remaining);
     error ReserveShareExceeded(uint256 maxReserveBps, uint256 reserveValue, uint256 total);
     error UsycNotPayable();
+    error LendingDisabled();
+    error InvalidLendingPolicy();
+    error LendingVaultInUse();
+    error LendingSlippage(uint256 minimum, uint256 received);
+    error LendingShareExceeded(uint256 maxLendingBps, uint256 lendingValue, uint256 total);
 
     /// @notice Pays part or all of a sealed invoice, subject to every rule in the policy
     /// @return paid Amount delivered to the vendor
@@ -326,4 +344,18 @@ interface ISymbolonVault {
     /// with the reserve disabled, so a business can always return to cash.
     /// @param minAssets Least USDC the Vault must receive (measured by its balance)
     function redeemReserve(uint256 shares, uint256 minAssets, bytes32 decisionHash) external returns (uint256 assets);
+
+    /// @notice Sets how much of the Vault may be held in one lending vault, and which. Owner only. Enabling, a higher
+    /// `maxLendingBps` and any new or changed venue are loosening changes (delayed).
+    function setLendingPolicy(LendingPolicy calldata policy) external;
+
+    /// @notice Moves `assets` into the lending venue; the shares are held by this Vault. Steward or owner; not while paused.
+    /// @param minShares Least shares the Vault must receive (measured by its balance, not the venue's return value)
+    /// @param decisionHash The Steward's decision record for this move
+    function depositLending(uint256 assets, uint256 minShares, bytes32 decisionHash) external returns (uint256 shares);
+
+    /// @notice Redeems `shares` back to cash in this Vault. Steward (not while paused) or owner (always), even with
+    /// lending disabled, so a business can always try to return to cash.
+    /// @param minAssets Least assets the Vault must receive (measured by its balance)
+    function redeemLending(uint256 shares, uint256 minAssets, bytes32 decisionHash) external returns (uint256 assets);
 }

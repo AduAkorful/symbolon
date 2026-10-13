@@ -1402,6 +1402,35 @@ export const symbolonVaultAbi = [
   },
   {
     "type": "function",
+    "name": "depositLending",
+    "inputs": [
+      {
+        "name": "assets",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "minShares",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "decisionHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "shares",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "extsload",
     "inputs": [
       {
@@ -1820,6 +1849,35 @@ export const symbolonVaultAbi = [
   },
   {
     "type": "function",
+    "name": "redeemLending",
+    "inputs": [
+      {
+        "name": "shares",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "minAssets",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "decisionHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "assets",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "redeemReserve",
     "inputs": [
       {
@@ -1978,6 +2036,36 @@ export const symbolonVaultAbi = [
         "name": "periodLength",
         "type": "uint64",
         "internalType": "uint64"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setLendingPolicy",
+    "inputs": [
+      {
+        "name": "policy",
+        "type": "tuple",
+        "internalType": "struct ISymbolonVault.LendingPolicy",
+        "components": [
+          {
+            "name": "enabled",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "maxLendingBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "venue",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
       }
     ],
     "outputs": [],
@@ -2474,6 +2562,98 @@ export const symbolonVaultAbi = [
         "type": "uint64",
         "indexed": false,
         "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LendingDeposited",
+    "inputs": [
+      {
+        "name": "caller",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "assets",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "shares",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "decisionHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LendingPolicySet",
+    "inputs": [
+      {
+        "name": "policy",
+        "type": "tuple",
+        "indexed": false,
+        "internalType": "struct ISymbolonVault.LendingPolicy",
+        "components": [
+          {
+            "name": "enabled",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "maxLendingBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "venue",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LendingRedeemed",
+    "inputs": [
+      {
+        "name": "caller",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "shares",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "assets",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "decisionHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false
@@ -3299,6 +3479,11 @@ export const symbolonVaultAbi = [
   },
   {
     "type": "error",
+    "name": "InvalidLendingPolicy",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidPeriod",
     "inputs": []
   },
@@ -3315,6 +3500,53 @@ export const symbolonVaultAbi = [
   {
     "type": "error",
     "name": "InvalidSealSignature",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "LendingDisabled",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "LendingShareExceeded",
+    "inputs": [
+      {
+        "name": "maxLendingBps",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "lendingValue",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "total",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "LendingSlippage",
+    "inputs": [
+      {
+        "name": "minimum",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "received",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "LendingVaultInUse",
     "inputs": []
   },
   {
@@ -4521,6 +4753,42 @@ export const vaultLensAbi = [
   },
   {
     "type": "function",
+    "name": "getLendingPolicy",
+    "inputs": [
+      {
+        "name": "vault",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "policy",
+        "type": "tuple",
+        "internalType": "struct ISymbolonVault.LendingPolicy",
+        "components": [
+          {
+            "name": "enabled",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "maxLendingBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "venue",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getPayee",
     "inputs": [
       {
@@ -4976,6 +5244,79 @@ export const vaultLensAbi = [
         "name": "",
         "type": "bool",
         "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "lendingStatus",
+    "inputs": [
+      {
+        "name": "vault",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "status",
+        "type": "tuple",
+        "internalType": "struct VaultLens.LendingStatus",
+        "components": [
+          {
+            "name": "policy",
+            "type": "tuple",
+            "internalType": "struct ISymbolonVault.LendingPolicy",
+            "components": [
+              {
+                "name": "enabled",
+                "type": "bool",
+                "internalType": "bool"
+              },
+              {
+                "name": "maxLendingBps",
+                "type": "uint16",
+                "internalType": "uint16"
+              },
+              {
+                "name": "venue",
+                "type": "address",
+                "internalType": "address"
+              }
+            ]
+          },
+          {
+            "name": "asset",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "cash",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "shares",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "valueKnown",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "lendingValue",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "redeemable",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
       }
     ],
     "stateMutability": "view"

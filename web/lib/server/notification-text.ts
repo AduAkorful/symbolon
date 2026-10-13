@@ -48,6 +48,14 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
       };
     }
 
+    case "lending_unavailable": {
+      return {
+        title: "Lending vault can’t pay out right now",
+        body: "Part of the money in your lending vault can’t be taken out at the moment. It isn’t counted as cash, and the Vault’s own cash is unaffected.",
+        href: "/business/treasury",
+      };
+    }
+
     case "verification_awaiting_second": {
       const vendorName = typeof body.vendorName === "string" ? body.vendorName : "Vendor";
       return {

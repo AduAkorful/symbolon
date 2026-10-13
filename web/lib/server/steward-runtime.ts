@@ -4,7 +4,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { formatUnits, getAddress, type Address, type PublicClient } from "viem";
 
 import { reserveYield, symbolonContracts } from "@symbolon/chain";
-import { expireOffers, notifyBusiness, releaseDue, runSteward, runTreasury, syncVault, type StewardEnv } from "@symbolon/core";
+import { expireOffers, notifyBusiness, releaseDue, runLending, runSteward, runTreasury, syncVault, type StewardEnv } from "@symbolon/core";
 import { businesses, decisions, stewardRuns, type Database } from "@symbolon/db";
 import { CircleStewardWallet, createCircleClient, DEFAULT_EARLY_PAY, provisionStewardWallet, type EarlyPayProgram, type StewardWallet } from "@symbolon/steward";
 
@@ -262,6 +262,13 @@ export async function runForBusiness(
       }
     } catch (treasuryErr) {
       console.warn("Treasury run failed; invoice pass succeeded:", treasuryErr);
+    }
+    // the lending reserve (plan 05zk) is its own pass: it does nothing for a Vault with no lending vault set
+    try {
+      const lendingResult = await runLending(env, businessId);
+      if (lendingResult.action !== "none") treasuryAction = treasuryAction ?? `lending ${lendingResult.action}`;
+    } catch (lendingErr) {
+      console.warn("Lending run failed; invoice pass succeeded:", lendingErr);
     }
 
     const outcomes: Record<string, number> = {};

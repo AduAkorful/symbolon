@@ -35,6 +35,8 @@ contract VaultLens {
     uint256 private constant FLAGS = 17;
     // release 2: enabled (byte 0), maxReserveBps (bytes 1-2); minOperating in the next slot
     uint256 private constant RESERVE = 18;
+    // release 4 (plan 05zk): enabled (byte 0), maxLendingBps (bytes 1-2), venue (bytes 3-22); the venue's asset in the next slot
+    uint256 private constant LENDING = 20;
 
     uint256 private constant PAYEE_SLOTS = 8;
     uint256 private constant BUDGET_SLOTS = 3;
@@ -56,6 +58,24 @@ contract VaultLens {
         uint256 shares;
         uint256 reserveValue;
         ISymbolonVault.ReservePolicy policy;
+    }
+
+    /// @notice A Vault's lending reserve as it stands. Venue reads that fail are reported, never thrown or shown as zero.
+    /// @param asset The asset recorded when the venue was set
+    /// @param cash The Vault's balance of that asset
+    /// @param shares Venue shares held by the Vault
+    /// @param valueKnown False when the venue could not be read; `lendingValue` and `redeemable` are then zero
+    /// @param lendingValue `shares` valued by the venue's own `convertToAssets`
+    /// @param redeemable What the venue's `previewRedeem` says all `shares` would return now (not a promise of liquidity:
+    /// the exit is simulated from the Vault's address before it is sent)
+    struct LendingStatus {
+        ISymbolonVault.LendingPolicy policy;
+        address asset;
+        uint256 cash;
+        uint256 shares;
+        bool valueKnown;
+        uint256 lendingValue;
+        uint256 redeemable;
     }
 
     /// @notice Everything the app needs for a Vault's header in one call
@@ -271,6 +291,31 @@ contract VaultLens {
         status.reserveValue = teller.convertToAssets(status.shares);
     }
 
+    // ---------------------------------------------------------------------------------------------------------------
+    // Lending reserve
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /// @notice A Vault's lending policy; all zeros (disabled, no venue) for a Vault on an earlier release
+    function getLendingPolicy(address vault) public view returns (ISymbolonVault.LendingPolicy memory policy) {
+        bytes32 w = IExtsload(vault).extsload(bytes32(BASE + LENDING));
+        policy.enabled = _bits(w, 0, 1) != 0;
+        policy.maxLendingBps = uint16(_bits(w, 1, 2));
+        policy.venue = address(uint160(_bits(w, 3, 20)));
+    }
+
+    function lendingStatus(address vault) external view returns (LendingStatus memory status) {
+        status.policy = getLendingPolicy(vault);
+        if (status.policy.venue == address(0)) return status;
+        status.asset = address(uint160(uint256(IExtsload(vault).extsload(bytes32(BASE + LENDING + 1)))));
+        status.cash = IERC20(status.asset).balanceOf(vault);
+        status.shares = IERC20(status.policy.venue).balanceOf(vault);
+        try ILendingVenue(status.policy.venue).convertToAssets(status.shares) returns (uint256 value) {
+            status.lendingValue = value;
+            status.redeemable = ILendingVenue(status.policy.venue).previewRedeem(status.shares);
+            status.valueKnown = true;
+        } catch {}
+    }
+
     function _flags(address vault)
         internal
         view
@@ -296,6 +341,12 @@ contract VaultLens {
     function _bits(bytes32 word, uint256 offset, uint256 size) internal pure returns (uint256) {
         return (uint256(word) >> (offset * 8)) & ((uint256(1) << (size * 8)) - 1);
     }
+}
+
+/// @notice The two ERC-4626 reads the lens makes of a lending venue
+interface ILendingVenue {
+    function convertToAssets(uint256 shares) external view returns (uint256);
+    function previewRedeem(uint256 shares) external view returns (uint256);
 }
 
 /// @notice The one reserve getter the Vault keeps (an immutable of its implementation, not storage)

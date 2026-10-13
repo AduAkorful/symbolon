@@ -226,7 +226,14 @@ async function readReserve(client: PublicClient, contracts: ReturnType<typeof sy
   } catch (err) {
     console.warn("Failed reading reserveStatus from lens:", err);
   }
-  return { reserveStatus, yieldBps, limitRemaining };
+  // cash held as lending-vault shares is never part of the forecast: the Vault's own balance is the only cash it relies on
+  let lendingHeld = false;
+  try {
+    lendingHeld = (await contracts.lens.read.lendingStatus([vault], { blockNumber })).shares > 0n;
+  } catch {
+    // a Vault or lens from before release 4 has no lending: nothing to say
+  }
+  return { reserveStatus, yieldBps, limitRemaining, lendingHeld };
 }
 
 /**
@@ -317,7 +324,7 @@ export async function loadTreasury(
   ]);
   const { balance: usdcBal, decimals: usdcDecimals } = usdc;
   const { balance: eurcBal, decimals: eurcDecimals } = eurc;
-  const { reserveStatus, yieldBps, limitRemaining } = reserve;
+  const { reserveStatus, yieldBps, limitRemaining, lendingHeld } = reserve;
 
   let budgetInfo: TreasuryState["budget"] = null;
   const budgetAvailable = budgetRead !== null;
@@ -433,6 +440,7 @@ export async function loadTreasury(
   } else {
     runwayStatement = `USDC and EURC cash cover recorded bills in the selected ${b.bufferDays ?? DEFAULT_BUFFER_DAYS}-day buffer. The chart shows USDC only.`;
   }
+  if (lendingHeld && usdcBal !== null) runwayStatement += " Money held in the lending vault is not counted as cash.";
 
   let pendingSweep: TreasuryState["pendingSweepProposal"] = null;
   if (proposal) {
@@ -870,6 +878,8 @@ export async function recordReserveMove(
 
   const subEventAbi = parseAbiItem("event ReserveSubscribed(address indexed caller, uint256 assets, uint256 shares, bytes32 decisionHash)");
   const redEventAbi = parseAbiItem("event ReserveRedeemed(address indexed caller, uint256 shares, uint256 assets, bytes32 decisionHash)");
+  const lendDepAbi = parseAbiItem("event LendingDeposited(address indexed caller, uint256 assets, uint256 shares, bytes32 decisionHash)");
+  const lendRedAbi = parseAbiItem("event LendingRedeemed(address indexed caller, uint256 shares, uint256 assets, bytes32 decisionHash)");
 
   let foundEvent = "";
   let dHash: string | null = null;
@@ -877,8 +887,13 @@ export async function recordReserveMove(
   for (const log of receipt.logs) {
     if (getAddress(log.address) !== vault) continue;
     try {
-      const parsed = decodeEventLog({ abi: [subEventAbi, redEventAbi], data: log.data, topics: log.topics });
-      if (parsed.eventName === "ReserveSubscribed" || parsed.eventName === "ReserveRedeemed") {
+      const parsed = decodeEventLog({ abi: [subEventAbi, redEventAbi, lendDepAbi, lendRedAbi], data: log.data, topics: log.topics });
+      if (
+        parsed.eventName === "ReserveSubscribed" ||
+        parsed.eventName === "ReserveRedeemed" ||
+        parsed.eventName === "LendingDeposited" ||
+        parsed.eventName === "LendingRedeemed"
+      ) {
         foundEvent = parsed.eventName;
         dHash = parsed.args.decisionHash;
         break;
@@ -889,7 +904,7 @@ export async function recordReserveMove(
   }
 
   if (!foundEvent || !dHash) {
-    throw new AuthError(409, "No ReserveSubscribed or ReserveRedeemed event found in transaction receipt.");
+    throw new AuthError(409, "No reserve or lending event found in transaction receipt.");
   }
 
   // Decisions is append-only: a later row carries the transaction hash and supersedes the initial row

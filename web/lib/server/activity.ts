@@ -121,6 +121,12 @@ export function describeEvent(eventName: string, args: Record<string, unknown>, 
       return { what: `Moved idle cash into USYC reserve` };
     case "ReserveRedeemed":
       return { what: `Redeemed cash from USYC reserve` };
+    case "LendingPolicySet":
+      return { what: "Updated the lending reserve policy" };
+    case "LendingDeposited":
+      return { what: args.assets === undefined ? "Moved cash into the lending vault" : `Moved ${eventAmount(args.assets, "USDC")}into the lending vault` };
+    case "LendingRedeemed":
+      return { what: args.assets === undefined ? "Took cash out of the lending vault" : `Took ${eventAmount(args.assets, "USDC")}out of the lending vault` };
     case "Settled": {
       return { what: `Ledger settled payment of ${eventAmount(args.paid, symbol)}for invoice ${String(args.fingerprint || "").slice(0, 10)}…`, tone: "seal" };
     }

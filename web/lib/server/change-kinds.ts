@@ -18,6 +18,7 @@ export const GATED_FUNCTION_NAMES = [
   "setSupportedToken",
   "setAutoUpdate",
   "setReservePolicy",
+  "setLendingPolicy",
 ] as const;
 
 export type GatedFunctionName = (typeof GATED_FUNCTION_NAMES)[number];
@@ -190,6 +191,22 @@ export const CHANGE_KINDS: Record<GatedFunctionName, ChangeKindDef> = {
           enabled: Boolean(p?.enabled),
           maxReserveBps: p?.maxReserveBps,
           minOperating: p?.minOperating?.toString(),
+        },
+      };
+    },
+  },
+  setLendingPolicy: {
+    kind: "set_lending_policy",
+    functionName: "setLendingPolicy",
+    appliedEvent: "LendingPolicySet",
+    describe([policy]: readonly unknown[]) {
+      const p = policy as { enabled?: boolean; maxLendingBps?: number; venue?: string };
+      return {
+        title: `${p?.enabled ? "Update" : "Switch off"} lending reserve`,
+        details: {
+          enabled: Boolean(p?.enabled),
+          maxLendingBps: p?.maxLendingBps,
+          venue: p?.venue,
         },
       };
     },

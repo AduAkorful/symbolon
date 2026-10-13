@@ -3,6 +3,7 @@ import { getClient } from "@/lib/server/chain";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
 import { readBody, requireSession, routeWith } from "@/lib/server/http";
+import { loadLending, prepareLendingDeposit, prepareLendingPolicy, prepareLendingRedeem } from "@/lib/server/lending";
 import { prepareReservePolicy } from "@/lib/server/reserve-policy";
 import { setBufferDays, setEarlyPay } from "@/lib/server/settings";
 import {
@@ -24,6 +25,12 @@ export const GET = routeWith<Ctx>(async (_request, ctx) => {
   const db = await getDb();
   const config = getConfig();
   const client = getClient();
+
+  // the lending reserve is read on its own so a failure there never hides the rest of the treasury
+  if (new URL(_request.url).searchParams.get("part") === "lending") {
+    const lending = await loadLending(db, client, config.deployment, session.user, businessId);
+    return NextResponse.json({ ok: true, lending });
+  }
 
   const state = await loadTreasury(db, client, config.deployment, businessId, session.user);
   return NextResponse.json({ ok: true, state });
@@ -83,6 +90,28 @@ export const POST = routeWith<Ctx>(async (request, ctx) => {
         minOperating: typeof body.minOperating === "string" ? body.minOperating : "",
       });
       return NextResponse.json(res);
+    }
+
+    case "prepare-lending-policy": {
+      const res = await prepareLendingPolicy(db, client, config.deployment, session.user, businessId, {
+        enabled: body.enabled === true,
+        maxPercent: typeof body.maxPercent === "string" ? body.maxPercent : "",
+        venue: typeof body.venue === "string" ? body.venue : "",
+      });
+      return NextResponse.json(res);
+    }
+
+    case "prepare-lending-deposit": {
+      const res = await prepareLendingDeposit(db, client, config.deployment, session.user, businessId, config.chainId, body.assets);
+      return NextResponse.json({ ok: true, ...res });
+    }
+
+    case "prepare-lending-redeem": {
+      const res = await prepareLendingRedeem(db, client, config.deployment, session.user, businessId, config.chainId, {
+        assets: body.assets,
+        all: body.all,
+      });
+      return NextResponse.json({ ok: true, ...res });
     }
 
     case "prepare-subscribe": {

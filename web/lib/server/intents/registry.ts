@@ -13,6 +13,7 @@ import {
 } from "./executors";
 import {
   budgetRemainingIntent,
+  lendingStatusIntent,
   openOffersIntent,
   openOrdersIntent,
   pendingChangesIntent,
@@ -32,6 +33,7 @@ export const INTENT_HANDLERS: Record<string, IntentHandler> = {
   cash_position: cashPositionIntent,
   steward_status: stewardStatusIntent,
   reserve_status: reserveStatusIntent,
+  lending_status: lendingStatusIntent,
   early_pay_savings: earlyPaySavingsIntent,
   why_decision: whyDecisionIntent,
   vendor_summary: vendorSummaryIntent,

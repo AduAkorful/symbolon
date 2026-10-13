@@ -4,11 +4,12 @@ import { decisions, earlyPayOffers, invoices, payees, queuedChanges, screenings,
 import { summarizeDecision } from "../decision-text";
 import { listBudgets } from "../budgets";
 import { listOrders } from "../orders";
+import { loadLending } from "../lending";
 import { loadPolicyView } from "../policy-edit";
 import { resolveVendors, type VendorMatch } from "./resolve";
 import { currencyTotals } from "./settlements";
 import type { IntentAnswer, IntentContext, IntentHandler } from "./types";
-import { formatDateTime, formatDay } from "../../format";
+import { formatDateTime, formatDay, showAmount } from "../../format";
 
 // Plan 05y Part C. Every handler here only reads; each answer is a sentence built from what was read, and says where from.
 
@@ -169,6 +170,40 @@ export const treasuryMovesIntent: IntentHandler = {
     };
   },
 };
+
+// ─── lending_status ──────────────────────────────────────────────────────────
+
+export const lendingStatusIntent: IntentHandler = {
+  descriptor: { name: "lending_status", description: "The lending vault reserve: whether it is on, how much is in it, and whether it can pay out now", params: {} },
+  async execute(ctx) {
+    const now = ctx.now ?? new Date();
+    const links: [string, string][] = [["Treasury", "/business/treasury"]];
+    const source = `From: the Vault and the lending vault at ${stamp(now)}`;
+    const answer = (text: string): IntentAnswer => ({ text, links, source, intent: "lending_status" });
+    if (!ctx.userId) return answer("I can't read the lending reserve without knowing who is asking.");
+    try {
+      const l = await loadLending(ctx.db, ctx.client, ctx.deployment, { id: ctx.userId }, ctx.businessId);
+      if (!l.supported) return answer("This Vault's release has no lending reserve. It is available from release 4.");
+      if (!l.readOk) return answer("I can't read the lending reserve from the chain right now.");
+      if (!l.policy.venue) return answer("The lending reserve is not set up for this Vault. Only the owner can set it up, from Treasury.");
+      const name = l.venue?.name ?? "the owner's lending vault";
+      const test = l.venue?.kind === "test" ? " It is a test vault." : "";
+      const state = l.policy.enabled ? `on, up to ${(l.policy.maxLendingBps / 100).toFixed(0)}% of cash` : "off";
+      const held = l.shares === "0" ? "Nothing is in it." : l.lendingValue === null ? "What is in it can't be valued right now." : `${showAmount(formatUnits6(l.lendingValue))} USDC is in it.`;
+      const exit = l.exit === null ? "" : l.exit.ok ? " It can pay that out now." : ` It can't pay out right now (${l.exit.reason}); that money is not counted as cash.`;
+      const yieldText = l.yield ? ` Measured yield over ${l.yield.days} days: ${(l.yield.bps / 100).toFixed(2)}%.` : " There isn't a week of measurements yet, so no yield is shown.";
+      return answer(`${name} is ${state}.${test} ${held}${exit}${yieldText}`);
+    } catch (e) {
+      console.error("ask: an intent could not read its data", e);
+      return answer("I can't read the lending reserve right now.");
+    }
+  },
+};
+
+function formatUnits6(raw: string): string {
+  const n = BigInt(raw);
+  return `${n / 1_000_000n}.${(n % 1_000_000n).toString().padStart(6, "0")}`;
+}
 
 // ─── open_orders ─────────────────────────────────────────────────────────────
 

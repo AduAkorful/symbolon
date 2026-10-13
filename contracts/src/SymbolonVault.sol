@@ -3,6 +3,7 @@ pragma solidity 0.8.36;
 
 // Libraries
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {LendingLogic} from "./libraries/LendingLogic.sol";
 import {ReserveLogic} from "./libraries/ReserveLogic.sol";
 import {SealSignature} from "./libraries/SealSignature.sol";
 import {VaultStorage, VaultStorageLib} from "./libraries/VaultStorage.sol";
@@ -454,8 +455,7 @@ contract SymbolonVault is
         nonReentrant
         returns (uint256 shares)
     {
-        if (msg.sender != _s().steward && msg.sender != owner()) revert NotTreasurer();
-        if (_s().paused) revert VaultPaused();
+        _checkTreasurer(false);
         shares = ReserveLogic.subscribe(_s(), usycTeller, _usyc, _reserveAsset, assets, minShares);
         emit ReserveSubscribed(msg.sender, assets, shares, decisionHash);
     }
@@ -467,12 +467,43 @@ contract SymbolonVault is
         returns (uint256 assets)
     {
         // the owner can always return to cash; the steward only while the Vault isn't paused
-        if (msg.sender != owner()) {
-            if (msg.sender != _s().steward) revert NotTreasurer();
-            if (_s().paused) revert VaultPaused();
-        }
+        _checkTreasurer(true);
         assets = ReserveLogic.redeem(usycTeller, _reserveAsset, shares, minAssets);
         emit ReserveRedeemed(msg.sender, shares, assets, decisionHash);
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Lending reserve (one owner-approved ERC-4626 vault), plan 05zk
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /// @inheritdoc ISymbolonVault
+    function setLendingPolicy(LendingPolicy calldata policy) external onlyOwner {
+        if (!_gate(LendingLogic.checkPolicy(_s(), policy))) return;
+        LendingLogic.store(_s(), policy);
+        emit LendingPolicySet(policy);
+    }
+
+    /// @inheritdoc ISymbolonVault
+    function depositLending(uint256 assets, uint256 minShares, bytes32 decisionHash)
+        external
+        nonReentrant
+        returns (uint256 shares)
+    {
+        _checkTreasurer(false);
+        shares = LendingLogic.deposit(_s(), assets, minShares);
+        emit LendingDeposited(msg.sender, assets, shares, decisionHash);
+    }
+
+    /// @inheritdoc ISymbolonVault
+    function redeemLending(uint256 shares, uint256 minAssets, bytes32 decisionHash)
+        external
+        nonReentrant
+        returns (uint256 assets)
+    {
+        // the owner can always try to return to cash; the steward only while the Vault isn't paused
+        _checkTreasurer(true);
+        assets = LendingLogic.redeem(_s(), shares, minAssets);
+        emit LendingRedeemed(msg.sender, shares, assets, decisionHash);
     }
 
     /// @dev The steward can never be the owner; a pending owner who is the steward can't accept
@@ -677,6 +708,15 @@ contract SymbolonVault is
         if (block.timestamp < eta) revert ChangeNotReady(id, eta);
         delete _s().queuedChanges[id];
         return true;
+    }
+
+    /// @dev Who may move the reserve: the steward or owner, not while paused; `ownerAlways` lets the owner through
+    /// a pause, because returning to cash must always be possible
+    function _checkTreasurer(bool ownerAlways) private view {
+        VaultStorage storage $ = _s();
+        if (ownerAlways && msg.sender == owner()) return;
+        if (msg.sender != $.steward && msg.sender != owner()) revert NotTreasurer();
+        if ($.paused) revert VaultPaused();
     }
 
     /// @notice True if any field of `next` is looser than `current`

@@ -6,7 +6,7 @@ import { arcTestnet, getDeployment, symbolonVaultAbi, toTransaction, type Deploy
 import { businesses, chainEvents, createTestDb, decisions, invoices } from "@symbolon/db";
 import { DEFAULT_EARLY_PAY, type StewardWallet } from "@symbolon/steward";
 
-import { paymentsBeancount, paymentsCsv, runTreasury } from "../src/index.js";
+import { lendingYield, paymentsBeancount, paymentsCsv, runLending, runTreasury } from "../src/index.js";
 
 const VAULT = "0x5f5e2cd9f87a81724cc48ec0c193630a60692984";
 const TELLER = "0x9fdF14c5B14173D74C08Af27AebFf39240dC105A";
@@ -185,3 +185,88 @@ describe("payments export", () => {
     expect(sum).toBe(0);
   });
 });
+
+describe("lending run (plan 05zk)", () => {
+  const VENUE = "0xAabbeF1D3971c710276ed41eC791BbE14CdB8E88";
+  let db: Awaited<ReturnType<typeof createTestDb>>;
+  let businessId: string;
+
+  beforeEach(async () => {
+    db = await createTestDb();
+    const [b] = await db.insert(businesses).values({ name: "Acme", chainId: 5_042_002, vault: VAULT, stewardMode: "auto" }).returning();
+    businessId = b!.id;
+  });
+
+  function lendingEnv(
+    lending: Record<string, unknown>,
+    exit: { ok: true; assets: bigint } | { ok: false; message: string },
+    wallet?: StewardWallet,
+  ) {
+    const contracts = {
+      lens: {
+        read: {
+          lendingStatus: async () => lending,
+          getReservePolicy: async () => ({ enabled: false, maxReserveBps: 0, minOperating: 50_000n * USDC }),
+        },
+      },
+    } as unknown as SymbolonContracts;
+    const client = {
+      getBlock: async () => ({ timestamp: NOW, number: 100n }),
+      simulateContract: vi.fn(async (a: { functionName?: string }) => {
+        if (a.functionName === "redeem" && !exit.ok) throw new Error(exit.message);
+        if (a.functionName === "redeem" && exit.ok) return { result: exit.assets, request: {} };
+        return { request: {} };
+      }),
+      readContract: vi.fn(async (a: { functionName: string }) => {
+        if (a.functionName === "previewDeposit") return 199_000n * 10n ** 12n;
+        if (a.functionName === "decimals") return 18;
+        return 1_001_058n; // convertToAssets of one share
+      }),
+    } as unknown as PublicClient;
+    return { db, client, contracts, deployment: { chainId: 5_042_002 } as Deployment, program: DEFAULT_EARLY_PAY, bufferDays: 30, reserveYieldBps: 0, ...(wallet ? { wallet } : {}) };
+  }
+
+  const status = (o: Record<string, unknown> = {}) => ({
+    policy: { enabled: true, maxLendingBps: 2_000, venue: VENUE },
+    asset: "0x3600000000000000000000000000000000000000",
+    cash: 1_000_000n * USDC,
+    shares: 0n,
+    valueKnown: true,
+    lendingValue: 0n,
+    redeemable: 0n,
+    ...o,
+  });
+
+  it("does nothing, and reads nothing from the venue, for a Vault with no lending vault", async () => {
+    const r = await runLending(lendingEnv(status({ policy: { enabled: false, maxLendingBps: 0, venue: "0x0000000000000000000000000000000000000000" } }), { ok: true, assets: 0n }), businessId);
+    expect(r.action).toBe("none");
+    expect(await db.select().from(decisions)).toHaveLength(0);
+  });
+
+  it("deposits the excess within the cap with a venue-previewed min-out, records it and samples the price", async () => {
+    const send = vi.fn(async () => `0x${"cc".repeat(32)}` as Hex);
+    const r = await runLending(lendingEnv(status(), { ok: true, assets: 0n }, { address: "0x0000000000000000000000000000000000000abc", send }), businessId);
+    expect(r.action).toBe("deposit");
+    const { functionName, args } = decodeFunctionData({ abi: symbolonVaultAbi, data: toTransaction(r.call!).data });
+    expect(functionName).toBe("depositLending");
+    const [assets, minShares, decisionHash] = args as [bigint, bigint, Hex];
+    expect(assets).toBe(200_000n * USDC); // the 20% cap of 1,000,000
+    expect(minShares).toBe((199_000n * 10n ** 12n * 9_950n) / 10_000n);
+    expect(decisionHash).toBe(r.hash);
+    expect(send).toHaveBeenCalledOnce();
+    expect(await db.select().from(decisions)).toHaveLength(1);
+    expect(await lendingYield(db, 5_042_002, VENUE)).toBeNull(); // one sample is a price, not a rate
+  });
+
+  it("counts an exit the venue can't make as unavailable and moves nothing", async () => {
+    const send = vi.fn();
+    const r = await runLending(
+      lendingEnv(status({ cash: 10_000n * USDC, shares: 400_000n * 10n ** 12n, lendingValue: 400_000n * USDC }), { ok: false, message: "CannotSendShares" }, { address: "0x0000000000000000000000000000000000000abc", send }),
+      businessId,
+    );
+    expect(r.action).toBe("none");
+    expect(r.unavailable).toBe(400_000n * USDC);
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+

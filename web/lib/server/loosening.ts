@@ -133,3 +133,22 @@ export function isLooseningReservePolicy(
     next.minOperating < current.minOperating
   );
 }
+
+export interface LendingPolicyShape {
+  enabled: boolean;
+  maxLendingBps: number | bigint;
+  venue: string;
+}
+
+/**
+ * Whether a new lending policy loosens the current one. Mirrors `LendingLogic.checkPolicy`: enabling, a higher cap and
+ * any new venue are loosening; switching off, a lower cap and clearing the venue are not.
+ */
+export function isLooseningLendingPolicy(current: LendingPolicyShape, next: LendingPolicyShape): boolean {
+  const zero = "0x0000000000000000000000000000000000000000";
+  return (
+    (next.enabled && !current.enabled) ||
+    BigInt(next.maxLendingBps) > BigInt(current.maxLendingBps) ||
+    (next.venue.toLowerCase() !== current.venue.toLowerCase() && next.venue.toLowerCase() !== zero)
+  );
+}

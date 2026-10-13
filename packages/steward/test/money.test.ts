@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { annualizedBps, counterFor, decideTiming, DEFAULT_EARLY_PAY, forecast, outflowsWithin, planReserve, runwayDays, tokenShortfalls } from "../src/index.js";
+import { annualizedBps, counterFor, decideTiming, DEFAULT_EARLY_PAY, forecast, measuredLendingYield, outflowsWithin, planLending, planReserve, runwayDays, tokenShortfalls } from "../src/index.js";
 import { DAY, NOW, TOKEN, USDC } from "./fixtures.js";
 
 describe("Early Pay timing", () => {
@@ -170,5 +170,76 @@ describe("reserve planner", () => {
     expect(planReserve({ ...base, enabled: false }).action).toBe("none");
     expect(planReserve({ ...base, entitled: false }).reason).toMatch(/allowlisted/);
     expect(planReserve({ ...base, cash: 100_500n * USDC }).action).toBe("none");
+  });
+});
+
+describe("planLending (plan 05zk)", () => {
+  const U = 1_000_000n;
+  const base = {
+    enabled: true,
+    venueSet: true,
+    maxLendingBps: 2_000,
+    minOperating: 100_000n * U,
+    cash: 1_000_000n * U,
+    shares: 0n,
+    lendingValue: 0n,
+    valueKnown: true,
+    exit: { ok: true as const, assets: 0n },
+    buffer: 300_000n * U,
+    upcoming: 0n,
+    minSweep: 1_000n * U,
+    redeemMarginBps: 100,
+  };
+
+  it("deposits the excess above the buffer, within the cap", () => {
+    const p = planLending(base);
+    // 20% of 1,000,000 is 200,000, less than the 700,000 excess
+    expect(p).toMatchObject({ action: "deposit", assets: 200_000n * U, unavailable: 0n });
+  });
+
+  it("does not deposit when lending is off, unset or unreadable", () => {
+    expect(planLending({ ...base, enabled: false }).action).toBe("none");
+    expect(planLending({ ...base, venueSet: false }).action).toBe("none");
+    expect(planLending({ ...base, valueKnown: false }).action).toBe("none");
+  });
+
+  it("redeems the shortfall plus a margin when cash is short", () => {
+    const p = planLending({ ...base, cash: 250_000n * U, shares: 400_000n * U, lendingValue: 400_000n * U, exit: { ok: true, assets: 400_000n * U } });
+    // target 300,000: shortfall 50,000, +1% margin
+    expect(p).toMatchObject({ action: "redeem", assets: 50_500n * U, shares: 50_500n * U });
+  });
+
+  it("never plans on money the node says it can't pay out, and counts it as unavailable", () => {
+    const p = planLending({ ...base, cash: 250_000n * U, shares: 400_000n * U, lendingValue: 400_000n * U, exit: { ok: false, reason: "CannotSendShares" } });
+    expect(p.action).toBe("none");
+    expect(p.unavailable).toBe(400_000n * U);
+    expect(p.reason).toContain("CannotSendShares");
+  });
+
+  it("puts nothing more into a venue whose exit fails, even with idle cash", () => {
+    const p = planLending({ ...base, shares: 10n * U, lendingValue: 10n * U, exit: { ok: false, reason: "no liquidity" } });
+    expect(p.action).toBe("none");
+  });
+
+  it("caps a redemption at what the exit simulation says is payable", () => {
+    const p = planLending({ ...base, cash: 100_000n * U, shares: 400_000n * U, lendingValue: 400_000n * U, exit: { ok: true, assets: 120_000n * U } });
+    expect(p).toMatchObject({ action: "redeem", assets: 120_000n * U });
+    expect(p.unavailable).toBe(280_000n * U);
+  });
+});
+
+describe("measuredLendingYield (plan 05zk)", () => {
+  const day = 86_400_000;
+  const t0 = new Date("2026-10-01T00:00:00Z");
+  it("is null with under a week of samples: a price, not a rate", () => {
+    expect(measuredLendingYield([])).toBeNull();
+    expect(measuredLendingYield([{ at: t0, assets: 1_000_000n }])).toBeNull();
+    expect(measuredLendingYield([{ at: t0, assets: 1_000_000n }, { at: new Date(t0.getTime() + 6 * day), assets: 1_001_000n }])).toBeNull();
+  });
+  it("annualises the venue's own share-price change, simply and never below zero", () => {
+    const y = measuredLendingYield([{ at: new Date(t0.getTime() + 10 * day), assets: 1_001_000n }, { at: t0, assets: 1_000_000n }]);
+    // +0.1% over 10 days = 36.5% a year, simple
+    expect(y).toEqual({ bps: 365, days: 10 });
+    expect(measuredLendingYield([{ at: t0, assets: 1_000_000n }, { at: new Date(t0.getTime() + 10 * day), assets: 990_000n }])?.bps).toBe(0);
   });
 });

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SignerPlan } from "@/components/setup/owner-signer";
 import { BufferModal, ConvertModal, EarlyPayModal, FundModal, RedeemModal, ReservePolicyModal, SubscribeModal, WithdrawModal } from "./TreasuryDialogs";
+import { LendingSection } from "./LendingSection";
 import { ForecastChart, type ForecastEvent, type ForecastDate } from "./ForecastChart";
 import { QueuedChangeList } from "@/components/QueuedChange";
 import type { TreasuryState } from "@/lib/server/treasury";
@@ -297,6 +298,8 @@ export function TreasuryView({
           </div>
         </section>
       </div>
+
+      <LendingSection businessId={businessId} signer={signer} explorer={explorer} isOwner={isOwner} />
 
       {/* Reserve, and Early Pay with withdrawals */}
       <div className="mt-14 grid gap-12 xl:grid-cols-2">

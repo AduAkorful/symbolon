@@ -42,12 +42,14 @@ import {
   isLooseningAddressRole,
   isLooseningAutoUpdate,
   isLooseningBudget,
+  isLooseningLendingPolicy,
   isLooseningPolicy,
   isLooseningReservePolicy,
   isLooseningRole,
   isLooseningSupportedToken,
   isLooseningTerms,
   type BudgetShape,
+  type LendingPolicyShape,
   type PayeeTermsShape,
   type PolicyShape,
   type ReservePolicyShape,
@@ -224,6 +226,11 @@ async function evaluateLoosening(
       const next = args[0] as ReservePolicyShape;
       const reserve = await contracts.lens.read.reserveStatus([vault]).catch(() => { throw new AuthError(502, "Can't read the reserve policy."); });
       return isLooseningReservePolicy(reserve.policy as ReservePolicyShape, next);
+    }
+    case "setLendingPolicy": {
+      const next = args[0] as LendingPolicyShape;
+      const current = await contracts.lens.read.getLendingPolicy([vault]).catch(() => { throw new AuthError(502, "Can't read the lending policy."); });
+      return isLooseningLendingPolicy(current as LendingPolicyShape, next);
     }
   }
 }

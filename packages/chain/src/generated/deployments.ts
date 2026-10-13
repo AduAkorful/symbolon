@@ -8,10 +8,11 @@ export const deployments = {
     "contracts": {
       "InvoiceLedger": "0x7EFf84D0715284FA3d793525151b30a05Af45aCE",
       "ReleaseRegistry": "0x0C0EF87c88108bd9d306E0C9F48AE733C7AED29e",
-      "SymbolonVaultImplementation": "0xcd819597aD9E83645a5A2ca6F27EEA5B9Dfe5476",
-      "VaultFactory": "0x8F189DfAF43afDf0132A06Fc02DEDe6176c22014",
-      "VaultLens": "0xED1Ef71B47AdE8B8af65aC8f420803ff8Cb05b9c",
-      "ReserveLogic": "0x2bdd166cEef9FDb534d88070503f632b1Ab67B03"
+      "SymbolonVaultImplementation": "0xd910EF738d0770774a7d875cD9Ee4fC494C746A1",
+      "VaultFactory": "0xceB5bb746cDAB3d143C8c5E1A91772509b0Cf1Cf",
+      "VaultLens": "0xa964506ecF909F278f266Efd8f24AbaC9447F1CD",
+      "ReserveLogic": "0x08F5824164227E0bd07921F026037E4431f32712",
+      "LendingLogic": "0xf844c18b24e8605efE3Df91D50271dEf493CDa96"
     },
     "deployer": "0x74B4134C8d527a8D8AE8cb9503ab2043bCfC0ffd",
     "external": {
@@ -21,9 +22,9 @@ export const deployments = {
       "usdc": "0x3600000000000000000000000000000000000000"
     },
     "release": {
-      "notesHash": "0xe63c32e32bb3dc18921b633e11013ddb8998542b7e6322c63b85ff09a3fe79b7",
+      "notesHash": "0x2df29f294baa039b5e29fcc02f2772d7cff047572a98a16b77fef40dcd164528",
       "owner": "0x74B4134C8d527a8D8AE8cb9503ab2043bCfC0ffd",
-      "version": 3
+      "version": 4
     },
     "startBlock": 64060463,
     "deployBlock": 64060492,
@@ -40,7 +41,17 @@ export const deployments = {
       "explorer": "https://explorer.testnet.arc.io",
       "usyc": "0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C",
       "usycTeller": "0x9fdF14c5B14173D74C08Af27AebFf39240dC105A",
-      "usycEntitlements": "0xcc205224862c7641930c87679e98999d23c26113"
+      "usycEntitlements": "0xcc205224862c7641930c87679e98999d23c26113",
+      "lendingVenues": [
+        {
+          "address": "0xAabbeF1D3971c710276ed41eC791BbE14CdB8E88",
+          "name": "EarnKit USDC Vault (Arc testnet)",
+          "asset": "0x3600000000000000000000000000000000000000",
+          "kind": "test",
+          "source": "Circle Earn API GET /v1/earnKit/vaults/explore?chain=ARC-TESTNET (name), and the chain: Morpho Vault V2, explorer-verified, no gates, fake collateral, EOA curator (plan 05zk section 2.2)",
+          "readAt": "2026-10-13"
+        }
+      ]
     }
   }
 } as const;
