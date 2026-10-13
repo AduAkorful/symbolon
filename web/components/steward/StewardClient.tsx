@@ -115,6 +115,8 @@ export interface StewardClientProps {
   };
   policyLines: string[];
   lastRun: RunView | null;
+  /** When a scheduler last started a run for this business, if one ever did */
+  lastScheduledAt?: string | null;
   recentDecisions: DecisionView[];
   shadow: ShadowView;
   pendingAnchorCount?: number;
@@ -128,6 +130,7 @@ export function StewardClient({
   fee,
   policyLines,
   lastRun,
+  lastScheduledAt = null,
   recentDecisions,
   shadow,
   pendingAnchorCount = 0,
@@ -408,7 +411,11 @@ export function StewardClient({
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <SectionTitle id="runs-heading">Runs</SectionTitle>
-            <p className="mt-1 text-sm text-graphite">The Steward runs when you ask. No schedule is set.</p>
+            <p className="mt-1 text-sm text-graphite">
+              {lastScheduledAt
+                ? `A scheduler has called the Steward. Its last run for this business was ${formatDateTime(new Date(lastScheduledAt))}. You can also run it now.`
+                : "No scheduled run has been seen for this business. It runs when you press Run now, or when something outside the app calls it."}
+            </p>
           </div>
           {canRun ? (
             <Button busy={running} onClick={() => void handleRunNow()}>

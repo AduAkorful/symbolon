@@ -115,11 +115,11 @@ export function PauseControl({ businessId, paused, block, known = true, signer, 
       {curPaused ? (
         confirming ? (
           <div className="max-w-[56ch] rounded-doc border border-rule p-4 text-sm">
-            <p>Resuming lets the Steward act again on this Vault, within the rules the Vault enforces.</p>
+            <p>Resuming lets payments go out again and lets the Steward act on this Vault, within the rules the Vault enforces.</p>
             <p className="mt-2 text-graphite">Its mode is shadow: it records what it would do and the app sends nothing, until you change that.</p>
             <div className="mt-4 flex flex-wrap gap-3">
               <Button busy={busy !== null} onClick={() => void toggle("resume")}>
-                {busy ?? "Resume the Steward (one signature)"}
+                {busy ?? "Resume payments (one signature)"}
               </Button>
               <Button variant="secondary" disabled={busy !== null} onClick={() => setConfirming(false)}>
                 Not now
@@ -127,11 +127,11 @@ export function PauseControl({ businessId, paused, block, known = true, signer, 
             </div>
           </div>
         ) : (
-          <Button onClick={() => setConfirming(true)}>Resume the Steward</Button>
+          <Button onClick={() => setConfirming(true)}>Resume payments</Button>
         )
       ) : (
         <Button variant="danger" busy={busy !== null} onClick={() => void toggle("pause")}>
-          {busy ?? "Pause the Steward (one signature)"}
+          {busy ?? "Pause payments (one signature)"}
         </Button>
       )}
       {!known && !curPaused ? <p className="mt-2 text-xs text-graphite">We can't confirm whether the Vault is paused right now. You can still pause it.</p> : null}

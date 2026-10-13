@@ -41,6 +41,7 @@ interface Prepared {
   document: InvoiceDocument;
   typedData: string;
   fingerprint: string;
+  warnings?: string[];
 }
 
 const box = controlClass;
@@ -170,6 +171,13 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
               Back to editing
             </button>
           </div>
+          {prepared.warnings?.length ? (
+            <div className="mt-5 max-w-[52ch] space-y-2">
+              {prepared.warnings.map((w) => (
+                <p key={w} role="status" className="rounded-doc border border-warn/40 bg-warn-wash px-4 py-3 text-sm text-ink">{w}</p>
+              ))}
+            </div>
+          ) : null}
           {problem ? (
             <InlineError className="mt-4 max-w-[52ch]">{problem}</InlineError>
           ) : null}

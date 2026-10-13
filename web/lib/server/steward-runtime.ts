@@ -298,6 +298,20 @@ export async function lastRun(db: Database, businessId: string): Promise<typeof 
   return row ?? null;
 }
 
+/**
+ * The most recent run a scheduler started (an uptime monitor or cron calling `/api/cron/steward`), as stored. Whether the Steward
+ * runs on its own is a fact about what calls it, so the screen says what the runs show and never claims a schedule (plan 05zj D14).
+ */
+export async function lastScheduledRun(db: Database, businessId: string): Promise<typeof stewardRuns.$inferSelect | null> {
+  const [row] = await db
+    .select()
+    .from(stewardRuns)
+    .where(and(eq(stewardRuns.businessId, businessId), eq(stewardRuns.trigger, "schedule")))
+    .orderBy(desc(stewardRuns.startedAt))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function listRunDecisions(db: Database, businessId: string, limit = 20): Promise<(typeof decisions.$inferSelect)[]> {
   return db.select().from(decisions).where(eq(decisions.businessId, businessId)).orderBy(desc(decisions.createdAt)).limit(limit);
 }

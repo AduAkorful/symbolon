@@ -113,9 +113,14 @@ export function Onboarding({ wallet, next = "/vendor" }: { wallet: string | null
                 Your Seal is your wallet’s signature on every invoice you send. Anyone can check that an invoice is really yours, and that nobody changed it.
               </p>
               {wallet ? (
-                <p className="mt-4 text-sm text-graphite">
-                  Your Seal is the wallet <Address value={wallet} full />.
-                </p>
+                <>
+                  <p className="mt-4 text-sm text-graphite">
+                    Your Seal is the wallet <Address value={wallet} full />, the one you signed in with. Registering needs no extra signature: nobody else can register this wallet as theirs.
+                  </p>
+                  <p className="mt-2 text-sm text-graphite">
+                    The name and handle below are what businesses see. They don’t prove who you are: a business checks that for itself before it adds you as a payee.
+                  </p>
+                </>
               ) : (
                 <p role="status" className="mt-4 rounded-doc border border-rule p-4 text-sm text-graphite">
                   This account has no wallet to hold a Seal. Sign in with a wallet to register one.

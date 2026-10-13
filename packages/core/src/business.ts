@@ -66,7 +66,8 @@ export function createVaultCall(
     a.owner,
     a.steward ?? "0x0000000000000000000000000000000000000000",
     a.policy,
-    a.tokens ?? [deployment.tokens.usdc],
+    // a Vault pays in both currencies the app supports, so a EURC invoice or deposit is never stranded (plan 05zj D, SYM-09)
+    a.tokens ?? [deployment.tokens.usdc, deployment.tokens.eurc],
     6,
     a.autoUpdate ?? false,
   ]);

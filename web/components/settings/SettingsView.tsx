@@ -11,6 +11,7 @@ import type { SettingsViewData } from "@/lib/server/settings";
 import type { ReleaseViewInfo, ReleaseNudgeResult } from "@/lib/server/release";
 import { Rename } from "./Rename";
 import { ReleaseCard } from "./ReleaseCard";
+import { CurrencyRow } from "./CurrencyRow";
 import { ReleaseNudge } from "./ReleaseNudge";
 import { Address } from "@/components/Address";
 import { Button, LinkButton } from "@/components/ui/button";
@@ -172,14 +173,25 @@ export function SettingsView({
           <div className="mt-6">
             <SmallTitle as="h3">Currencies the Vault pays in</SmallTitle>
             <ul className="mt-3 flex flex-wrap gap-2">
-              {vaultDetails.supportedTokens.map((t) => (
-                <li key={t.address} className="flex items-center gap-3 rounded-doc border border-rule px-3 py-2 text-sm">
-                  <span className="font-medium text-ink">{t.symbol}</span>
-                  <span className="text-graphite">{t.address.slice(0, 6)}…{t.address.slice(-4)}</span>
-                  <StatusPill tone={t.supported ? "ok" : "neutral"}>{t.supported ? "On" : "Off"}</StatusPill>
-                </li>
-              ))}
+              {vaultDetails.supportedTokens
+                // USYC is the reserve, never a payment currency
+                .filter((t) => t.symbol !== "USYC")
+                .map((t, _i, shown) => (
+                  <CurrencyRow
+                    key={t.address}
+                    businessId={business.id}
+                    token={t}
+                    signer={signer}
+                    explorer={explorer}
+                    isOwner={isOwner}
+                    canTurnOff={shown.filter((x) => x.supported).length > 1}
+                    onChanged={() => void handleRefresh()}
+                  />
+                ))}
             </ul>
+            <p className="mt-2 max-w-[62ch] text-sm text-graphite">
+              Turning a currency off applies at once. Turning one on loosens what the Vault can do, so it waits your loosening delay like any other loosening change.
+            </p>
           </div>
 
           <div className="mt-6 rounded-doc border border-rule px-5 py-5">

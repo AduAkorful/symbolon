@@ -1,5 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
-import { erc20Abi, isHex, type Hex, type PublicClient } from "viem";
+import { erc20Abi, getAddress, isHex, type Hex, type PublicClient } from "viem";
+import { vaultLensAbi } from "@symbolon/chain";
 import { receiveInvoice } from "@symbolon/core";
 import { invoices, type Database } from "@symbolon/db";
 import {
@@ -59,6 +60,8 @@ export interface PreparedInvoice {
   typedData: string;
   fingerprint: Hex;
   chainId: number;
+  /** Things worth knowing before signing that don't stop it (plan 05zj D6): e.g. the payer's Vault isn't set to pay in this currency */
+  warnings: string[];
 }
 
 export async function prepareInvoice(
@@ -94,7 +97,26 @@ export async function prepareInvoice(
 
   const invoice = toInvoice(document);
   const domain = sealDomain(chainId, deployment.contracts.invoiceLedger);
-  return { document, typedData: typedDataJson(domain, "Invoice", invoice), fingerprint: fingerprint(domain, invoice), chainId };
+
+  // A Vault made before EURC was on by default may not pay in it; the vendor hears that before sealing, not after (plan 05zj D6).
+  // Never a guess: a check that can't be made is said too.
+  const warnings: string[] = [];
+  if (draft.currency === "EURC" && document.payer.vault) {
+    try {
+      const supported = await client.readContract({
+        address: deployment.contracts.vaultLens,
+        abi: vaultLensAbi,
+        functionName: "isSupportedToken",
+        args: [getAddress(document.payer.vault), token],
+      });
+      if (supported === false) {
+        warnings.push(`${document.payer.name}'s Vault isn't set to pay in EURC yet, so this invoice can't be paid until its owner turns EURC on in Settings. You can still seal it.`);
+      }
+    } catch {
+      warnings.push(`Couldn't check whether ${document.payer.name}'s Vault pays in EURC right now.`);
+    }
+  }
+  return { document, typedData: typedDataJson(domain, "Invoice", invoice), fingerprint: fingerprint(domain, invoice), chainId, warnings };
 }
 
 export interface SentInvoice {

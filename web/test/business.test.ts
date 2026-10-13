@@ -9,7 +9,7 @@ import { policyTemplate } from "@symbolon/core";
 import { businesses, createTestDb, members, users } from "@symbolon/db";
 import { eq } from "drizzle-orm";
 import { AuthError } from "@/lib/server/errors";
-import { MAX_BUSINESSES, confirmVault, createBusiness, parseUsdcAmount, prepareFund, prepareVault, prepareVaultSwitch, vaultStanding } from "@/lib/server/business";
+import { MAX_BUSINESSES, confirmVault, createBusiness, findBusinessConflict, parseUsdcAmount, prepareFund, prepareVault, prepareVaultSwitch, vaultStanding } from "@/lib/server/business";
 import { pauseStateOf, readVaultState, stewardStanding } from "@/lib/server/vault-read";
 import { TEMPLATES, describePolicy, duration, usd } from "@/lib/server/policy-text";
 
@@ -64,6 +64,22 @@ function chain(rc: { r: object; vault: string }, opts: { isVault?: boolean; owne
   } as unknown as PublicClient;
 }
 
+describe("findBusinessConflict (plan 05zj D8)", () => {
+  it("offers to continue a business with no Vault, and notices the same name on a finished one", async () => {
+    const u = await person();
+    expect(await findBusinessConflict(db, u, "Fresh Co", cfg.chainId)).toBeNull();
+    const unfinished = await ownedBusiness(u);
+    expect(await findBusinessConflict(db, u, "Anything", cfg.chainId)).toMatchObject({ kind: "unfinished", id: unfinished.id });
+
+    await db.update(businesses).set({ vault: fresh().toLowerCase(), name: "Acme Operations" }).where(eq(businesses.id, unfinished.id));
+    expect(await findBusinessConflict(db, u, "Something else", cfg.chainId)).toBeNull();
+    expect(await findBusinessConflict(db, u, "  acme operations ", cfg.chainId)).toMatchObject({ kind: "duplicate_name", id: unfinished.id });
+    // another person's businesses and another chain's never count
+    expect(await findBusinessConflict(db, await person(), "Acme Operations", cfg.chainId)).toBeNull();
+    expect(await findBusinessConflict(db, u, "Acme Operations", 1)).toBeNull();
+  });
+});
+
 describe("createBusiness", () => {
   it("makes the person its owner and trims and normalises the name", async () => {
     const u = await person();
@@ -111,12 +127,31 @@ describe("prepareVault", () => {
     expect(steward).toBe(getAddress(p.made.get(b.id)!));
     expect(r.steward).toBe(steward);
     expect(policy).toMatchObject(policyTemplate("strict") as unknown as Record<string, unknown>);
-    expect(tokens).toEqual([cfg.deployment.tokens.usdc]);
+    // both currencies from the start, so a EURC deposit or invoice is never stranded (plan 05zj D6)
+    expect(tokens).toEqual([cfg.deployment.tokens.usdc, cfg.deployment.tokens.eurc]);
     expect(decimals).toBe(6);
     expect(autoUpdate).toBe(false);
     expect(r.summary.name).toBe("Strict");
     // saved on the business, lowercase, so confirmVault can compare against it
     expect((await db.select().from(businesses).where(eq(businesses.id, b.id)))[0]!.stewardWallet).toBe(steward.toLowerCase());
+  });
+
+  it("builds a Custom policy from the three typed limits and Standard's other rules, and refuses an inconsistent one (D5)", async () => {
+    const u = await person();
+    const b = await ownedBusiness(u, "owner", null);
+    const p = provisioner();
+    const r = await prepareVault(db, cfg, u, b.id, "custom", p.fn, { perTxCap: "500", ownerThreshold: "250.50", autoPayLimit: "50" });
+    const { args } = decodeFunctionData({ abi: vaultFactoryAbi, data: r.data });
+    const policy = (args as unknown as [string, string, Record<string, bigint | number>])[2];
+    expect(policy).toMatchObject({ ...policyTemplate("standard"), perTxCap: 500_000_000n, ownerThreshold: 250_500_000n, autoPayLimit: 50_000_000n } as unknown as Record<string, unknown>);
+    expect(r.summary.name).toBe("Custom");
+
+    const bad = async (custom: unknown) => (await err(prepareVault(db, cfg, u, b.id, "custom", p.fn, custom))).status;
+    expect(await bad({ perTxCap: "100", ownerThreshold: "200", autoPayLimit: "50" })).toBe(400); // owner signs over the cap
+    expect(await bad({ perTxCap: "500", ownerThreshold: "100", autoPayLimit: "150" })).toBe(400); // auto-pay over the owner threshold
+    expect(await bad({ perTxCap: "-5", ownerThreshold: "1", autoPayLimit: "1" })).toBe(400); // a minus sign is refused, not dropped
+    expect(await bad({ perTxCap: "0", ownerThreshold: "0", autoPayLimit: "0" })).toBe(400);
+    expect(await bad(undefined)).toBe(400);
   });
 
   it("provisions once when asked twice, and reuses a wallet the business already has", async () => {

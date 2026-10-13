@@ -30,12 +30,12 @@ describe("business setup", () => {
     expect(x!.looseningDelay > m!.looseningDelay && m!.looseningDelay > s!.looseningDelay).toBe(true);
   });
 
-  it("builds the owner's createVault call on the current factory, auto-update off by default", () => {
+  it("builds the owner's createVault call on the current factory: USDC and EURC on, auto-update off by default", () => {
     const deployment = getDeployment(CHAIN_ID);
     const call = createVaultCall(deployment, { owner: other.address, policy: policyTemplate("standard") });
     expect(call.address).toBe(deployment.contracts.vaultFactory);
     const { args } = decodeFunctionData({ abi: vaultFactoryAbi, data: toTransaction(call).data });
-    expect(args?.[3]).toEqual([deployment.tokens.usdc]);
+    expect(args?.[3]).toEqual([deployment.tokens.usdc, deployment.tokens.eurc]);
     expect(args?.[5]).toBe(false);
   });
 

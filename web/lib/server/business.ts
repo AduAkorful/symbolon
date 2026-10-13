@@ -7,7 +7,7 @@ import { requireMember } from "./access";
 import { appendAppDecision } from "./app-decisions";
 import { AuthError } from "./errors";
 import { awaitReceipt } from "./tx-receipt";
-import { describePolicy, isTemplate, type PolicyText } from "./policy-text";
+import { describe as describePolicyOf, describePolicy, isTemplate, type PolicyText } from "./policy-text";
 import type { SessionUser } from "./session";
 import { pauseStateOf, readVaultState, stewardStanding } from "./vault-read";
 
@@ -31,6 +31,29 @@ export async function createBusiness(db: Database, user: Pick<SessionUser, "id">
     .where(and(eq(members.userId, user.id), eq(members.role, "owner"), eq(businesses.chainId, chainId)));
   if (n >= MAX_BUSINESSES) throw new AuthError(409, `You already own ${MAX_BUSINESSES} businesses. That's the limit.`);
   return registerBusiness(db, { name: clean, chainId, ownerUserId: user.id });
+}
+
+/**
+ * What the person should hear before a second business is made (plan 05zj D, SYM-15). A business with no Vault yet is the one to
+ * finish; an identical name on a business they already own is worth a second look. Neither blocks: the person confirms to go on.
+ */
+export async function findBusinessConflict(
+  db: Database,
+  user: Pick<SessionUser, "id">,
+  name: string,
+  chainId: number,
+): Promise<{ kind: "unfinished" | "duplicate_name"; id: string; name: string } | null> {
+  const clean = name.normalize("NFC").trim();
+  const owned = await db
+    .select({ id: businesses.id, name: businesses.name, vault: businesses.vault })
+    .from(members)
+    .innerJoin(businesses, eq(businesses.id, members.businessId))
+    .where(and(eq(members.userId, user.id), eq(members.role, "owner"), eq(businesses.chainId, chainId)))
+    .orderBy(businesses.createdAt);
+  const unfinished = owned.find((b) => !b.vault);
+  if (unfinished) return { kind: "unfinished", id: unfinished.id, name: unfinished.name };
+  const same = owned.find((b) => b.name.normalize("NFC").trim().toLowerCase() === clean.toLowerCase());
+  return same ? { kind: "duplicate_name", id: same.id, name: same.name } : null;
 }
 
 async function ownedBusiness(db: Database, cfg: ChainSettings, user: Pick<SessionUser, "id">, businessId: string) {
@@ -77,6 +100,28 @@ async function stewardFor(db: Database, businessId: string, saved: string | null
   return getAddress(steward);
 }
 
+/**
+ * The Custom policy (plan 05zj D5): the person types the three limits that matter for a first Vault; everything else (screening,
+ * the new-payee wait, the delays, how many paid invoices before auto-pay) starts as Standard's, so no control is quietly dropped.
+ * Amounts are whole token amounts with up to 6 decimals; the order the Vault's own tiers imply is enforced here.
+ */
+export function customPolicy(input: unknown) {
+  const raw = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  const field = (key: string, label: string) => {
+    try {
+      return parseUsdcAmount(raw[key]);
+    } catch {
+      throw new AuthError(400, `${label}: enter an amount more than zero, like 250 or 250.50 (up to 6 decimals).`);
+    }
+  };
+  const perTxCap = field("perTxCap", "Largest single payment");
+  const ownerThreshold = field("ownerThreshold", "Owner signs above");
+  const autoPayLimit = field("autoPayLimit", "Auto-pay limit");
+  if (autoPayLimit > ownerThreshold) throw new AuthError(400, "The auto-pay limit can't be above the amount the owner signs over.");
+  if (ownerThreshold > perTxCap) throw new AuthError(400, "The owner's signing amount can't be above the largest single payment.");
+  return { ...policyTemplate("standard"), perTxCap, ownerThreshold, autoPayLimit };
+}
+
 export async function prepareVault(
   db: Database,
   cfg: ChainSettings,
@@ -84,14 +129,17 @@ export async function prepareVault(
   businessId: string,
   template: unknown,
   provision: ProvisionSteward | null,
+  custom?: unknown,
 ): Promise<{ to: string; data: Hex; chainId: number; summary: PolicyText; steward: string }> {
-  if (!isTemplate(template)) throw new AuthError(400, "Choose Starter, Standard or Strict.");
+  if (template !== "custom" && !isTemplate(template)) throw new AuthError(400, "Choose Starter, Standard, Strict or Custom.");
+  // validated before anything is created (a Steward wallet, for one)
+  const policy = template === "custom" ? customPolicy(custom) : policyTemplate(template as PolicyTemplate);
   const b = await ownedBusiness(db, cfg, user, businessId);
   if (b.vault) throw new AuthError(409, "This business already has a Vault.");
   const owner = ownerWallet(user);
   const steward = await stewardFor(db, b.id, b.stewardWallet, provision, owner);
-  const call = createVaultCall(cfg.deployment, { owner, steward: steward as Address, policy: policyTemplate(template as PolicyTemplate) });
-  return { ...toTransaction(call), chainId: cfg.chainId, summary: describePolicy(template), steward };
+  const call = createVaultCall(cfg.deployment, { owner, steward: steward as Address, policy });
+  return { ...toTransaction(call), chainId: cfg.chainId, summary: template === "custom" ? describePolicyOf("custom", policy) : describePolicy(template as PolicyTemplate), steward };
 }
 
 /**

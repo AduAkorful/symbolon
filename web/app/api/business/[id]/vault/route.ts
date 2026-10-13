@@ -19,7 +19,7 @@ export const POST = routeWith<Ctx>(async (request, ctx) => {
   const s = await requireSession();
   const db = await getDb();
   const cfg = getConfig();
-  if (body.action === "prepare") return NextResponse.json(await prepareVault(db, cfg, s.user, id, body.template, getStewardProvisioner()));
+  if (body.action === "prepare") return NextResponse.json(await prepareVault(db, cfg, s.user, id, body.template, getStewardProvisioner(), body.custom));
   if (body.action === "record") return NextResponse.json(await confirmVault(db, getClient(), cfg, s.user, id, body.txHash));
   if (body.action === "pause" || body.action === "resume") return NextResponse.json(await prepareVaultSwitch(db, cfg, s.user, id, body.action));
   throw new AuthError(400, "Unknown action.");

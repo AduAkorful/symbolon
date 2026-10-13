@@ -12,7 +12,7 @@ import { requirePageSession } from "@/lib/server/http";
 import { describePolicyLines } from "@/lib/server/policy-text";
 import { signerPlanFor } from "@/lib/server/signer-plan";
 import { loadSpaces } from "@/lib/server/space";
-import { feeBalance, formatFeeBalance, lastRun, listRunDecisions, STEWARD_RUN_LEASE_MS } from "@/lib/server/steward-runtime";
+import { feeBalance, formatFeeBalance, lastRun, lastScheduledRun, listRunDecisions, STEWARD_RUN_LEASE_MS } from "@/lib/server/steward-runtime";
 import { readVaultState, stewardStanding } from "@/lib/server/vault-read";
 import { PageTitle } from "@/components/ui/Type";
 
@@ -91,6 +91,7 @@ export default async function BusinessStewardPage() {
   const fee = formatFeeBalance(rawFee);
 
   const run = await lastRun(db, business.id);
+  const scheduled = await lastScheduledRun(db, business.id);
   const lastRunView: RunView | null = run
     ? {
         id: run.id,
@@ -148,6 +149,7 @@ export default async function BusinessStewardPage() {
         fee={fee}
         policyLines={policyLines}
         lastRun={lastRunView}
+        lastScheduledAt={scheduled?.startedAt.toISOString() ?? null}
         recentDecisions={recentDecisions}
         shadow={shadow}
         pendingAnchorCount={pendingAnchorCount}

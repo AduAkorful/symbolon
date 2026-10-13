@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { getAddress } from "viem";
+import { symbolonContracts } from "@symbolon/chain";
 import { Suspense } from "react";
 import { Shell } from "@/components/shell/Shell";
 import { TreasuryView } from "@/components/treasury/TreasuryView";
@@ -73,6 +75,11 @@ async function TreasuryContent({ session, businessId, isOwner }: { session: Awai
 
   const state = await loadTreasury(db, client, config.deployment, businessId, session.user);
   const signer = signerPlanFor(session, config);
+  // Whether the Vault is set to pay in EURC (plan 05zj D6): null when it can't be read, which is never shown as "supported"
+  const vault = state.vault ?? null;
+  const eurcSupported = vault
+    ? await symbolonContracts(client, config.deployment).lens.read.isSupportedToken([getAddress(vault), config.deployment.tokens.eurc]).then((v) => Boolean(v), () => null)
+    : null;
 
   return (
     <TreasuryView
@@ -81,6 +88,7 @@ async function TreasuryContent({ session, businessId, isOwner }: { session: Awai
       signer={signer}
       explorer={config.deployment.explorer}
       isOwner={isOwner}
+      eurcSupported={eurcSupported}
     />
   );
 }

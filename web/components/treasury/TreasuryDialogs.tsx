@@ -18,6 +18,7 @@ import { getConversionWallet } from "@/lib/client/conversion-wallet";
 import { ConversionFlow, TransferNotSubmittedError, quoteOutput, observeSwapReceipt, confirmFundingReceipt, type ConversionRecovery } from "@/lib/client/conversion-flow";
 import { recordQueuedChange } from "@/lib/client/queued-actions";
 import { formatDateTime } from "@/lib/format";
+import { moneyDraft, moneyInput } from "@/lib/money-draft";
 
 // The treasury's dialogs (plan 05zb F3). Each is one `Overlay`: the frame, the title, the padding and the scroll belong to it;
 // what is here is only the content and the buttons.
@@ -123,12 +124,44 @@ export function FundModal({
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [mode, setMode] = useState<{ walletSends: boolean; release: number | null; walletUsdc: string | null } | null>(null);
   const getProviders = useWalletProviders();
+
+  // What this Vault accepts, and the wallet's USDC, read from the chain (plan 05zj D, SYM-13, SYM-19); until it answers the safe warning stands
+  useEffect(() => {
+    let live = true;
+    void fetch(`/api/business/${businessId}/fund`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { ok?: boolean; walletUsdc?: string | null; funding?: { walletSends: boolean; release: number | null } } | null) => {
+        if (live && j?.ok) setMode({ walletSends: j.funding?.walletSends ?? false, release: j.funding?.release ?? null, walletUsdc: j.walletUsdc ?? null });
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [businessId]);
+
+  const typed = amount.trim() === "" ? null : moneyDraft(amount.trim(), 6);
+  const walletRaw = mode?.walletUsdc != null && tokenSymbol === "USDC" ? BigInt(mode.walletUsdc) : null;
+  const amountProblem =
+    typed === null
+      ? null
+      : typed.error !== undefined
+        ? "Enter an amount more than zero, like 100 or 100.50 (up to 6 decimals)."
+        : typed.raw <= 0n
+          ? "The amount has to be more than zero."
+          : walletRaw !== null && typed.raw > walletRaw
+            ? `Your wallet holds only $${moneyInput(walletRaw, 6)} USDC.`
+            : null;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (signer.kind !== "wallet") {
       setErr("Connect a wallet to fund the Vault.");
+      return;
+    }
+    if (amountProblem || typed === null) {
+      setErr(amountProblem ?? "Enter an amount.");
       return;
     }
     setBusy(true);
@@ -153,7 +186,15 @@ export function FundModal({
   }
 
   return (
-    <Overlay title="Add funds to the Vault" description="Sends tokens from your connected wallet to the Vault. Use this button rather than your wallet’s own Send screen: sending USDC that way to the Vault’s address fails on Arc." onClose={onClose}>
+    <Overlay
+      title="Add funds to the Vault"
+      description={
+        mode?.walletSends
+          ? "Sends tokens from your connected wallet to the Vault. This Vault also accepts USDC sent straight from any Arc wallet; this button is the path we’ve checked end to end."
+          : `Sends tokens from your connected wallet to the Vault. Use this button rather than your wallet’s own Send screen: sending USDC that way to this Vault’s address fails on Arc.${mode?.release ? " Upgrade the Vault to release 3 in Settings to accept sends from any wallet." : ""}`
+      }
+      onClose={onClose}
+    >
       <form onSubmit={submit} className="space-y-4">
         {err ? <InlineError>{err}</InlineError> : null}
 
@@ -162,10 +203,12 @@ export function FundModal({
         <Field label="Amount">
           {(a) => <input {...a} type="text" inputMode="decimal" required placeholder="500" value={amount} onChange={(e) => setAmount(e.target.value)} className={controlClass} />}
         </Field>
+        {walletRaw !== null ? <p className="text-xs text-graphite">Your wallet holds ${moneyInput(walletRaw, 6)} USDC.</p> : null}
+        {amountProblem ? <InlineError>{amountProblem}</InlineError> : null}
 
         <Overlay.Footer>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button type="submit" busy={busy}>{busy ? "Sending…" : "Send to Vault"}</Button>
+          <Button type="submit" busy={busy} disabled={amountProblem !== null || typed === null}>{busy ? "Sending…" : "Send to Vault"}</Button>
         </Overlay.Footer>
       </form>
     </Overlay>

@@ -7,7 +7,7 @@ import { ForecastChart, type ForecastEvent, type ForecastDate } from "./Forecast
 import { QueuedChangeList } from "@/components/QueuedChange";
 import type { TreasuryState } from "@/lib/server/treasury";
 import { Address } from "@/components/Address";
-import { Button } from "@/components/ui/button";
+import { Button, LinkButton } from "@/components/ui/button";
 import { Callout } from "@/components/ui/Callout";
 import { DetailList } from "@/components/ui/DetailList";
 import { Money } from "@/components/ui/Money";
@@ -26,6 +26,8 @@ interface TreasuryViewProps {
   signer: SignerPlan;
   explorer?: string;
   isOwner: boolean;
+  /** Whether the Vault is set to pay in EURC; null when that couldn't be read (plan 05zj D6) */
+  eurcSupported?: boolean | null;
 }
 
 // Amounts arrive as exact decimal strings and are printed as they are, never turned into floating point (plan 05zb S7)
@@ -39,6 +41,7 @@ export function TreasuryView({
   signer,
   explorer = "https://explorer.testnet.arc.io",
   isOwner,
+  eurcSupported = null,
 }: TreasuryViewProps) {
   const [state, setState] = useState<TreasuryState>(initialState);
   const [loading, setLoading] = useState(false);
@@ -182,6 +185,18 @@ export function TreasuryView({
           <dd className="mt-1.5 text-sm text-graphite">{state.forecast.runwayStatement}</dd>
         </div>
       </dl>
+
+      {/* A Vault made before EURC was on by default doesn't pay in it (plan 05zj D6) */}
+      {eurcSupported === false ? (
+        <Callout
+          tone="warn"
+          title="This Vault isn't set to pay in EURC"
+          className="mt-8"
+          actions={isOwner ? <LinkButton href="/business/settings" variant="secondary">Open settings</LinkButton> : undefined}
+        >
+          <p>EURC can be held here, but no EURC invoice can be paid until EURC is turned on. Turning a currency on waits your Vault’s loosening delay.</p>
+        </Callout>
+      ) : null}
 
       {/* Shortfalls */}
       {eurcShortfall ? (
