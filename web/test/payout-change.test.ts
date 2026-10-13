@@ -36,6 +36,9 @@ const cfg = {
   deployment: getDeployment(arcTestnet.id),
 };
 
+/** The ledger's own CCTP domain: the only one a payout change is signed for (plan 05zj C, NEW-1) */
+const DOMAIN = cfg.deployment.cctpDomain;
+
 const mockClient = {
   getCode: vi.fn().mockResolvedValue(undefined),
   waitForTransactionReceipt: chainState.waitForTransactionReceipt,
@@ -55,7 +58,7 @@ beforeEach(() => {
     exists: true,
     lastChangeNonce: 100n,
     payout: randAddr(),
-    payoutDomain: 0,
+    payoutDomain: DOMAIN,
     activeAt: 1000n,
   });
   chainState.waitForTransactionReceipt.mockReset();
@@ -155,7 +158,7 @@ describe("Payout Change service", () => {
   it.each(["confirm", "cancel"] as const)("records concurrent %s receipt retries once with one vendor notice", async (action) => {
     const { sealKey, vendorUser, business1, ownerUser1 } = await setupScenario();
     const newPayout = getAddress(randAddr());
-    const message = { seal: sealKey.address, newPayout, payoutDomain: 0, nonce: "123" };
+    const message = { seal: sealKey.address, newPayout, payoutDomain: DOMAIN, nonce: "123" };
     const signature = "0x01" as Hex;
     const [request] = await db.insert(vendorRequests).values({
       businessId: business1.id, seal: sealKey.address.toLowerCase(), kind: "payout_change",
@@ -168,7 +171,7 @@ describe("Payout Change service", () => {
     chainState.waitForTransactionReceipt.mockResolvedValue({
       status: "success", to: business1.vault, blockNumber: 200n, logs: [{ address: business1.vault,
         topics: encodeEventTopics({ abi: symbolonVaultAbi, eventName: action === "confirm" ? "PayoutChangeConfirmed" : "PayoutChangeCancelled", args: { seal: sealKey.address } }),
-        data: action === "confirm" ? encodeAbiParameters([{ type: "address" }, { type: "uint32" }, { type: "uint64" }], [newPayout, 0, 1000n]) : "0x",
+        data: action === "confirm" ? encodeAbiParameters([{ type: "address" }, { type: "uint32" }, { type: "uint64" }], [newPayout, DOMAIN, 1000n]) : "0x",
       }],
     });
     // Both callers complete the outside-transaction checks before either may record.
@@ -178,7 +181,7 @@ describe("Payout Change service", () => {
     chainState.getPayee.mockImplementation(async (_args, opts) => {
       if (++readCount === (action === "confirm" ? 2 : 4)) release();
       await barrier;
-      return { lastChangeNonce: 123n, pendingPayout: newPayout, pendingDomain: 0,
+      return { lastChangeNonce: 123n, pendingPayout: newPayout, pendingDomain: DOMAIN,
         pendingActiveAt: action === "confirm" || opts?.blockNumber ? 1000n : 0n };
     });
     const record = action === "confirm" ? recordConfirmPayoutChange : recordCancelPayoutChange;
@@ -203,7 +206,7 @@ describe("Payout Change service", () => {
 
     const prepared = await prepareVendorPayoutChange(db, mockClient, cfg, vendorUser, {
       newPayout,
-      payoutDomain: 0,
+      payoutDomain: DOMAIN,
     });
 
     expect(prepared.newPayout.toLowerCase()).toBe(newPayout.toLowerCase());
@@ -215,13 +218,28 @@ describe("Payout Change service", () => {
     expect(parsed.primaryType).toBe("PayoutChange");
   });
 
+  it("signs a payout change for the ledger's own domain, and refuses a foreign one (NEW-1)", async () => {
+    const { vendorUser } = await setupScenario();
+    const newPayout = randAddr();
+
+    const defaulted = await prepareVendorPayoutChange(db, mockClient, cfg, vendorUser, { newPayout });
+    expect(defaulted.payoutDomain).toBe(DOMAIN);
+    expect(JSON.parse(defaulted.typedData).message.payoutDomain).toBe(DOMAIN);
+
+    // the old browser code sent 0 (Ethereum's domain): the Steward holds cross-chain payouts, so such a change could never be paid
+    await expect(prepareVendorPayoutChange(db, mockClient, cfg, vendorUser, { newPayout, payoutDomain: 0 })).rejects.toThrow(/Arc only/);
+    await expect(
+      submitVendorPayoutChange(db, mockClient, cfg, vendorUser, { newPayout, payoutDomain: 0, nonce: defaulted.nonce, signature: "0x" + "11".repeat(65) }),
+    ).rejects.toThrow(/Arc only/);
+  });
+
   it("submits vendor payout change and fans out across multiple businesses with shared signature", async () => {
     const { sealKey, vendorUser, business1, business2 } = await setupScenario();
     const newPayout = randAddr();
 
     const prepared = await prepareVendorPayoutChange(db, mockClient, cfg, vendorUser, {
       newPayout,
-      payoutDomain: 0,
+      payoutDomain: DOMAIN,
     });
 
     // Vendor signs the PayoutChange typed data
@@ -231,14 +249,14 @@ describe("Payout Change service", () => {
       typedData(domain, "PayoutChange", {
         seal: getAddress(sealKey.address),
         newPayout: getAddress(newPayout),
-        payoutDomain: 0,
+        payoutDomain: DOMAIN,
         nonce: BigInt(prepared.nonce),
       }),
     );
 
     const subRes = await submitVendorPayoutChange(db, mockClient, cfg, vendorUser, {
       newPayout,
-      payoutDomain: 0,
+      payoutDomain: DOMAIN,
       nonce: prepared.nonce,
       signature,
     });
@@ -263,7 +281,7 @@ describe("Payout Change service", () => {
 
     const prepared = await prepareVendorPayoutChange(db, mockClient, cfg, vendorUser, {
       newPayout,
-      payoutDomain: 0,
+      payoutDomain: DOMAIN,
     });
 
     const domain = sealDomain(cfg.chainId, cfg.deployment.contracts.invoiceLedger);
@@ -272,14 +290,14 @@ describe("Payout Change service", () => {
       typedData(domain, "PayoutChange", {
         seal: getAddress(sealKey.address),
         newPayout: getAddress(newPayout),
-        payoutDomain: 0,
+        payoutDomain: DOMAIN,
         nonce: BigInt(prepared.nonce),
       }),
     );
 
     const subRes = await submitVendorPayoutChange(db, mockClient, cfg, vendorUser, {
       newPayout,
-      payoutDomain: 0,
+      payoutDomain: DOMAIN,
       nonce: prepared.nonce,
       signature,
     });
@@ -298,7 +316,7 @@ describe("Payout Change service", () => {
 
     const prepared = await prepareVendorPayoutChange(db, mockClient, cfg, vendorUser, {
       newPayout,
-      payoutDomain: 0,
+      payoutDomain: DOMAIN,
     });
 
     const domain = sealDomain(cfg.chainId, cfg.deployment.contracts.invoiceLedger);
@@ -307,14 +325,14 @@ describe("Payout Change service", () => {
       typedData(domain, "PayoutChange", {
         seal: getAddress(sealKey.address),
         newPayout: getAddress(newPayout),
-        payoutDomain: 0,
+        payoutDomain: DOMAIN,
         nonce: BigInt(prepared.nonce),
       }),
     );
 
     const subRes = await submitVendorPayoutChange(db, mockClient, cfg, vendorUser, {
       newPayout,
-      payoutDomain: 0,
+      payoutDomain: DOMAIN,
       nonce: prepared.nonce,
       signature,
     });
@@ -343,15 +361,15 @@ describe("Payout Change service", () => {
               { type: "uint32", name: "payoutDomain" },
               { type: "uint64", name: "activeAt" },
             ],
-            [getAddress(newPayout), 0, 1000n],
+            [getAddress(newPayout), DOMAIN, 1000n],
           ),
         },
       ],
     });
 
-    const input = encodeFunctionData({ abi: symbolonVaultAbi, functionName: "confirmPayoutChange", args: [{ seal: getAddress(sealKey.address), newPayout: getAddress(newPayout), payoutDomain: 0, nonce: BigInt(prepared.nonce) }, signature] });
+    const input = encodeFunctionData({ abi: symbolonVaultAbi, functionName: "confirmPayoutChange", args: [{ seal: getAddress(sealKey.address), newPayout: getAddress(newPayout), payoutDomain: DOMAIN, nonce: BigInt(prepared.nonce) }, signature] });
     chainState.getTransaction.mockResolvedValue({ input });
-    chainState.getPayee.mockResolvedValue({ exists: true, lastChangeNonce: BigInt(prepared.nonce), pendingPayout: getAddress(newPayout), pendingDomain: 0, pendingActiveAt: 1000n });
+    chainState.getPayee.mockResolvedValue({ exists: true, lastChangeNonce: BigInt(prepared.nonce), pendingPayout: getAddress(newPayout), pendingDomain: DOMAIN, pendingActiveAt: 1000n });
     const receipt = await chainState.waitForTransactionReceipt();
     chainState.waitForTransactionReceipt.mockResolvedValueOnce({ ...receipt, to: randAddr() });
     await expect(recordConfirmPayoutChange(db, mockClient, ownerUser1, business1.id, { requestId, txHash })).rejects.toThrow();
@@ -378,7 +396,7 @@ describe("Payout Change service", () => {
     chainState.waitForTransactionReceipt.mockResolvedValue({ ...cancelReceipt, to: randAddr() });
     await expect(recordCancelPayoutChange(db, mockClient, ownerUser1, business1.id, { requestId, txHash: cancelHash })).rejects.toThrow(/Vault/);
     chainState.waitForTransactionReceipt.mockResolvedValue(cancelReceipt);
-    const prior = { lastChangeNonce: BigInt(prepared.nonce), pendingPayout: getAddress(newPayout), pendingDomain: 0, pendingActiveAt: 1000n };
+    const prior = { lastChangeNonce: BigInt(prepared.nonce), pendingPayout: getAddress(newPayout), pendingDomain: DOMAIN, pendingActiveAt: 1000n };
     chainState.getPayee.mockResolvedValueOnce(prior).mockResolvedValueOnce({ lastChangeNonce: BigInt(prepared.nonce) + 1n, pendingActiveAt: 0n });
     await expect(recordCancelPayoutChange(db, mockClient, ownerUser1, business1.id, { requestId, txHash: cancelHash })).rejects.toThrow(/match/);
     chainState.getPayee.mockResolvedValueOnce(prior).mockResolvedValueOnce({ lastChangeNonce: BigInt(prepared.nonce), pendingActiveAt: 0n });
@@ -393,7 +411,7 @@ describe("Payout Change service", () => {
 
     const prepared = await prepareVendorPayoutChange(db, mockClient, cfg, vendorUser, {
       newPayout,
-      payoutDomain: 0,
+      payoutDomain: DOMAIN,
     });
 
     const domain = sealDomain(cfg.chainId, cfg.deployment.contracts.invoiceLedger);
@@ -402,14 +420,14 @@ describe("Payout Change service", () => {
       typedData(domain, "PayoutChange", {
         seal: getAddress(sealKey.address),
         newPayout: getAddress(newPayout),
-        payoutDomain: 0,
+        payoutDomain: DOMAIN,
         nonce: BigInt(prepared.nonce),
       }),
     );
 
     const subRes = await submitVendorPayoutChange(db, mockClient, cfg, vendorUser, {
       newPayout,
-      payoutDomain: 0,
+      payoutDomain: DOMAIN,
       nonce: prepared.nonce,
       signature,
     });

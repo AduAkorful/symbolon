@@ -9,6 +9,7 @@ import { appendAppDecision } from "./app-decisions";
 import { AuthError } from "./errors";
 import { awaitReceipt, TX_PENDING } from "./tx-receipt";
 import type { SessionUser } from "./session";
+import { isUnlimitedCap, UNLIMITED_CAP } from "../format";
 
 const HASH = /^0x[0-9a-fA-F]{64}$/;
 const MAX_UINT256 = (1n << 256n) - 1n;
@@ -45,6 +46,38 @@ export async function payoutOptions(db: Database, client: PublicClient, deployme
   };
 }
 
+/**
+ * The monthly cap a payee gets when none is typed (plan 05zj C, SYM-36): the approval threshold, but never above the operating
+ * budget's own cap, which would otherwise be a limit the payee's cap could never reach.
+ */
+export function defaultMonthlyCap(ownerThreshold: bigint, operatingBudgetCap: bigint): { cap: bigint; source: "approval_threshold" | "budget" } {
+  if (!isUnlimitedCap(operatingBudgetCap) && operatingBudgetCap < ownerThreshold) return { cap: operatingBudgetCap, source: "budget" };
+  return { cap: ownerThreshold, source: "approval_threshold" };
+}
+
+/**
+ * What the owner should see before signing "add payee": the wait the Vault puts on a new payee, and the cap used when none is
+ * typed (plan 05zj C, SYM-10 and SYM-36). Both are the Vault's own values, read now.
+ */
+export async function payeeSetup(db: Database, client: PublicClient, deployment: Deployment, user: Pick<SessionUser, "id">, businessId: string) {
+  await requireMember(db, user.id, businessId, "owner");
+  const [business] = await db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1);
+  if (!business?.vault) throw new AuthError(409, "This business doesn't have a Vault yet.");
+  const vault = getAddress(business.vault);
+  const c = symbolonContracts(client, deployment);
+  const budgetId = await client.readContract({ address: vault, abi: symbolonVaultAbi, functionName: "OPERATING_BUDGET" }).catch(() => { throw new AuthError(502, "Can't read this Vault's budget right now. Try again shortly."); });
+  const [state, budget] = await Promise.all([
+    c.lens.read.getVaultState([vault]),
+    c.lens.read.getBudget([vault, budgetId]),
+  ]).catch(() => { throw new AuthError(502, "Can't read this Vault's policy right now. Try again shortly."); });
+  const resolved = defaultMonthlyCap(state.policy.ownerThreshold, budget.cap);
+  return {
+    newPayeeDelay: state.policy.newPayeeDelay.toString(),
+    defaultCap: resolved.cap.toString(),
+    defaultCapSource: resolved.source,
+  };
+}
+
 export async function preparePayee(db: Database, client: PublicClient, deployment: Deployment, user: Pick<SessionUser, "id">, businessId: string, sealValue: unknown, choice: { payout: unknown; domain: unknown; requirePo: unknown; requireDelivery: unknown; monthlyCap?: unknown }) {
   await requireMember(db, user.id, businessId, "owner");
   let seal: Address;
@@ -66,11 +99,14 @@ export async function preparePayee(db: Database, client: PublicClient, deploymen
     c.lens.read.getVaultState([vault]),
     client.readContract({ address: vault, abi: symbolonVaultAbi, functionName: "OPERATING_BUDGET" }),
   ]);
+  // an unreadable budget is not "no cap": the default then stays the approval threshold the Vault itself would apply
+  const operatingBudget = await (async () => c.lens.read.getBudget([vault, budget]))().catch(() => undefined);
+  const fallbackCap = defaultMonthlyCap(state.policy.ownerThreshold, operatingBudget?.cap ?? UNLIMITED_CAP).cap;
   const already = await c.lens.read.getPayee([vault, seal]).catch(() => { throw new AuthError(502, "Can't confirm this Vault's payees right now. Try again shortly."); });
   if (already.exists) throw new AuthError(409, "This vendor is already a payee of the Vault.");
-  let monthlyCap = defaults.monthlyCap ? BigInt(defaults.monthlyCap) : state.policy.ownerThreshold;
+  let monthlyCap = defaults.monthlyCap ? BigInt(defaults.monthlyCap) : fallbackCap;
   if (choice.monthlyCap === "") {
-    monthlyCap = state.policy.ownerThreshold;
+    monthlyCap = fallbackCap;
   } else if (choice.monthlyCap !== undefined && choice.monthlyCap !== null) {
     if (typeof choice.monthlyCap !== "string" || !/^\d{1,78}$/.test(choice.monthlyCap) || BigInt(choice.monthlyCap) <= 0n) throw new AuthError(400, "Enter a positive monthly cap in raw token units.");
     monthlyCap = BigInt(choice.monthlyCap);

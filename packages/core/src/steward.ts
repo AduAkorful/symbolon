@@ -151,8 +151,13 @@ async function storeDecision(db: Database, businessId: string, r: StewardResult)
       .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, subject)))
       .orderBy(desc(decisions.createdAt))
       .limit(1);
-    const lastRecord = last?.record as { kind?: string; outcome?: string; rule?: string } | undefined;
-    if (!r.txHash && lastRecord && lastRecord.kind === r.record.kind && lastRecord.outcome === r.record.outcome && lastRecord.rule === r.record.rule) return;
+    const lastRecord = last?.record as { kind?: string; outcome?: string; rule?: string; inputs?: { blockers?: unknown } } | undefined;
+    // a scheduled invoice's blockers change over time (a screening lapses, the Vault is paused); that is a new fact to keep
+    const blockersOf = (inputs: { blockers?: unknown } | undefined) => JSON.stringify(inputs?.blockers ?? null);
+    if (
+      !r.txHash && lastRecord && lastRecord.kind === r.record.kind && lastRecord.outcome === r.record.outcome && lastRecord.rule === r.record.rule &&
+      blockersOf(lastRecord.inputs) === blockersOf(r.record.inputs as { blockers?: unknown })
+    ) return;
   }
   await db
     .insert(decisions)

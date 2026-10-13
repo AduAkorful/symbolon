@@ -16,7 +16,7 @@ import {
   screenPayee,
 } from "@/lib/server/compliance";
 import { AuthError } from "@/lib/server/errors";
-import type { ScreeningProvider, ScreeningResult } from "@symbolon/core";
+import { CircleScreeningError, type ScreeningProvider, type ScreeningResult } from "@symbolon/core";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => {
@@ -215,8 +215,30 @@ describe("Compliance screening service (05s Part A)", () => {
       screenPayee(db, cfgNoCircle, owner, business.id, seal, { client: clientFor({}) as any, deployment }),
     ).rejects.toMatchObject({
       status: 502,
-      message: expect.stringContaining("Circle's Compliance Engine isn't enabled"),
+      message: expect.stringContaining("no Circle key"),
     });
+  });
+
+  it("screenPayee: says what Circle said, and records nothing (plan 05zj C, D1)", async () => {
+    const { owner, business, seal } = await fixture();
+    chainState.getPayee.mockResolvedValue({ exists: true, payout: address(21), pendingActiveAt: 0n });
+    const cfg = { chainId: arcTestnet.id, testnet: true, deployment, appOrigin: "http://localhost:3000", production: false };
+    const before = (await db.select().from(screenings)).length;
+    const answers: [number, RegExp][] = [
+      [403, /Compliance Engine isn't enabled for this account/],
+      [404, /Compliance Engine isn't enabled for this account/],
+      [401, /rejected this app's API key/],
+      [429, /busy/],
+      [500, /answered 500/],
+    ];
+    for (const [status, text] of answers) {
+      const provider: ScreeningProvider = { screen: async () => { throw new CircleScreeningError(status); } };
+      await expect(screenPayee(db, cfg, owner, business.id, seal, { provider, client: clientFor({}), deployment })).rejects.toMatchObject({
+        status: 502,
+        message: expect.stringMatching(text),
+      });
+    }
+    expect(await db.select().from(screenings)).toHaveLength(before);
   });
 
   it("prepareScreeningWrite: requires owner and returns valid setScreening call", async () => {

@@ -226,7 +226,7 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
                   </p>
                 </div>
 
-                {offerViews?.[item.fingerprint] ? <BusinessOffers businessId={businessId} fingerprint={item.fingerprint} view={offerViews[item.fingerprint]!} symbol={item.token} /> : null}
+                {offerViews?.[item.fingerprint] ? <BusinessOffers businessId={businessId} fingerprint={item.fingerprint} view={offerViews[item.fingerprint]!} symbol={item.token} pay={{ signer: signerPlan, explorer: explorerUrl }} /> : null}
                 {item.evidence.length > 0 ? (
                   <div className="mt-4 border-t border-rule-soft pt-3">
                     <Eyebrow>Checks</Eyebrow>

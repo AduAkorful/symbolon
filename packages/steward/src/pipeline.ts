@@ -9,7 +9,7 @@ import {
   type DiscountProof,
   type SignedApproval,
 } from "@symbolon/chain";
-import { decodeSealedInvoice, verifySealedInvoice, type Invoice, type SignatureClient } from "@symbolon/seal";
+import { decodeSealedInvoice, MAX_DISCOUNT_BPS, verifySealedInvoice, type Invoice, type SignatureClient } from "@symbolon/seal";
 
 import { findDuplicates, matchInvoice, type KnownInvoice } from "./match.js";
 import type { StewardModel } from "./model.js";
@@ -60,6 +60,12 @@ export interface InvoiceContext {
   blockedSeal?: boolean;
   /** The address screened most recently by compliance for this Seal, if any (plan 05s K5) */
   latestScreenedAddress?: Address | undefined;
+  /**
+   * A person asked to pay now (plan 05zj C, D2). It skips only the Steward's choice of *when*: every check before timing and every
+   * Vault rule after it still applies. `offer` names one of the vendor's signed offers to take; without it the best signed discount
+   * still valid is taken, else the full credit is paid.
+   */
+  payNow?: { offer?: { discountBps: number; validUntil: bigint } };
   signatureClient?: SignatureClient;
 }
 
@@ -204,11 +210,52 @@ export async function processInvoice(ctx: InvoiceContext, deps: Deps): Promise<S
   });
   const options = timing.assessed.map((a) => ({ ...a.option, paid: a.paid, annualizedBps: a.annualizedBps, clears: a.clears, reasons: a.reasons }));
 
-  if (timing.action === "pay_on_due_date") {
+  // What this payment would use: the discount the timing chose, or (a person paying now) the offer they named, the best signed
+  // discount still valid, or none. The Vault checks every discount itself.
+  let chosen: DiscountOption | undefined;
+  let paid = credit;
+  if (ctx.payNow) {
+    const live = timing.assessed.filter((a) => facts.now <= a.option.payBy && a.option.discountBps <= MAX_DISCOUNT_BPS);
+    if (ctx.payNow.offer) {
+      const wanted = ctx.payNow.offer;
+      const match = live.find((a) => a.option.kind === "offer" && a.option.discountBps === wanted.discountBps && a.option.payBy === wanted.validUntil);
+      if (!match) {
+        return finish("held", {
+          kind: "hold",
+          subject,
+          inputs: { offer: { discountBps: wanted.discountBps, validUntil: wanted.validUntil } },
+          options,
+          rule: "that offer has expired or isn't one the vendor signed for this invoice",
+          outcome: "held",
+        });
+      }
+      chosen = match.option;
+      paid = match.paid;
+    } else {
+      const best = [...live].sort((a, b) => (a.saving === b.saving ? 0 : a.saving > b.saving ? -1 : 1))[0];
+      if (best && best.saving > 0n) {
+        chosen = best.option;
+        paid = best.paid;
+      }
+    }
+  } else if (timing.action === "pay_now_discounted") {
+    chosen = timing.option;
+    paid = timing.paid;
+  }
+
+  // 7. the Vault's rules, mirrored. Checked for every invoice, including one that isn't due yet, so each decision records what
+  // stands in its way today and an owner never has to wait for the due date to find out (plan 05zj C, SYM-05/06).
+  const policy = checkPayment(facts, { invoice: inv, credit, paid, maxFee: 0n, approvalHeld: ctx.approvalHeld });
+
+  if (timing.action === "pay_on_due_date" && !ctx.payNow) {
+    const blockers: { rule: string; detail: string }[] = [...policy.failures];
+    if (facts.localDomain !== undefined && inv.payoutDomain !== facts.localDomain) {
+      blockers.push({ rule: "CrossChainPayout", detail: `invoice pays on domain ${inv.payoutDomain}; this chain is ${facts.localDomain}` });
+    }
     return finish("scheduled", {
       kind: "schedule",
       subject,
-      inputs: { credit, dueDate: inv.dueDate, reserveYieldBps: ctx.reserveYieldBps },
+      inputs: { credit, dueDate: inv.dueDate, reserveYieldBps: ctx.reserveYieldBps, blockers },
       options,
       rule: "pay on the due date unless a signed discount beats the reserve yield plus the owner's spread",
       outcome: `scheduled for ${iso(timing.payAt)}`,
@@ -216,20 +263,16 @@ export async function processInvoice(ctx: InvoiceContext, deps: Deps): Promise<S
   }
 
   let discount: DiscountProof = noDiscount();
-  let paid = credit;
-  if (timing.action === "pay_now_discounted") {
-    paid = timing.paid;
-    const o = timing.option;
-    if (o.kind === "tier") discount = tierDiscount(o.tierIndex ?? 0);
+  const picked = chosen;
+  if (picked) {
+    if (picked.kind === "tier") discount = tierDiscount(picked.tierIndex ?? 0);
     else {
-      const offer = ctx.offers.find((x) => x.discountBps === o.discountBps && x.validUntil === o.payBy);
+      const offer = ctx.offers.find((x) => x.discountBps === picked.discountBps && x.validUntil === picked.payBy);
       if (!offer) throw new Error("chosen offer not found");
       discount = offerDiscount(offer.discountBps, offer.validUntil, offer.signature);
     }
   }
 
-  // 7. the Vault's rules, mirrored
-  const policy = checkPayment(facts, { invoice: inv, credit, paid, maxFee: 0n, approvalHeld: ctx.approvalHeld });
   const inputs = { credit, paid, policy, timing: timing.action };
   const onlyNeedsApproval = policy.failures.length > 0 && policy.failures.every((f) => f.rule === "ApprovalRequired");
   if (!policy.ok && !onlyNeedsApproval) {
@@ -264,7 +307,12 @@ export async function processInvoice(ctx: InvoiceContext, deps: Deps): Promise<S
     subject,
     inputs,
     options,
-    rule: timing.action === "pay_now_discounted" ? "signed discount clears the hurdle, buffer and cap" : "invoice is due",
+    rule:
+      ctx.payNow
+        ? "a person chose to pay now; every Vault rule still applies"
+        : timing.action === "pay_now_discounted"
+          ? "signed discount clears the hurdle, buffer and cap"
+          : "invoice is due",
     outcome: business.mode === "auto" ? "paying" : "proposed",
   };
   const draft = await finish(business.mode === "auto" ? "paid" : "proposed", recordBody);

@@ -7,6 +7,7 @@ import { createSeries, releaseDue } from "@symbolon/core";
 import { recurringSeries, seriesInvoices, type Database } from "@symbolon/db";
 import {
   completeTotals,
+  decodeSealedInvoice,
   sealDomain,
   seriesDrafts,
   toInvoice,
@@ -31,6 +32,15 @@ export interface PreparedPeriod {
   typedData: string;
 }
 
+/** The payout domain a stored envelope was signed with, or undefined when it can't be read (then it is not counted as wrong) */
+function payoutDomainOf(envelope: string): number | undefined {
+  try {
+    return decodeSealedInvoice(envelope).document.payout.domain;
+  } catch {
+    return undefined;
+  }
+}
+
 export interface SeriesDisplay {
   id: string;
   seal: string;
@@ -41,6 +51,11 @@ export interface SeriesDisplay {
   totalPeriods: number;
   releasedPeriods: number;
   nextReleaseAt: string | null;
+  /**
+   * Periods not yet released whose signed payout is on a chain other than the ledger's own. Series made before 2026-10-13 were
+   * sealed with domain 0 (plan 05zj C, SYM-07); a signature can't be repaired, so the vendor ends such a series and makes it again.
+   */
+  wrongDomainPeriods: number;
 }
 
 /**
@@ -111,7 +126,8 @@ export async function prepareSeries(
     },
     tokens: { USDC: cfg.deployment.tokens.usdc, EURC: cfg.deployment.tokens.eurc },
     decimals: 6, // Arc USDC & EURC both have 6 decimals
-    payoutDomain: 0,
+    // the ledger's own CCTP domain, as single invoices use (invoice-send.ts); 0 sealed every series invoice for Ethereum (SYM-07)
+    payoutDomain: cfg.deployment.cctpDomain,
   };
 
   const initialDoc = buildDocument(templateDraft, ctx);
@@ -234,6 +250,7 @@ export async function submitSeries(
 export async function listSeries(
   db: Database,
   user: Pick<SessionUser, "id">,
+  localDomain?: number,
 ): Promise<SeriesDisplay[]> {
   const seal = await requireMySeal(db, user.id);
 
@@ -251,6 +268,7 @@ export async function listSeries(
         period: seriesInvoices.period,
         releaseAt: seriesInvoices.releaseAt,
         releasedAt: seriesInvoices.releasedAt,
+        envelope: seriesInvoices.envelope,
       })
       .from(seriesInvoices)
       .where(eq(seriesInvoices.seriesId, s.id));
@@ -271,6 +289,7 @@ export async function listSeries(
       totalPeriods,
       releasedPeriods,
       nextReleaseAt: unreleased[0] ? unreleased[0].releaseAt.toISOString() : null,
+      wrongDomainPeriods: localDomain === undefined ? 0 : unreleased.filter((i) => payoutDomainOf(i.envelope) !== localDomain).length,
     });
   }
 

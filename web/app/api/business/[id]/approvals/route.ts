@@ -62,7 +62,7 @@ export const POST = routeWith<Ctx>(async (request, ctx) => {
   }
 
   if (action === "prepare-pay") {
-    const res = await preparePayNow(db, client, config, session.user, businessId, body.fingerprint);
+    const res = await preparePayNow(db, client, config, session.user, businessId, body.fingerprint, body.offer);
     return NextResponse.json(res);
   }
 

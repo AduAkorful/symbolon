@@ -27,6 +27,7 @@ import {
 } from "@symbolon/db";
 import {
   decodeSealedInvoice,
+  MAX_DISCOUNT_BPS,
   sealDomain,
   typedData,
   typedDataJson,
@@ -42,6 +43,7 @@ import {
   type StewardResult,
 } from "@symbolon/steward";
 
+import { describeRule } from "@/lib/blockers";
 import { UNSAFE_TEXT } from "@/lib/text-safety";
 import { requireMember, type Role } from "./access";
 import { appendAppDecision } from "./app-decisions";
@@ -604,12 +606,23 @@ export async function preparePayNow(
   user: Pick<SessionUser, "id">,
   businessId: string,
   fingerprintValue: unknown,
+  offerValue?: unknown,
 ) {
   await requireMember(db, user.id, businessId, ...ACTION_ROLES);
   if (typeof fingerprintValue !== "string" || !HASH_RE.test(fingerprintValue)) {
     throw new AuthError(400, "Malformed invoice fingerprint.");
   }
   const fingerprint = fingerprintValue.toLowerCase() as Hex;
+
+  // "Accept offer" names one of the vendor's signed offers; the pipeline checks it is theirs and still valid (plan 05zj C, D2)
+  let offer: { discountBps: number; validUntil: bigint } | undefined;
+  if (offerValue !== undefined && offerValue !== null) {
+    const o = offerValue as { discountBps?: unknown; validUntil?: unknown };
+    if (!Number.isInteger(o.discountBps) || (o.discountBps as number) <= 0 || (o.discountBps as number) > MAX_DISCOUNT_BPS || !Number.isInteger(o.validUntil) || (o.validUntil as number) <= 0) {
+      throw new AuthError(400, "That offer isn't valid.");
+    }
+    offer = { discountBps: o.discountBps as number, validUntil: BigInt(o.validUntil as number) };
+  }
 
   const [biz] = await db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1);
   if (!biz?.vault) throw new AuthError(409, "This business doesn't have a Vault.");
@@ -671,6 +684,8 @@ export async function preparePayNow(
     reserveYieldBps: env.reserveYieldBps,
     signatureClient: client,
     approvalHeld: callerLevel,
+    // the person chose to pay now: only the Steward's choice of when is skipped, every rule below still applies (plan 05zj C, D2)
+    payNow: offer ? { offer } : {},
   };
 
   const processed = await processInvoice(ctx, {
@@ -679,9 +694,15 @@ export async function preparePayNow(
 
   if (processed.outcome !== "proposed" || !processed.call) {
     await storePayNowDecision(db, businessId, fingerprint, processed);
+    const failures = ((processed.record.inputs as { policy?: { failures?: { rule: string; detail: string }[] } }).policy?.failures ?? []);
+    const blockers = failures.map((f) => describeRule(f, { seal: inv.seal, now: facts.now, ...(facts.payee ? { activeAt: facts.payee.activeAt } : {}) }));
+    const named = blockers.filter((b) => b.rule !== "ApprovalRequired");
     return {
       ok: false,
-      reason: processed.record.rule || `Payment not payable: outcome is ${processed.outcome}`,
+      reason: named.length > 0
+        ? `Can't pay this yet: ${named.map((b) => b.title.charAt(0).toLowerCase() + b.title.slice(1)).join("; ")}.`
+        : processed.record.rule || `Payment not payable: outcome is ${processed.outcome}`,
+      blockers,
     };
   }
 
@@ -715,6 +736,7 @@ export async function preparePayNow(
       credit: formatAmount(creditRaw, decimals),
       discountSigned: paidRaw < creditRaw,
       discountRaw: (creditRaw - paidRaw).toString(),
+      symbol: doc.currency.symbol,
       payoutAddress: inv.payoutAddress,
       fee: "0 USDC",
       ruleNeededHuman: processed.record.rule,

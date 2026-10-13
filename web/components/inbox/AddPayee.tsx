@@ -11,11 +11,13 @@ import { Overlay } from "@/components/Overlay";
 import { Button } from "@/components/ui/button";
 import { controlClass, Field } from "@/components/ui/Field";
 import { InlineError, InlineLoading } from "@/components/ui/States";
-import { checksum } from "@/lib/format";
+import { Callout } from "@/components/ui/Callout";
+import { checksum, duration, formatDateTime, showMoney } from "@/lib/format";
 import { refreshAfterChain } from "@/lib/client/refresh";
 
 type Option = { address: string; domain: number; source: string };
-type ChoiceResult = { options: Option[]; defaults: { monthlyCap: string | null; requirePo: boolean; requireDelivery: boolean } };
+type Setup = { newPayeeDelay: string; defaultCap: string; defaultCapSource: "approval_threshold" | "budget" };
+type ChoiceResult = { options: Option[]; defaults: { monthlyCap: string | null; requirePo: boolean; requireDelivery: boolean }; setup: Setup };
 
 /** The cap is typed in dollars and sent in the Vault's own units; blank stays blank */
 function capRaw(typed: string): string {
@@ -26,6 +28,32 @@ function capRaw(typed: string): string {
   return draft.raw.toString();
 }
 
+/** What an empty cap field turns into, in the Vault's own terms (plan 05zj C, SYM-36) */
+function capHint(setup: Setup | null): string {
+  if (!setup) return "Leave it empty to use the default cap.";
+  const amount = showMoney(moneyInput(setup.defaultCap, 6), "USDC");
+  return setup.defaultCapSource === "budget"
+    ? `Left empty, this vendor's cap is ${amount}, the operating budget's own cap.`
+    : `Left empty, this vendor's cap is ${amount}, your approval threshold.`;
+}
+
+/**
+ * The Vault's wait on a new payee, said before anyone signs (plan 05zj C, SYM-10). It is a Vault rule so that a stolen session
+ * can't add a payee and pay it in the same minute; shortening it is a delayed change, so it can't be skipped from here.
+ */
+function WaitNotice({ delaySeconds }: { delaySeconds: bigint }) {
+  if (delaySeconds === 0n) {
+    return <Callout tone="neutral">This Vault has no waiting period for new payees. This vendor can be paid as soon as the transaction is confirmed.</Callout>;
+  }
+  const from = new Date(Date.now() + Number(delaySeconds) * 1000);
+  return (
+    <Callout tone="info" title={`A new payee waits ${duration(delaySeconds)} before it can be paid`}>
+      After you sign, this vendor can be paid from about {formatDateTime(from)}. Their invoices wait until then. The waiting period is part
+      of this Vault&apos;s policy; shortening it is itself a change that waits.
+    </Callout>
+  );
+}
+
 export function AddPayee({ businessId, seal, signer, explorer }: { businessId: string; seal: string; signer: SignerPlan; explorer: string }) {
   const discover = useWalletProviders();
   const [options, setOptions] = useState<Option[]>([]);
@@ -33,6 +61,7 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
   const [requirePo, setRequirePo] = useState(false);
   const [requireDelivery, setRequireDelivery] = useState(false);
   const [cap, setCap] = useState("");
+  const [setup, setSetup] = useState<Setup | null>(null);
   const tx = useSentTransaction();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -42,7 +71,7 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
   const path = `/api/business/${businessId}/payee`;
   async function loadOptions() {
     setBusy(true); setError("");
-    try { const result = await postJson<ChoiceResult>(path, { action: "options", seal }); setOptions(result.options); setSelected(result.options[0] ? `${result.options[0].address}:${result.options[0].domain}` : ""); setCap(result.defaults.monthlyCap ? moneyInput(result.defaults.monthlyCap, 6) : ""); setRequirePo(result.defaults.requirePo); setRequireDelivery(result.defaults.requireDelivery); }
+    try { const result = await postJson<ChoiceResult>(path, { action: "options", seal }); setOptions(result.options); setSelected(result.options[0] ? `${result.options[0].address}:${result.options[0].domain}` : ""); setSetup(result.setup); setCap(result.defaults.monthlyCap ? moneyInput(result.defaults.monthlyCap, 6) : ""); setRequirePo(result.defaults.requirePo); setRequireDelivery(result.defaults.requireDelivery); }
     catch (e) { setError(e instanceof Error ? e.message : "Couldn't load payout choices."); }
     finally { setBusy(false); }
   }
@@ -82,13 +111,14 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
                   </select>
                 )}
               </Field>
-              <Field label="Monthly cap, in dollars" hint="Leave it empty to use your current approval threshold.">
-                {(a) => <input {...a} inputMode="decimal" value={cap} onChange={(e) => setCap(e.target.value)} placeholder="5000.00" className={controlClass} />}
+              <Field label="Monthly cap, in dollars" hint={capHint(setup)}>
+                {(a) => <input {...a} inputMode="decimal" value={cap} onChange={(e) => setCap(e.target.value)} placeholder={setup ? moneyInput(setup.defaultCap, 6) : "5000.00"} className={controlClass} />}
               </Field>
               <div className="space-y-1">
                 <label className="flex min-h-9 items-center gap-2"><input type="checkbox" checked={requirePo} onChange={(e) => setRequirePo(e.target.checked)} className="h-4 w-4 accent-[var(--seal)]" />Require a purchase order</label>
                 <label className="flex min-h-9 items-center gap-2"><input type="checkbox" checked={requireDelivery} onChange={(e) => setRequireDelivery(e.target.checked)} className="h-4 w-4 accent-[var(--seal)]" />Require delivery confirmation</label>
               </div>
+              {setup ? <WaitNotice delaySeconds={BigInt(setup.newPayeeDelay)} /> : null}
               <SentTransactionNotice tx={tx} explorer={explorer} />
               <Overlay.Footer>
                 {tx.locked ? null : <Button variant="secondary" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>}

@@ -47,7 +47,6 @@ export function ChangePayoutAddressSection({ currentPayout, sealAddress, signer 
         body: JSON.stringify({
           action: "prepare",
           newPayout: newPayout.trim(),
-          payoutDomain: 0,
         }),
       });
       const data = await res.json();

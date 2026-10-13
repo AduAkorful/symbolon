@@ -33,6 +33,7 @@ export function HomeQueues({ needsYou, today, ahead }: Props) {
     needsYou.awaitingApproval.count +
     needsYou.stewardHeld.count +
     needsYou.humanHeld.count +
+    needsYou.waitingOnYou.count +
     needsYou.unsignedBillsCount +
     needsYou.pendingVerificationsCount +
     needsYou.problems.length;
@@ -103,6 +104,28 @@ export function HomeQueues({ needsYou, today, ahead }: Props) {
                 ))}
               </div>
             ) : null}
+
+            {needsYou.waitingOnYou.groups.map((group) => (
+              <div key={group.kind} className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <Eyebrow as="span" className="text-seal">Waiting on you: {group.title.toLowerCase()} ({group.invoices.length})</Eyebrow>
+                  <Link href={group.href} className={`text-graphite ${more}`}>{group.action} →</Link>
+                </div>
+                {group.invoices.slice(0, 3).map((item) => (
+                  <Link
+                    key={item.fingerprint}
+                    href={`/business/inbox/${item.fingerprint}`}
+                    className="block rounded-doc border border-rule bg-paper-raised px-5 py-4 transition-colors hover:border-ink"
+                  >
+                    <div className="flex items-baseline justify-between gap-4">
+                      <span className="min-w-0 truncate font-medium text-ink">{item.vendorName}</span>
+                      <span className="shrink-0 text-sm text-graphite">Invoice {item.invoiceNumber}</span>
+                    </div>
+                  </Link>
+                ))}
+                {group.invoices.length > 3 ? <p className="text-sm text-graphite">and {group.invoices.length - 3} more</p> : null}
+              </div>
+            ))}
 
             {needsYou.humanHeld.count > 0 ? (
               <QueueRow

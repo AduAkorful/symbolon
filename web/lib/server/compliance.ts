@@ -11,7 +11,7 @@ import {
 } from "viem";
 
 import { symbolonContracts, symbolonVaultAbi, vaultCall, type Deployment } from "@symbolon/chain";
-import { CircleScreening, type ScreeningProvider } from "@symbolon/core";
+import { CircleScreening, CircleScreeningError, type ScreeningProvider } from "@symbolon/core";
 import { businesses, decisions, payees, screenings, seals, type Database } from "@symbolon/db";
 import { Risk } from "@symbolon/steward";
 
@@ -125,20 +125,26 @@ export async function screenPayee(
       : null);
 
   if (!provider) {
-    throw new AuthError(
-      502,
-      "Screening isn't available: Circle's Compliance Engine isn't enabled for this account.",
-    );
+    throw new AuthError(502, "Screening isn't set up: this app has no Circle key to screen with. Nothing was recorded.");
   }
 
   let result;
   try {
     result = await provider.screen(targetAddress);
   } catch (err) {
-    throw new AuthError(
-      502,
-      `Circle screening failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    // Say what Circle said, in words: a failed screening is never recorded and never read as clean (plan 05zj C, D1)
+    if (err instanceof CircleScreeningError) {
+      if (err.status === 401) throw new AuthError(502, "Circle rejected this app's API key (401), so nothing could be screened. Nothing was recorded.");
+      if (err.status === 403 || err.status === 404) {
+        throw new AuthError(
+          502,
+          `Circle's Compliance Engine isn't enabled for this account (Circle answered ${err.status}). Until Circle turns it on, no address can be screened here, and none is treated as screened. Nothing was recorded.`,
+        );
+      }
+      if (err.status === 429) throw new AuthError(502, "Circle is busy right now. Try again in a moment. Nothing was recorded.");
+      throw new AuthError(502, `Circle couldn't screen this address right now (it answered ${err.status}). Nothing was recorded.`);
+    }
+    throw new AuthError(502, "Couldn't reach Circle to screen this address. Try again in a moment. Nothing was recorded.");
   }
 
   const [row] = await db

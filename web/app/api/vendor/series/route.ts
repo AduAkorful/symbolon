@@ -17,7 +17,7 @@ export const GET = routeWith(async () => {
   const db = await getDb();
   const seal = await requireMySeal(db, session.user.id);
   await releaseDueSafe(db, getConfig(), { seal: seal.address });
-  const series = await listSeries(db, session.user);
+  const series = await listSeries(db, session.user, getConfig().deployment.cctpDomain);
   return NextResponse.json({ series });
 });
 

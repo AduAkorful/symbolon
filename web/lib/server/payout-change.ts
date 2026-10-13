@@ -28,6 +28,21 @@ export interface PayoutChangeRequestItem {
 }
 
 /**
+ * The CCTP domain a payout change is signed for (plan 05zj C, NEW-1). The browser used to send 0 (Ethereum's domain), so a request
+ * was recorded for a chain this Vault never pays on. The ledger's own domain comes from the deployment; a different explicit
+ * domain is refused, because the Steward holds cross-chain payouts and a change to one could never be paid.
+ */
+function requirePayableDomain(local: number, requested: unknown): number {
+  if (requested === undefined || requested === null) return local;
+  const asNumber = typeof requested === "number" ? requested : Number(requested);
+  if (!Number.isInteger(asNumber) || asNumber < 0) throw new AuthError(400, "Invalid payout domain.");
+  if (asNumber !== local) {
+    throw new AuthError(400, "Payouts are made on Arc only for now. Use an Arc address for the payout change.");
+  }
+  return local;
+}
+
+/**
  * Prepares the PayoutChange typed data for vendor to sign (Plan 05q, Decision V7).
  */
 export async function prepareVendorPayoutChange(
@@ -50,10 +65,7 @@ export async function prepareVendorPayoutChange(
     throw new AuthError(400, "Payout address cannot be the zero address.");
   }
 
-  const payoutDomain = typeof input.payoutDomain === "number" ? input.payoutDomain : 0;
-  if (!Number.isInteger(payoutDomain) || payoutDomain < 0) {
-    throw new AuthError(400, "Invalid payout domain.");
-  }
+  const payoutDomain = requirePayableDomain(cfg.deployment.cctpDomain, input.payoutDomain);
 
   // Find all businesses where this vendor is an active onchain payee
   const payeeRows = await db
@@ -136,7 +148,7 @@ export async function submitVendorPayoutChange(
   }
   const newPayout = getAddress(input.newPayout);
 
-  const payoutDomain = Number(input.payoutDomain);
+  const payoutDomain = requirePayableDomain(cfg.deployment.cctpDomain, input.payoutDomain);
   const nonce = BigInt(String(input.nonce));
 
   if (typeof input.signature !== "string" || !/^0x[0-9a-fA-F]+$/.test(input.signature)) {

@@ -6,7 +6,7 @@ import { decodeFunctionData, encodeAbiParameters, encodeEventTopics, getAddress,
 
 import { chainDouble, chainState } from "./setup-shared";
 
-import { preparePayee, recordPayee } from "@/lib/server/payee";
+import { payeeSetup, preparePayee, recordPayee } from "@/lib/server/payee";
 import { AuthError } from "@/lib/server/errors";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -131,6 +131,28 @@ describe("preparing addPayee", () => {
     const decoded = decodeFunctionData({ abi: symbolonVaultAbi, data: call.data as Hex });
     expect(decoded.functionName).toBe("addPayee");
     expect(decoded.args?.[3]).toMatchObject({ monthlyCap: 500n });
+  });
+
+  it("never defaults a payee's cap above the operating budget's own cap (SYM-36)", async () => {
+    const { owner, business } = await verifiedVendor();
+    chainState.getPayee.mockResolvedValue({ exists: false });
+    chainState.getBudget.mockResolvedValue({ exists: true, cap: 300n });
+    const capped = decodeFunctionData({ abi: symbolonVaultAbi, data: (await preparePayee(db, readClient, deployment, owner, business.id, address(3), choice)).data as Hex });
+    expect(capped.args?.[3]).toMatchObject({ monthlyCap: 300n });
+
+    chainState.getBudget.mockResolvedValue({ exists: true, cap: 2n ** 256n - 1n });
+    const open = decodeFunctionData({ abi: symbolonVaultAbi, data: (await preparePayee(db, readClient, deployment, owner, business.id, address(3), choice)).data as Hex });
+    expect(open.args?.[3]).toMatchObject({ monthlyCap: 500n });
+    // a cap the owner typed is still theirs to set
+    const typed = decodeFunctionData({ abi: symbolonVaultAbi, data: (await preparePayee(db, readClient, deployment, owner, business.id, address(3), { ...choice, monthlyCap: "900" })).data as Hex });
+    expect(typed.args?.[3]).toMatchObject({ monthlyCap: 900n });
+  });
+
+  it("tells the owner the wait and the cap before they sign (SYM-10, SYM-36)", async () => {
+    const { owner, business } = await verifiedVendor();
+    chainState.getVaultState.mockResolvedValue({ policy: { ownerThreshold: 500n, newPayeeDelay: 86_400n } });
+    chainState.getBudget.mockResolvedValue({ exists: true, cap: 300n });
+    await expect(payeeSetup(db, readClient, deployment, owner, business.id)).resolves.toEqual({ newPayeeDelay: "86400", defaultCap: "300", defaultCapSource: "budget" });
   });
 
   it("refuses a vendor who is already a payee onchain", async () => {

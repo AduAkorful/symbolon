@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { Overlay } from "@/components/Overlay";
+import { Callout } from "@/components/ui/Callout";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/useConfirm";
 import { controlClass, Field } from "@/components/ui/Field";
@@ -218,6 +219,13 @@ export function SeriesClient({ initialSeries, clients, signer }: Props) {
                   </p>
                   {s.status === "active" && s.nextReleaseAt ? (
                     <p className="mt-1 text-sm font-medium text-seal">Next release: {formatDay(new Date(s.nextReleaseAt))}</p>
+                  ) : null}
+                  {s.status === "active" && s.wrongDomainPeriods > 0 ? (
+                    <Callout tone="warn" title="These invoices can't be paid" className="mt-3">
+                      {s.wrongDomainPeriods === 1 ? "One invoice in this series was" : `${s.wrongDomainPeriods} invoices in this series were`} signed for
+                      a payout on another chain, so no business can pay {s.wrongDomainPeriods === 1 ? "it" : "them"}. A signature can&apos;t be
+                      changed: end this series and make it again.
+                    </Callout>
                   ) : null}
                 </div>
 

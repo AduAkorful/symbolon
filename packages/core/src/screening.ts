@@ -23,6 +23,14 @@ export interface ScreeningProvider {
   screen(address: Address): Promise<ScreeningResult>;
 }
 
+/** Circle answered the screening request with an error status; the status says why (401 key, 403/404 not enabled, 429 busy) */
+export class CircleScreeningError extends Error {
+  constructor(readonly status: number) {
+    super(`Circle screening failed: ${status}`);
+    this.name = "CircleScreeningError";
+  }
+}
+
 /** Circle Compliance Engine response, per https://developers.circle.com/openapi/compliance.yaml (read 2026-09-26) */
 interface CircleScreeningResponse {
   result: "APPROVED" | "DENIED";
@@ -67,7 +75,7 @@ export class CircleScreening implements ScreeningProvider {
       headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ idempotencyKey: randomUUID(), address, chain: this.evmChain }),
     });
-    if (!res.ok) throw new Error(`Circle screening failed: ${res.status}`);
+    if (!res.ok) throw new CircleScreeningError(res.status);
     const body = (await res.json()) as { data?: CircleScreeningResponse } & CircleScreeningResponse;
     const r = body.data ?? body;
     return {

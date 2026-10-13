@@ -16,7 +16,7 @@ export default async function VendorSeriesPage() {
   const seal = await requireMySeal(db, session.user.id);
   await releaseDueSafe(db, config, { seal: seal.address });
 
-  const series = await listSeries(db, session.user);
+  const series = await listSeries(db, session.user, config.deployment.cctpDomain);
   const clientRows = await listClients(db, session.user);
   const signer = signerPlanFor(session, config);
 

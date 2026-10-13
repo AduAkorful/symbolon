@@ -78,6 +78,99 @@ describe("Steward pipeline", () => {
     expect(d.send).not.toHaveBeenCalled();
   });
 
+  it("records what stands in the way of an invoice that isn't due yet (plan 05zj C)", async () => {
+    // before, step 6 returned "scheduled" before any Vault rule was looked at, so a blocker showed up only on the due date
+    const { ctx } = await context("assist", { reserveYieldBps: 2_000, facts: facts({ paused: true, payee: payee({ screenedAt: 0n }), policy: { ...facts().policy, screeningMaxAge: 30n * DAY } }) });
+    const r = await processInvoice(ctx, deps());
+    expect(r.outcome).toBe("scheduled");
+    const blockers = (r.record.inputs as { blockers: { rule: string }[] }).blockers.map((b) => b.rule);
+    expect(blockers).toEqual(expect.arrayContaining(["VaultPaused", "ScreeningStale"]));
+
+    const clear = await context("assist", { reserveYieldBps: 2_000 });
+    const free = await processInvoice(clear.ctx, deps());
+    expect(free.outcome).toBe("scheduled");
+    expect((free.record.inputs as { blockers: unknown[] }).blockers).toEqual([]);
+  });
+
+  describe("pay now (plan 05zj C, D2)", () => {
+    it("skips only the timing: a not-yet-due invoice becomes a proposal, with the best signed discount still valid", async () => {
+      const { ctx } = await context("assist", { reserveYieldBps: 2_000, payNow: {} });
+      const d = deps();
+      const r = await processInvoice(ctx, d);
+      expect(r.outcome).toBe("proposed");
+      expect(r.record.rule).toMatch(/chose to pay now/);
+      const [params] = decodePay(r.call);
+      expect(params.credit).toBe(4_000n * USDC);
+      expect(params.discount).toMatchObject({ kind: 1, tierIndex: 0n });
+      expect(String((r.record.inputs as { paid: string }).paid)).toBe((3_940n * USDC).toString());
+      expect(d.send).not.toHaveBeenCalled();
+    });
+
+    it("pays the full credit when no signed discount is still valid", async () => {
+      const { ctx } = await context("assist", { reserveYieldBps: 2_000, payNow: {}, facts: facts({ now: NOW + 20n * DAY }) });
+      const r = await processInvoice(ctx, deps());
+      expect(r.outcome).toBe("proposed");
+      expect(String((r.record.inputs as { paid: string }).paid)).toBe((4_000n * USDC).toString());
+      expect(decodePay(r.call)[0].discount.kind).toBe(0);
+    });
+
+    it("takes the signed offer the person named, and refuses one the vendor didn't sign or that has expired", async () => {
+      const base = await context("assist");
+      const offer = { fingerprint: base.fingerprint, discountBps: 250, validUntil: NOW + DAY };
+      const signature = await signSealMessage(sealAccount, typedData(sealDomain(CHAIN_ID, LEDGER), "EarlyPayOffer", offer));
+      const signed = [{ discountBps: 250, validUntil: NOW + DAY, signature }];
+
+      const taken = await processInvoice({ ...base.ctx, reserveYieldBps: 2_000, offers: signed, payNow: { offer: { discountBps: 250, validUntil: NOW + DAY } } }, deps());
+      expect(taken.outcome).toBe("proposed");
+      expect(decodePay(taken.call)[0].discount).toMatchObject({ kind: 2 });
+      expect(String((taken.record.inputs as { paid: string }).paid)).toBe((3_900n * USDC).toString());
+
+      const unknown = await processInvoice({ ...base.ctx, offers: signed, payNow: { offer: { discountBps: 900, validUntil: NOW + DAY } } }, deps());
+      expect(unknown.outcome).toBe("held");
+      expect(unknown.record.rule).toMatch(/expired or isn't one the vendor signed/);
+
+      const late = await processInvoice({ ...base.ctx, offers: signed, facts: facts({ now: NOW + 2n * DAY }), payNow: { offer: { discountBps: 250, validUntil: NOW + DAY } } }, deps());
+      expect(late.outcome).toBe("held");
+      expect(late.call).toBeUndefined();
+    });
+
+    it("never bypasses a rule: a paused Vault, an inactive payee, a missing screening and a missing sign-off all still stop it", async () => {
+      const cases: { name: string; ctx: Partial<InvoiceContext>; outcome: string; rule: string }[] = [
+        { name: "paused", ctx: { facts: facts({ paused: true }) }, outcome: "held", rule: "VaultPaused" },
+        { name: "payee not active", ctx: { facts: facts({ payee: payee({ activeAt: NOW + DAY }) }) }, outcome: "held", rule: "PayeeNotActive" },
+        { name: "unscreened", ctx: { facts: facts({ payee: payee({ screenedAt: 0n }), policy: { ...facts().policy, screeningMaxAge: 30n * DAY } }) }, outcome: "held", rule: "ScreeningStale" },
+        { name: "not a payee", ctx: { facts: facts({ payee: payee({ exists: false }) }) }, outcome: "held", rule: "isn't a payee of this business yet" },
+      ];
+      for (const c of cases) {
+        const { ctx } = await context("assist", { reserveYieldBps: 2_000, payNow: {}, ...c.ctx });
+        const d = deps();
+        const r = await processInvoice(ctx, d);
+        expect(r.outcome, c.name).toBe(c.outcome);
+        expect(JSON.stringify(r.record.inputs), c.name).toContain(c.rule);
+        expect(r.call, c.name).toBeUndefined();
+        expect(d.simulate).not.toHaveBeenCalled();
+      }
+
+      // an invoice above the owner threshold still needs the owner, even when a person chose "now"
+      const big = await context("assist", { payNow: {} }, { lineItems: [{ description: "Build", quantity: "1", unitPrice: "12000" }], earlyPay: [] });
+      const needs = await processInvoice(big.ctx, deps());
+      expect(needs.outcome).toBe("awaiting_approval");
+      const owner = await processInvoice({ ...big.ctx, approvalHeld: ApprovalLevel.Owner }, deps());
+      expect(owner.outcome).toBe("proposed");
+
+      // and the earlier checks still apply: a blocked Seal, instructions in the text, duplicates
+      const blocked = await context("assist", { payNow: {}, blockedSeal: true });
+      expect((await processInvoice(blocked.ctx, deps())).outcome).toBe("held");
+    });
+
+    it("is not used by a Steward run: without it, a held-up invoice stays scheduled and nothing is proposed", async () => {
+      const { ctx } = await context("assist", { reserveYieldBps: 2_000 });
+      const r = await processInvoice(ctx, deps());
+      expect(r.outcome).toBe("scheduled");
+      expect(r.call).toBeUndefined();
+    });
+  });
+
   it("rejects a tampered envelope and anything sealed for another ledger", async () => {
     const { ctx } = await context("auto");
     const tampered = (ctx.envelope as string).replace("Brand identity", "Brand identitY");

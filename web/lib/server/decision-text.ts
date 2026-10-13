@@ -1,4 +1,5 @@
 import "server-only";
+import { describeRule } from "../blockers";
 
 import { usd } from "./policy-text";
 
@@ -100,7 +101,15 @@ export function summarizeDecision(record: Record<string, unknown>): DecisionSumm
     }
 
     case "schedule": {
-      return { sentence: "Scheduled for payment on due date", explanation };
+      // since plan 05zj C a scheduled decision records the Vault rules that would stop a payment today
+      const blockers = Array.isArray(inputs.blockers) ? (inputs.blockers as { rule: string; detail: string }[]) : [];
+      const inTheWay = blockers.filter((b) => b.rule !== "ApprovalRequired").map((b) => describeRule(b, { seal: "" }).title);
+      return {
+        sentence: inTheWay.length > 0
+          ? `Scheduled for the due date. In the way today: ${inTheWay.join("; ")}`
+          : "Scheduled for payment on the due date",
+        explanation,
+      };
     }
 
     case "reject": {

@@ -15,6 +15,11 @@ import { loadInvoiceDetail } from "@/lib/server/inbox";
 import { summarizeDecision } from "@/lib/server/decision-text";
 import { businessOffers } from "@/lib/server/offers";
 import { BusinessOffers } from "@/components/inbox/BusinessOffers";
+import { InvoiceBlockers } from "@/components/inbox/InvoiceBlockers";
+import { PayInvoice } from "@/components/inbox/PayInvoice";
+import { blockersForInvoice } from "@/lib/server/invoice-blockers";
+import { signerPlanFor } from "@/lib/server/signer-plan";
+import { Button } from "@/components/ui/button";
 import { buttonClass } from "@/components/ui/button";
 import { Callout } from "@/components/ui/Callout";
 import { Eyebrow, PageTitle } from "@/components/ui/Type";
@@ -48,6 +53,22 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
     view.row.status !== "rejected" &&
     view.verification.ok &&
     deliveryMatters;
+
+  // What stands in the way today (plan 05zj C, SYM-06), and whether this person can pay it themselves right now
+  const { blockers, settled } = blockersForInvoice({
+    verification: view.verification,
+    ...("trust" in view && view.trust ? { trust: view.trust } : {}),
+    ...("facts" in view && view.facts ? { facts: view.facts } : {}),
+    ...(view.ledger ? { ledger: view.ledger } : {}),
+    evidenceRows: view.evidence.rows,
+  });
+  const inTheWay = blockers.filter((b) => b.kind !== "info" || b.rule === "ChainUnreadable");
+  const closed = settled || view.row.status === "paid" || view.row.status === "cancelled" || view.row.status === "rejected";
+  const holdSource = "holdSource" in view ? view.holdSource : null;
+  const canPay = offers.canAct && !closed && view.verification.ok && holdSource !== "human";
+  const unavailable = inTheWay.length > 0 ? "Can't be paid yet. See what's stopping it above." : undefined;
+  const signer = signerPlanFor(session, getConfig());
+  const explorer = getConfig().deployment.explorer;
 
   // Latest decision for this invoice
   const [latestDecision] = await db
@@ -98,6 +119,22 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
             </Callout>
           ) : null}
 
+          {!closed ? (
+            <InvoiceBlockers blockers={blockers}>
+              {canPay ? (
+                unavailable ? (
+                  <Button disabled title={unavailable}>Pay now</Button>
+                ) : (
+                  <PayInvoice businessId={where.business.id} fingerprint={fingerprint} label="Pay now" signer={signer} explorer={explorer} />
+                )
+              ) : (
+                <p className="text-sm text-graphite">
+                  {!offers.canAct ? "Only an owner or approver can pay an invoice." : holdSource === "human" ? "Release the hold before paying." : null}
+                </p>
+              )}
+            </InvoiceBlockers>
+          ) : null}
+
           {/* Evidence rows */}
           <ul className="mt-7 border-t border-ink">
             {view.evidence.rows.map((row) => (
@@ -111,7 +148,13 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
             ))}
           </ul>
 
-          <BusinessOffers businessId={where.business.id} fingerprint={fingerprint} view={offers} symbol={view.verification.document.currency.symbol} />
+          <BusinessOffers
+            businessId={where.business.id}
+            fingerprint={fingerprint}
+            view={offers}
+            symbol={view.verification.document.currency.symbol}
+            pay={canPay ? { signer, explorer, ...(unavailable ? { unavailable } : {}) } : undefined}
+          />
           {showDeliveryActions ? (
             <div className="mt-6">
               <DeliveryActions
