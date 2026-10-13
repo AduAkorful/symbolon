@@ -95,7 +95,7 @@ export function ComplianceView({
       <header>
         <PageTitle>Compliance</PageTitle>
         <Lead className="mt-3">
-          Every counterparty’s payout address is screened with Circle’s Compliance Engine and the result is recorded in the Vault. A check that fails is never treated as clean.
+          A payee’s payout address is screened here with Circle’s Compliance Engine, and the result is recorded in the Vault. A vendor you haven’t added as a payee yet can’t be screened. A check that fails is never treated as clean.
         </Lead>
       </header>
 

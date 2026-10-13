@@ -96,14 +96,21 @@ export default function GuidePage() {
               Every signed invoice gets a link. Send it to your customer. Anyone who opens it, or pastes it into <Link href="/verify" className={link}>Verify</Link>, can
               see that it really came from you and hasn’t been altered. Checking happens in their browser; nothing is uploaded.
             </Step>
-            <Step n={5} title="Wait for the business to add you">
-              A business confirms who you are before it pays you the first time: through an invitation, a short code, or by matching your
-              details against its own records. Then it adds you to its list of vendors it pays. New vendors wait a short while before the
-              first payment; that is a safety rule the business chose, and the business can see how long is left.
+            <Step n={5} title="Let the business confirm you">
+              A business confirms who you are before it pays you the first time, in one of two ways.
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                <li><strong className="font-medium text-ink">An invitation.</strong> The business sends you a one-time link, by a channel it already trusts. Open it, sign in, create your Seal if you don’t have one yet, and accept. If you already have a Seal, you just accept.</li>
+                <li><strong className="font-medium text-ink">A callback code.</strong> After you’ve sent them an invoice, the business may phone you on a number it already trusted. Sign in, open <strong className="font-medium text-ink">Checks</strong>, and read the six-digit code you see there to them on the call. They type it in on their side.</li>
+              </ul>
+              <span className="mt-2 block">
+                Then the business adds you to the list of vendors it pays. New vendors wait a short while before the first payment; that is a
+                safety rule the business chose, and the business can see how long is left.
+              </span>
             </Step>
             <Step n={6} title="Get paid">
               When the invoice matches the business’s rules, the Vault pays it. Your invoice shows <strong className="font-medium text-ink">Paid</strong>, with a receipt you can share.
-              Optional: <strong className="font-medium text-ink">Early Pay</strong> lets you offer a small discount for being paid sooner. It’s always your choice, and the business can accept or decline.
+              Optional: <strong className="font-medium text-ink">Early Pay</strong> lets you offer a small discount for being paid sooner. You can add it when you
+              make the invoice, or open an unpaid invoice and choose to get paid early: you pick the discount, sign it, and the business’s team or Steward reviews it. It’s always your choice, and the business can accept, counter or decline.
             </Step>
             <Step n={7} title="If your payout address changes">
               In Settings you sign a request for the new address. Each business confirms it and a waiting period passes before it takes effect, so
@@ -159,24 +166,41 @@ export default function GuidePage() {
               Invoices from vendors arrive in your <strong className="font-medium text-ink">Inbox</strong>. Each one is checked against its signature and your records. Open it to see what it is, who
               sent it, and, if something stops it from being paid, a plain list of what.
             </Step>
-            <Step n={7} title="Confirm the vendor and add them">
-              Under <strong className="font-medium text-ink">Vendors</strong>, confirm the company is who you mean to pay: send them an invitation, ask them for a short code over a channel you
-              already trust, or match their details against your records. Then add them as a payee. Their first payment waits out your <em>new payee wait</em>.
+            <Step n={7} title="Confirm the vendor">
+              Under <strong className="font-medium text-ink">Vendors</strong>, confirm the company is who you mean to pay, in one of two ways.
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                <li><strong className="font-medium text-ink">Invite them.</strong> Choose <em>Invite a vendor</em>, copy the one-time link and send it through a channel you already trust. It is shown once and expires in 14 days; if you lose it, withdraw the invitation and make a new one.</li>
+                <li><strong className="font-medium text-ink">Call them back.</strong> For a vendor that has already sent you an invoice, choose <em>Verify by trusted callback</em>. Phone them on a number you trusted from before the invoice, ask them to open <em>Checks</em> in their account and read you the six-digit code, then enter it.</li>
+              </ul>
             </Step>
-            <Step n={8} title="Optional: orders and delivery">
+            <Step n={8} title="Add them as a payee">
+              Once a vendor is verified, the owner chooses <em>Set up as a payee</em>, picks the payout address the vendor signed, and signs one transaction. The dialog
+              shows when the first payment can be made: their first payment waits out your <em>new payee wait</em>.
+            </Step>
+            <Step n={9} title="Screen them (if your rules ask for it)">
+              The Standard and Strict rules want a recent compliance screening of the payee’s payout address. Open <strong className="font-medium text-ink">Compliance</strong>, choose <em>Screen</em>, then
+              <em> Save in the Vault</em> to record the result. This works once the vendor is a payee.
+            </Step>
+            <Step n={10} title="Optional: orders and delivery">
               For vendors you want to limit, open a <strong className="font-medium text-ink">purchase order</strong>, and confirm <strong className="font-medium text-ink">delivery</strong> when the work
               arrives. The Vault will then pay only up to what was ordered.
             </Step>
-            <Step n={9} title="Let the Steward help, at your pace">
+            <Step n={11} title="Let the Steward help, at your pace">
               On the <strong className="font-medium text-ink">Steward</strong> page, <em>Shadow</em> watches and recommends but pays nothing, <em>Assisted</em> proposes payments for you to approve, and
               <em> Autonomous</em> pays within your limits. Most people start with Shadow and move up when the recommendations look right.
             </Step>
-            <Step n={10} title="Approve and pay">
+            <Step n={12} title="Approve and pay">
               Payments that need a person show up in <strong className="font-medium text-ink">Approvals</strong>. You can also pay an invoice yourself from its page. Every
               payment, and every decision the Steward made, is in <strong className="font-medium text-ink">Activity</strong>, and you can export it from <strong className="font-medium text-ink">Accounting</strong>.
             </Step>
-            <Step n={11} title="Bring your team">
-              Under <strong className="font-medium text-ink">Team</strong>, invite colleagues with a role: some can only view, some can request, some can approve payments.
+            <Step n={13} title="Bring your team">
+              Under <strong className="font-medium text-ink">Team</strong>, invite colleagues with a role:
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                <li><strong className="font-medium text-ink">Approver:</strong> can approve payments.</li>
+                <li><strong className="font-medium text-ink">Requester:</strong> can ask for payments.</li>
+                <li><strong className="font-medium text-ink">Viewer:</strong> read only.</li>
+              </ul>
+              <span className="mt-2 block">Giving someone more power waits for your Vault’s delay, like any loosening of the rules.</span>
             </Step>
           </ol>
 

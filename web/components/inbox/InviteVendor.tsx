@@ -27,6 +27,17 @@ export function InviteVendor({ businessId }: { businessId: string }) {
   const [link, setLink] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState<"yes" | "no" | null>(null);
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied("yes");
+    } catch {
+      // the browser refused the clipboard: the whole link is on screen to select by hand
+      setCopied("no");
+    }
+  }
 
   const close = () => {
     if (busy) return;
@@ -46,9 +57,14 @@ export function InviteVendor({ businessId }: { businessId: string }) {
           {link ? (
             <>
               <Field label="Secret link">
-                {(a) => <input {...a} readOnly value={link} onFocus={(e) => e.currentTarget.select()} className={`${controlClass} font-mono`} />}
+                {(a) => <textarea {...a} readOnly rows={3} value={link} onFocus={(e) => e.currentTarget.select()} className={`${controlClass} break-all font-mono text-sm`} />}
               </Field>
-              <p className="text-graphite">If you lose it, withdraw the invitation and create a new one.</p>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <Button variant="secondary" onClick={() => void copyLink()}>Copy the link</Button>
+                {copied === "yes" ? <span role="status" className="text-sm text-ok">Copied. Paste it into the message you send the vendor.</span> : null}
+                {copied === "no" ? <span role="status" className="text-sm text-warn">Couldn’t copy automatically. Select the link above and copy it.</span> : null}
+              </div>
+              <p className="mt-3 text-graphite">If you lose it, withdraw the invitation and create a new one.</p>
               <Overlay.Footer>
                 <Button onClick={close}>Done</Button>
               </Overlay.Footer>

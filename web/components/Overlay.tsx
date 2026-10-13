@@ -40,6 +40,10 @@ function OverlayFooter({ children }: { children: ReactNode }) {
  *
  * Every sheet and dialog in the app uses this. Never write another fixed overlay.
  */
+/** How many dialogs are open, and the page's scroll setting from before the first one (see the effect below) */
+let openDialogs = 0;
+let savedOverflow = "";
+
 export function Overlay({ title, description, onClose, dismissible = true, size = "md", children }: OverlayProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -101,15 +105,27 @@ export function Overlay({ title, description, onClose, dismissible = true, size 
     return () => panel.removeEventListener("keydown", handle);
   }, []);
 
-  // Make the rest of the page inert and lock scroll.
+  // Make the rest of the page inert and lock scroll. A count of open dialogs, not one saved value each: with two open (a dialog
+  // that opens another), closing them in either order used to restore a stale scroll lock or leave the page inert, which read as
+  // "Home doesn't respond after a dialog closes" (QA retest 3).
   useEffect(() => {
-    const main = document.getElementById("main-content") || document.getElementById("app-main");
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const lookup = () => document.getElementById("main-content") || document.getElementById("app-main");
+    if (openDialogs === 0) {
+      savedOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+    }
+    openDialogs += 1;
+    const main = lookup();
     if (main) main.inert = true;
     return () => {
-      document.body.style.overflow = prevOverflow;
-      if (main) main.inert = false;
+      openDialogs = Math.max(0, openDialogs - 1);
+      if (openDialogs === 0) {
+        document.body.style.overflow = savedOverflow;
+        // the page may have drawn a new main element while the dialog was open: release whichever is there now, and the old one
+        const current = lookup();
+        if (current) current.inert = false;
+      }
+      if (main) main.inert = openDialogs > 0;
     };
   }, []);
 
