@@ -92,7 +92,7 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
   }
 
   // --- Sign Approval Handler ---
-  async function handleSignApproval(item: ApprovalItem) {
+  async function handleSignApproval(item: { fingerprint: string }) {
     setActionLoading(true);
     setActionError(null);
     try {
@@ -279,6 +279,46 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
           </div>
         )}
       </section>
+
+      {/* Invoices that only need a sign-off and aren't due yet (plan 05zp) */}
+      {data.notYetApprovable.signoffAhead.length > 0 ? (
+        <section aria-labelledby="ahead-title" className="space-y-4 border-t border-rule pt-8">
+          <div>
+            <SectionTitle id="ahead-title">
+              Coming up that need your sign-off <span className="text-graphite">({data.notYetApprovable.signoffAhead.length})</span>
+            </SectionTitle>
+            <p className="mt-1 max-w-[64ch] text-sm text-graphite">
+              The Steward asks on each invoice’s due date. You can sign ahead now: nothing is paid earlier, and the approval stays valid for three days after the due date.
+            </p>
+          </div>
+          {actionError ? <InlineError>{actionError}</InlineError> : null}
+          <ul className="divide-y divide-rule-soft rounded-doc border border-rule bg-paper-raised">
+            {data.notYetApprovable.signoffAhead.map((a) => (
+              <li key={a.fingerprint} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 text-sm">
+                <div className="min-w-0">
+                  <p className="font-medium text-ink">
+                    {a.vendor} <span className="font-normal text-graphite">· {a.invoiceNumber}</span>
+                  </p>
+                  <p className="mt-0.5 text-graphite">
+                    <Money>{showMoney(a.amountFormatted, a.token)}</Money>
+                    {a.dueDate ? ` · due ${formatDay(new Date(a.dueDate))}` : ""} · {a.needs === "owner" ? "needs the owner" : "an approver or the owner"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Link href={`/business/inbox/${a.fingerprint}`} className="text-graphite underline decoration-rule underline-offset-4 hover:text-ink">
+                    Open invoice
+                  </Link>
+                  {a.canSign ? (
+                    <Button size="sm" variant="secondary" disabled={actionLoading} onClick={() => void handleSignApproval(a)}>
+                      Sign ahead
+                    </Button>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {/* Recent responses */}
       {data.recentAnswers.length > 0 ? (

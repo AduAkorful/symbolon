@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { getAddress, isAddress } from "viem";
 
 import { Address } from "@/components/Address";
 import { useConfirm } from "@/components/useConfirm";
@@ -24,7 +25,7 @@ export function ClientRow({ client }: { client: ClientRowData }) {
   const [ask, confirmDialog] = useConfirm();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(client.name);
-  const [vault, setVault] = useState(client.vault ?? "");
+  const [vault, setVault] = useState(client.vault && isAddress(client.vault) ? getAddress(client.vault) : client.vault ?? "");
   const [email, setEmail] = useState(client.email ?? "");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -79,7 +80,7 @@ export function ClientRow({ client }: { client: ClientRowData }) {
           {problem ? <InlineError>{problem}</InlineError> : null}
           <div className="flex gap-2">
             <Button type="submit" size="sm" busy={busy}>{busy ? "Saving…" : "Save"}</Button>
-            <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => { setEditing(false); setProblem(null); setName(client.name); setVault(client.vault ?? ""); setEmail(client.email ?? ""); }}>Cancel</Button>
+            <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => { setEditing(false); setProblem(null); setName(client.name); setVault(client.vault && isAddress(client.vault) ? getAddress(client.vault) : client.vault ?? ""); setEmail(client.email ?? ""); }}>Cancel</Button>
           </div>
         </form>
       </li>

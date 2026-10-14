@@ -212,7 +212,9 @@ export function FundModal({
     <Overlay
       title="Add funds to the Vault"
       description={
-        mode?.walletSends
+        mode === null
+          ? "Sends tokens from your connected wallet to the Vault. Use this button rather than your wallet’s own Send screen."
+          : mode.walletSends
           ? "Sends tokens from your connected wallet to the Vault. This Vault also accepts USDC sent straight from any Arc wallet; this button is the path we’ve checked end to end."
           : `Sends tokens from your connected wallet to the Vault. Use this button rather than your wallet’s own Send screen: sending USDC that way to this Vault’s address fails on Arc.${mode?.release ? " Upgrade the Vault to release 3 in Settings to accept sends from any wallet." : ""}`
       }
@@ -226,6 +228,7 @@ export function FundModal({
         <Field label="Amount">
           {(a) => <input {...a} type="text" inputMode="decimal" required placeholder="500" value={amount} onChange={(e) => setAmount(e.target.value)} className={controlClass} />}
         </Field>
+        {mode === null ? <p className="text-xs text-graphite">Reading your wallet balance…</p> : null}
         {walletRaw !== null ? (
           <p className="text-xs text-graphite">
             Your wallet holds {showMoney(moneyInput(walletRaw, 6), "USDC")}.

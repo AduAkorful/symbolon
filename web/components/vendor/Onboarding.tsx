@@ -153,11 +153,12 @@ export function Onboarding({ wallet, signer, next = "/vendor" }: { wallet: strin
               )}
               <label className="mt-8 block text-sm">
                 Handle
-                <input className={`${input} font-mono`} value={handle} onChange={(e) => { setHandle(e.target.value.toLowerCase()); setProblem(null); }} required minLength={3} maxLength={40} autoCapitalize="none" spellCheck={false} aria-describedby="handle-note" />
+                <input className={`${input} font-mono`} value={handle} onChange={(e) => { setHandle(e.target.value.toLowerCase()); setProblem(null); }} required minLength={3} maxLength={40} autoCapitalize="none" spellCheck={false} aria-describedby="handle-note" aria-invalid={avail && avail !== "checking" && !avail.ok ? true : undefined} />
               </label>
-              <p id="handle-note" className="mt-1 text-xs text-graphite" aria-live="polite">
+              <p id="handle-note" className={`mt-1 text-xs ${avail && avail !== "checking" && !avail.ok ? "text-red" : "text-graphite"}`} aria-live="polite">
                 {avail === "checking" ? "Checking…" : avail ? (avail.ok ? "✓ Available" : avail.reason) : "Lowercase letters, digits and hyphens. It appears on your invoices as @handle."}
               </p>
+              <p className="mt-1 text-xs text-graphite">Handles are always lowercase, so capitals are changed as you type.</p>
               <label className="mt-6 block text-sm">
                 The name on your invoices
                 <input className={input} value={name} onChange={(e) => setName(e.target.value)} required minLength={2} maxLength={80} />

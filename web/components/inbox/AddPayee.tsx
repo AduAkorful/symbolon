@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { sendCall, type SignerPlan } from "@/components/setup/owner-signer";
@@ -99,9 +99,33 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
   }
   const [open, setOpen] = useState(false);
   const openDialog = () => { setOpen(true); if (!options.length) void loadOptions(); };
+  // the signed payout addresses are read when the row is drawn, so a vendor with none is said so here instead of in a dialog that
+  // can't succeed (QA R3b-2). A failed read leaves the button as it was.
+  const [checked, setChecked] = useState(false);
+  useEffect(() => {
+    let live = true;
+    postJson<ChoiceResult>(path, { action: "options", seal })
+      .then((r) => {
+        if (!live) return;
+        setOptions(r.options);
+        setSelected(r.options[0] ? `${r.options[0].address}:${r.options[0].domain}` : "");
+        setSetup(r.setup);
+        setCap(r.defaults.monthlyCap ? moneyInput(r.defaults.monthlyCap, 6) : "");
+        setRequirePo(r.defaults.requirePo);
+        setRequireDelivery(r.defaults.requireDelivery);
+        setAsOf(Date.now());
+        setLoaded(true);
+      })
+      .catch(() => undefined)
+      .finally(() => live && setChecked(true));
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const noPayout = checked && loaded && options.length === 0 && !open;
   return (
     <div className="mt-3">
-      <Button variant="secondary" size="sm" onClick={openDialog}>Set up as a payee</Button>
+      <Button variant="secondary" size="sm" onClick={openDialog} disabled={noPayout}>Set up as a payee</Button>
+      {noPayout ? <p className="mt-1.5 text-sm text-graphite">Waiting for this vendor’s payout address. They set it in their Symbolon settings, or sign an invoice to you.</p> : null}
       {open ? (
         <Overlay title="Add this vendor as a payee" description="You sign one transaction that lets your Vault pay this vendor, within the terms below." onClose={() => { if (!sending && !tx.busy) { setOpen(false); if (tx.phase === "done") { tx.reset(); setAdded(null); refreshAfterChain(router); } } }}>
           {error ? (

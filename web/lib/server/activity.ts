@@ -15,7 +15,7 @@ import {
   users,
   type Database,
 } from "@symbolon/db";
-import { getAddress, type Address, type PublicClient } from "viem";
+import { getAddress, isAddress, type Address, type PublicClient } from "viem";
 import { requireMember } from "./access";
 import { ensureVaultBlock } from "./business";
 import { isPreparedPayment } from "./prepared-payment";
@@ -195,8 +195,10 @@ export function describeDecision(
       const why = String(((rec?.inputs ?? {}) as { reason?: unknown }).reason ?? "");
       return { what: `Declined invoice ${subjectShort}${why ? `: ${why}` : ""}`, tone: "red" };
     }
-    case "invoice_reopened":
-      return { what: `Reopened invoice ${subjectShort}` };
+    case "invoice_reopened": {
+      const was = String(((rec?.inputs ?? {}) as { previousReason?: unknown }).previousReason ?? "");
+      return { what: `Reopened invoice ${subjectShort}${was ? ` (it had been declined: ${was})` : ""}` };
+    }
     case "early_pay_offered":
       return { what: `Vendor submitted early pay cash-now offer for ${subjectShort}` };
     default:
@@ -316,6 +318,15 @@ export async function loadActivity(
   const invoiceByFp = new Map(bizInvoices.map((inv) => [inv.fingerprint.toLowerCase(), inv]));
   const invoiceBySeal = new Map(bizInvoices.map((inv) => [inv.seal.toLowerCase(), inv]));
 
+  // checksummed, shortened; a person without a name or email is their role and wallet, never a bare lowercase address (QA R7-2, SYM-49)
+  const shortWallet = (a: string) => {
+    const c = isAddress(a) ? getAddress(a) : a;
+    return `${c.slice(0, 6)}…${c.slice(-4)}`;
+  };
+  const roleName = (role: string) => role.charAt(0).toUpperCase() + role.slice(1);
+  const personLabel = (m: { displayName: string | null; email: string | null; wallet: string | null; role: string }) =>
+    m.displayName || m.email || `${roleName(m.role)} ${m.wallet ? shortWallet(m.wallet) : ""}`.trim();
+
   function resolveActorForEvent(callerAddr?: string): ActivityActor {
     if (!callerAddr) return { kind: "system", label: "Chain" };
     const lower = callerAddr.toLowerCase();
@@ -327,13 +338,13 @@ export async function loadActivity(
     }
     const mem = memberByWallet.get(lower);
     if (mem) {
-      return { kind: "person", label: mem.email || `${lower.slice(0, 6)}…${lower.slice(-4)}`, wallet: callerAddr };
+      return { kind: "person", label: personLabel(mem), wallet: callerAddr };
     }
     const vendorName = sealMap.get(lower);
     if (vendorName) {
       return { kind: "vendor", label: vendorName, wallet: callerAddr };
     }
-    return { kind: "person", label: `${lower.slice(0, 6)}…${lower.slice(-4)}`, wallet: callerAddr };
+    return { kind: "person", label: shortWallet(lower), wallet: callerAddr };
   }
 
   function resolveActorForDecision(d: typeof decisions.$inferSelect): ActivityActor {
@@ -345,7 +356,7 @@ export async function loadActivity(
     if (actorId) {
       const mem = memberByUserId.get(actorId);
       if (mem) {
-        return { kind: "person", label: mem.displayName || mem.email || mem.wallet || "Member" };
+        return { kind: "person", label: personLabel(mem) };
       }
     }
     const mode = (rec as { mode?: string } | null)?.mode;

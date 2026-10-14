@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { getAddress, isAddress } from "viem";
 import { createArcClient, getDeployment } from "@symbolon/chain";
 import { showAmount, showDate } from "@/lib/format";
 import { runCheck, type CheckResult } from "@/lib/verify-check";
@@ -155,7 +156,7 @@ function Result({ r, explorer }: { r: CheckResult; explorer: string }) {
           ["Seal", v.seal!],
           ["Invoice", `No. ${d.invoiceNumber} · ${d.vendor.name} to ${d.payer.name}`],
           ["Amount", `${showAmount(d.total)} ${d.currency.symbol}, due ${showDate(d.dueDate)}`],
-          ["Pays out to", d.payout.address],
+          ["Pays out to", isAddress(d.payout.address) ? getAddress(d.payout.address) : d.payout.address],
           ["Fingerprint", v.fingerprint!],
         ].map(([k, val]) => (
           <div key={k} className="grid grid-cols-[7rem_1fr] gap-3 py-2.5">

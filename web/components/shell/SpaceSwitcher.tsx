@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
+import { useFormStatus } from "react-dom";
 import { useEffect, useRef, useState } from "react";
 import { openBusiness } from "@/app/actions";
 import { Avatar } from "@/components/Avatar";
@@ -20,6 +21,21 @@ const item = "flex min-h-11 w-full items-center gap-3 rounded-doc px-2.5 py-2 te
 const quiet = "flex min-h-10 w-full items-center rounded-doc px-2.5 py-1.5 text-left text-sm text-graphite outline-none hover:text-ink focus-visible:text-ink focus-visible:ring-2 focus-visible:ring-seal";
 
 /** Switch between your Seal and each business you belong to, and sign out. One person can be both a vendor and a business owner. */
+/** One business in the menu. Switching takes a few seconds (the server reads the Vault), so the row says it is opening and can't be clicked twice (QA R1-N8d). */
+function BusinessOption({ name, role, here, itemClass }: { name: string; role: string; here: boolean; itemClass: string }) {
+  const { pending } = useFormStatus();
+  return (
+    <button role="menuitem" data-current={here} disabled={pending} aria-busy={pending} className={`${itemClass} ${pending ? "opacity-70" : ""}`}>
+      <Avatar name={name} size={24} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium">{name}</span>
+        <span className="block truncate text-xs capitalize text-graphite">{pending ? "Opening…" : role}</span>
+      </span>
+      {pending ? <span aria-hidden className="h-3 w-3 animate-spin rounded-full border-2 border-rule border-t-ink" /> : here ? <span aria-label="Current account" className="text-seal">✓</span> : null}
+    </button>
+  );
+}
+
 export function SpaceSwitcher({ spaces, current, who, wallet = null, compact = false }: { spaces: SwitcherSpaces; current: Current; who: string; wallet?: string | null; compact?: boolean }) {
   const { logout } = usePrivy();
   const router = useRouter();
@@ -136,14 +152,7 @@ export function SpaceSwitcher({ spaces, current, who, wallet = null, compact = f
             return (
               <form key={b.id} action={openBusiness}>
                 <input type="hidden" name="id" value={b.id} />
-                <button role="menuitem" data-current={here} className={`${item} ${here ? "bg-rule-soft/50" : ""}`}>
-                  <Avatar name={b.name} size={24} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">{b.name}</span>
-                    <span className="block truncate text-xs capitalize text-graphite">{b.role}</span>
-                  </span>
-                  {here ? <span aria-label="Current account" className="text-seal">✓</span> : null}
-                </button>
+                <BusinessOption name={b.name} role={b.role} here={here} itemClass={`${item} ${here ? "bg-rule-soft/50" : ""}`} />
               </form>
             );
           })}

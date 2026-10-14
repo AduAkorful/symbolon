@@ -91,7 +91,7 @@ export async function reopenInvoice(
   if (typeof fingerprintValue !== "string" || !HASH_RE.test(fingerprintValue)) throw new AuthError(400, "Malformed invoice fingerprint.");
   const fingerprint = fingerprintValue.toLowerCase();
   const [row] = await db
-    .select({ status: invoices.status, invoiceNumber: invoices.invoiceNumber })
+    .select({ status: invoices.status, invoiceNumber: invoices.invoiceNumber, declinedReason: invoices.declinedReason })
     .from(invoices)
     .where(and(eq(invoices.businessId, businessId), eq(invoices.fingerprint, fingerprint)))
     .limit(1);
@@ -106,7 +106,7 @@ export async function reopenInvoice(
       kind: "invoice_reopened",
       subject: fingerprint,
       actor: user.id,
-      inputs: { invoiceNumber: row.invoiceNumber },
+      inputs: { invoiceNumber: row.invoiceNumber, previousReason: row.declinedReason },
       rule: "the owner reopened a declined invoice",
       outcome: "reopened",
     });

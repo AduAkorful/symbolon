@@ -203,6 +203,36 @@ describe("Approvals Service", () => {
     expect(BigInt(prep.deadline)).toBeGreaterThan(1_790_000_200n);
   });
 
+  it("lists a scheduled invoice that fails only for a sign-off and lets it be approved ahead, past its due date", async () => {
+    const { user, business, vault } = await setupBusinessWithUser("owner", "auto");
+    const due = 1_792_592_000;
+    const add = async (number: string, rules: string[]) => {
+      const { sealed, envelope, fingerprint } = await createInvoiceEnvelope(vault, number, "200");
+      await db.insert(invoices).values({
+        businessId: business.id, fingerprint, chainId: cfg.chainId, ledger: cfg.deployment.contracts.invoiceLedger,
+        seal: sealed.document.seal, payerRef: randHash(), source: "link", dueDate: new Date(due * 1000),
+        token: cfg.deployment.tokens.usdc.toLowerCase(), invoiceNumber: number, envelope, total: 200_000_000n, credited: 0n,
+        receivedAt: new Date(), status: "scheduled",
+      });
+      await db.insert(decisions).values({
+        businessId: business.id, subject: fingerprint, hash: fingerprint, kind: "schedule",
+        record: { kind: "schedule", mode: "auto", inputs: { policy: { failures: rules.map((rule) => ({ rule, detail: "needs an approver's sign-off" })) } }, options: [], rule: "waiting for the due date", outcome: "scheduled" },
+        createdAt: new Date(),
+      });
+      return fingerprint;
+    };
+    const only = await add("INV-AHEAD", ["ApprovalRequired"]);
+    await add("INV-OTHER", ["ApprovalRequired", "BudgetExceeded"]);
+    const client = { getBlock: vi.fn().mockResolvedValue({ timestamp: 1_790_000_300n }) } as unknown as PublicClient;
+
+    const res = await listApprovals(db, client, cfg, user, business.id);
+    expect(res.notYetApprovable.signoffAhead.map((a) => a.fingerprint)).toEqual([only]);
+
+    const prep = await prepareApproval(db, client, cfg, user, business.id, only);
+    expect(prep.ahead).toBe(true);
+    expect(BigInt(prep.deadline)).toBe(BigInt(due) + 3n * 86_400n);
+  });
+
   it("prepareApproval fails if business is not in auto mode", async () => {
     const { user, business, vault } = await setupBusinessWithUser("owner", "assist");
     const { sealed, envelope, fingerprint } = await createInvoiceEnvelope(vault, "INV-003", "300");

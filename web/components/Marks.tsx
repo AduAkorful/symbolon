@@ -19,7 +19,7 @@ export function SealStamp({ handle, size = 72, className = "" }: { handle: strin
       <circle cx="50" cy="50" r="46" fill="none" stroke="currentColor" strokeWidth="2" />
       <circle cx="50" cy="50" r="27" fill="none" stroke="currentColor" strokeWidth="1" />
       <text className="font-mono" fontSize="9.5" letterSpacing="2.2" fill="currentColor">
-        <textPath href={`#${id}`}>{`SEALED · ${handle.toUpperCase()} · SEALED ·`}</textPath>
+        <textPath href={`#${id}`}>{`SEALED · @${handle} · SEALED ·`}</textPath>
       </text>
       <path d="M50 30 C 45 38, 56 44, 49 50 S 53 62, 50 70" fill="none" stroke="currentColor" strokeWidth="2.2" />
     </svg>

@@ -68,6 +68,8 @@ const HASH_RE = /^0x[0-9a-fA-F]{64}$/;
 const MIN_REASON_LENGTH = 3;
 const MAX_REASON_LENGTH = 500;
 export const APPROVAL_VALIDITY_SECONDS = 86_400n; // 24 hours (Decision A4 / Q2)
+/** A sign-off given ahead of the due date stays valid this long past it (plan 05zp, Q2) */
+const APPROVAL_AHEAD_MARGIN_SECONDS = 3n * 86_400n;
 const ZERO32: Hex = `0x${"00".repeat(32)}`;
 
 const VIEW_ROLES: Role[] = ["owner", "approver", "requester", "viewer"];
@@ -113,8 +115,21 @@ export interface HumanResponseMetric {
 }
 
 /** Open invoices that are not in the list because a rule stops them before anyone could approve (plan 05zl 1.5, QA 8) */
+/** An invoice that fails only for want of a sign-off and isn't due yet (plan 05zp): the owner or an approver can sign ahead */
+export interface SignoffAhead {
+  fingerprint: string;
+  invoiceNumber: string;
+  vendor: string;
+  amountFormatted: string;
+  token: string;
+  dueDate: Date | null;
+  needs: "owner" | "approver";
+  canSign: boolean;
+}
+
 export interface NotYetApprovable {
   count: number;
+  signoffAhead: SignoffAhead[];
   /** Why, by the Steward's latest recorded finding for each: one line per reason with how many invoices it holds back */
   reasons: { title: string; count: number }[];
 }
@@ -140,12 +155,12 @@ const NOT_YET_STATUSES = ["verified", "held", "scheduled", "partially_paid"] as 
  * Open invoices that can't reach this list yet, and why, from the Steward's latest recorded finding for each (the rules it
  * mirrored from the Vault). Reads only the database; an invoice with no finding is counted with "no recommendation yet".
  */
-async function loadNotYetApprovable(db: Database, businessId: string): Promise<NotYetApprovable> {
+async function loadNotYetApprovable(db: Database, businessId: string, ctx: { autoMode: boolean; canApprove: boolean }): Promise<NotYetApprovable> {
   const open = await db
-    .select({ fingerprint: invoices.fingerprint })
+    .select({ fingerprint: invoices.fingerprint, status: invoices.status, envelope: invoices.envelope, invoiceNumber: invoices.invoiceNumber, dueDate: invoices.dueDate, total: invoices.total, seal: invoices.seal })
     .from(invoices)
     .where(and(eq(invoices.businessId, businessId), inArray(invoices.status, [...NOT_YET_STATUSES])));
-  if (open.length === 0) return { count: 0, reasons: [] };
+  if (open.length === 0) return { count: 0, signoffAhead: [], reasons: [] };
   const subjects = open.map((o) => o.fingerprint.toLowerCase());
   const rows = await db
     .select({ subject: decisions.subject, record: decisions.record })
@@ -154,6 +169,39 @@ async function loadNotYetApprovable(db: Database, businessId: string): Promise<N
     .orderBy(desc(decisions.createdAt));
   const latest = new Map<string, Record<string, unknown>>();
   for (const r of rows) if (r.subject && !latest.has(r.subject) && !isPreparedPayment(r.record)) latest.set(r.subject, r.record as Record<string, unknown>);
+
+  // plan 05zp: Autonomous only, scheduled, and the one thing stopping it is a sign-off
+  const signoffAhead: SignoffAhead[] = [];
+  if (ctx.autoMode) {
+    for (const o of open) {
+      if (o.status !== "scheduled") continue;
+      const record = latest.get(o.fingerprint.toLowerCase());
+      const failures = (record?.inputs as { policy?: { failures?: { rule: string; detail: string }[] } } | undefined)?.policy?.failures ?? [];
+      if (failures.length === 0 || !failures.every((f) => f.rule === "ApprovalRequired")) continue;
+      let vendor = o.seal;
+      let token = "";
+      let decimals = 6;
+      try {
+        const doc = decodeSealedInvoice(o.envelope).document;
+        vendor = doc.vendor.name;
+        token = doc.currency.symbol;
+        decimals = doc.currency.decimals;
+      } catch {
+        // an unreadable record is shown by its Seal, never by a made-up name
+      }
+      signoffAhead.push({
+        fingerprint: o.fingerprint,
+        invoiceNumber: o.invoiceNumber,
+        vendor,
+        amountFormatted: formatAmount(o.total, decimals),
+        token,
+        dueDate: o.dueDate,
+        needs: failures.some((f) => /owner/i.test(f.detail)) ? "owner" : "approver",
+        canSign: ctx.canApprove,
+      });
+    }
+    signoffAhead.sort((a, b) => (a.dueDate?.getTime() ?? 0) - (b.dueDate?.getTime() ?? 0));
+  }
 
   const counts = new Map<string, number>();
   for (const fp of subjects) {
@@ -173,7 +221,7 @@ async function loadNotYetApprovable(db: Database, businessId: string): Promise<N
     const reasons = named.length > 0 ? [...new Set(named)] : [own];
     for (const title of reasons) counts.set(title, (counts.get(title) ?? 0) + 1);
   }
-  return { count: open.length, reasons: [...counts].map(([title, count]) => ({ title, count })).sort((a, b) => b.count - a.count) };
+  return { count: open.length, signoffAhead, reasons: [...counts].map(([title, count]) => ({ title, count })).sort((a, b) => b.count - a.count) };
 }
 
 /**
@@ -365,7 +413,10 @@ export async function listApprovals(
     text: `You agreed with ${metric.agreed} of ${metric.total} recommendations`,
   } : null;
 
-  const notYetApprovable = await loadNotYetApprovable(db, businessId);
+  const notYetApprovable = await loadNotYetApprovable(db, businessId, {
+    autoMode: biz.stewardMode === "auto",
+    canApprove: Boolean(userWallet && (member.role === "owner" || member.role === "approver")),
+  });
 
   return {
     items,
@@ -411,7 +462,19 @@ export async function prepareApproval(
     .where(and(eq(invoices.businessId, businessId), eq(invoices.fingerprint, fingerprint)))
     .limit(1);
   if (!invRow) throw new AuthError(404, "Invoice not found.");
-  if (invRow.status !== "awaiting_approval") {
+  // plan 05zp: a scheduled invoice whose only failing rule is the sign-off can be approved ahead of its due date
+  let signingAhead = false;
+  if (invRow.status === "scheduled") {
+    const [finding] = await db
+      .select({ record: decisions.record })
+      .from(decisions)
+      .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, fingerprint)))
+      .orderBy(desc(decisions.createdAt))
+      .limit(1);
+    const failures = (finding?.record as { inputs?: { policy?: { failures?: { rule: string }[] } } } | undefined)?.inputs?.policy?.failures ?? [];
+    signingAhead = failures.length > 0 && failures.every((f) => f.rule === "ApprovalRequired");
+  }
+  if (invRow.status !== "awaiting_approval" && !signingAhead) {
     throw new AuthError(409, `This invoice is not awaiting approval (current status: ${invRow.status}).`);
   }
 
@@ -459,7 +522,10 @@ export async function prepareApproval(
   const block = await client.getBlock().catch(() => {
     throw new AuthError(502, "Can't read chain time for this approval right now.");
   });
-  const deadline = block.timestamp + APPROVAL_VALIDITY_SECONDS;
+  // signed ahead, the approval must still be valid on the day the Steward proposes, plus a margin (plan 05zp, Q2)
+  const aheadDeadline = signingAhead && invRow.dueDate ? BigInt(Math.floor(invRow.dueDate.getTime() / 1000)) + APPROVAL_AHEAD_MARGIN_SECONDS : 0n;
+  const normal = block.timestamp + APPROVAL_VALIDITY_SECONDS;
+  const deadline = aheadDeadline > normal ? aheadDeadline : normal;
   const domain = sealDomain(cfg.chainId, cfg.deployment.contracts.invoiceLedger);
   const approvalMessage = {
     vault,
@@ -479,6 +545,9 @@ export async function prepareApproval(
     typedDataJson: typedDataJsonString,
     credit: remaining.toString(),
     deadline: deadline.toString(),
+    /** The chain's time when this was prepared: an approval's deadline must be later than it */
+    now: block.timestamp.toString(),
+    ahead: signingAhead,
     vault,
     fingerprint,
     summary: {
@@ -534,7 +603,7 @@ export async function submitApproval(
   // Re-check the same eligibility and verified ledger credit at submission; no body-supplied amount.
   const prepared = await prepareApproval(db, client, cfg, user, businessId, fingerprint);
   const remaining = BigInt(prepared.credit);
-  const nowSec = BigInt(prepared.deadline) - APPROVAL_VALIDITY_SECONDS;
+  const nowSec = BigInt(prepared.now);
   if (deadline <= nowSec || deadline > BigInt(prepared.deadline)) {
     throw new AuthError(400, "Approval deadline is expired or exceeds the approval validity window.");
   }

@@ -197,13 +197,16 @@ export class OpenRouterStewardModel implements StewardModel {
           method: "POST",
           headers: { Authorization: `Bearer ${this.opts.apiKey}`, "Content-Type": "application/json" },
           body,
-          signal: AbortSignal.timeout(remaining),
+          // the first attempt gets a share of the budget: a provider that hangs is cut off early and the retry (which OpenRouter can
+          // route elsewhere) has time to answer. Seen live: one call hanging 20 s, the next answering in 3 s.
+          signal: AbortSignal.timeout(attempt === 1 && this.timeouts[job] >= 10_000 ? Math.min(remaining, Math.floor(this.timeouts[job] * 0.4)) : remaining),
         });
         status = res.status;
         json = (await res.json().catch(() => null)) as Completion | null;
       } catch (e) {
         const aborted = e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError");
-        if (aborted) return fail(0, "model request timed out");
+        if (aborted && (attempt > 1 || deadline - Date.now() <= 0)) return fail(0, "model request timed out");
+        if (aborted) continue;
         if (attempt === 1) {
           await delay(this.retryDelayMs);
           continue;
