@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { Overlay } from "@/components/Overlay";
+import { useConfirm } from "@/components/useConfirm";
 import { Button } from "@/components/ui/button";
 import { controlClass, Field } from "@/components/ui/Field";
 import { InlineError } from "@/components/ui/States";
@@ -163,6 +164,7 @@ export function StewardClient({
   const [modePending, setModePending] = useState(false);
   const [modeError, setModeError] = useState<string | null>(null);
   const [autoModalOpen, setAutoModalOpen] = useState(false);
+  const [askConfirm, confirmDialog] = useConfirm();
   const [policyConfirmed, setPolicyConfirmed] = useState(false);
 
   // Manual run state
@@ -210,6 +212,16 @@ export function StewardClient({
     if (nextMode === "auto") {
       setAutoModalOpen(true);
       return;
+    }
+
+    // leaving Autonomous is as deliberate as entering it, and can't be undone in one click (QA SYM-42)
+    if (currentMode === "auto") {
+      const yes = await askConfirm({
+        title: `Switch to ${MODE_NAMES[nextMode]}?`,
+        body: "The Steward stops paying on its own. Turning Autonomous back on asks you to confirm the policy again.",
+        confirmLabel: `Switch to ${MODE_NAMES[nextMode]}`,
+      });
+      if (!yes) return;
     }
 
     setModePending(true);
@@ -643,6 +655,7 @@ export function StewardClient({
         </ul>
       </section>
 
+      {confirmDialog}
       {/* Autonomous mode confirmation */}
       {autoModalOpen ? (
         <Overlay

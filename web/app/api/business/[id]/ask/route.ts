@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { askSteward } from "@/lib/server/ask";
 import { readBody, requireSession, routeWith } from "@/lib/server/http";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export const POST = routeWith<{ params: Promise<{ id: string }> }>(async (request, { params }) => {
   const session = await requireSession();

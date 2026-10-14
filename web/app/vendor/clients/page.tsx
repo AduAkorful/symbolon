@@ -1,12 +1,11 @@
 import { ClientForm } from "@/components/vendor/ClientForm";
+import { ClientRow } from "@/components/vendor/ClientRow";
 import { Shell } from "@/components/shell/Shell";
 import { getDb } from "@/lib/server/db";
 import { listClients } from "@/lib/server/vendor";
 import { requireVendorPage } from "@/lib/server/vendor-page";
 import { EmptyState } from "@/components/ui/States";
 import { Lead, PageTitle } from "@/components/ui/Type";
-import { Address } from "@/components/Address";
-import { shortenAddressesIn } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -23,11 +22,7 @@ export default async function VendorClients() {
         ) : (
           <ul className="mt-8 divide-y divide-rule-soft border-y border-rule">
             {clients.map((c) => (
-              <li key={c.id} className="py-4">
-                <p className="font-medium text-ink">{shortenAddressesIn(c.name)}</p>
-                {c.vault ? <div className="mt-0.5 text-sm text-graphite"><Address value={c.vault} full copy /></div> : null}
-                {c.email ? <p className="mt-0.5 break-words text-sm text-graphite">{c.email}</p> : null}
-              </li>
+              <ClientRow key={c.id} client={{ id: c.id, name: c.name, vault: c.vault, email: c.email }} />
             ))}
           </ul>
         )}

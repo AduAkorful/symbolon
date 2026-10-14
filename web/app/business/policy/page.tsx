@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 
 import { PolicyView } from "@/components/policy/PolicyView";
 import { Shell } from "@/components/shell/Shell";
+import { LinkButton } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/States";
 import { getClient } from "@/lib/server/chain";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
@@ -17,6 +19,19 @@ export default async function BusinessPolicyPage() {
   const session = await requirePageSession("/business/policy");
   const where = await loadSpaces(session);
   if (!where.business) notFound();
+
+  if (!where.business.vault) {
+    return (
+      <Shell where={where} current={{ kind: "business", id: where.business.id }}>
+        <EmptyState
+          title="This business has no Vault yet"
+          action={<LinkButton href={`/setup?business=${where.business.id}`} size="sm">Finish setting up</LinkButton>}
+        >
+          The policy is set when the Vault is created, so there is nothing to edit until then.
+        </EmptyState>
+      </Shell>
+    );
+  }
 
   const config = getConfig();
   const db = await getDb();

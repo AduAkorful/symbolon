@@ -24,7 +24,7 @@ export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 25;
 
-const filters: [InboxFilter, string][] = [["all", "All"], ["verified", "Verified"], ["new", "New vendor"], ["unsigned", "Unsigned"], ["blocked", "Blocked"]];
+const filters: [InboxFilter, string][] = [["all", "All"], ["verified", "Verified"], ["new", "New vendor"], ["unsigned", "Unsigned"], ["blocked", "Blocked"], ["declined", "Declined"]];
 
 export default async function InboxPage({ searchParams }: { searchParams: Promise<{ filter?: string; page?: string }> }) {
   const session = await requirePageSession("/business/inbox");

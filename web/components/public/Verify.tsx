@@ -177,6 +177,7 @@ function Result({ r, explorer }: { r: CheckResult; explorer: string }) {
           "Not paid, according to Arc’s ledger."
         )}
       </p>
+      <p className="mt-3 text-xs text-graphite">Early Pay offers are signed separately by the vendor and are not part of this file, so they are not shown here. The invoice’s public link lists any that are open.</p>
       {st && st.credited > 0n && !r.check.settlementsComplete ? (
         <p className="mt-3 text-xs text-graphite">Arc’s ledger shows a payment, but its payment records could not all be read from here, so they are not listed. Try again shortly.</p>
       ) : null}

@@ -61,28 +61,48 @@ export async function handleAvailable(db: Database, handle: unknown): Promise<{ 
 }
 
 /** V1: the Seal is the signed-in person's own wallet. One Seal per person. */
+export interface RegistrationFields {
+  handle: string;
+  displayName: string;
+  website: string;
+  legalName?: string;
+}
+
+/** The text rules registration always had, applied once for both steps (prepare and register) */
+export function cleanRegistration(input: Record<string, unknown>): RegistrationFields {
+  const h = checkHandle(input.handle);
+  if (!h.ok) throw new AuthError(400, h.reason);
+  const displayName = cleanLine(input.displayName, "The name on your invoices", 2, 80);
+  const websiteText = typeof input.website === "string" ? input.website.trim() : "";
+  const website = websiteText === "" ? "" : cleanLine(websiteText, "The website", 3, 200);
+  const legalName = input.legalName ? cleanLine(input.legalName, "The legal name", 2, 200) : undefined;
+  return { handle: h.handle, displayName, website, ...(legalName ? { legalName } : {}) };
+}
+
 export async function registerMySeal(
   db: Database,
   user: Pick<SessionUser, "id" | "wallet">,
   input: Record<string, unknown>,
+  /** Checks the wallet's signature over exactly these fields (plan 05zo); throws a plain refusal */
+  verify: (fields: RegistrationFields, issuedAt: unknown, signature: unknown) => Promise<void>,
 ): Promise<{ handle: string; address: string }> {
   if (!user.wallet) throw new AuthError(409, "This account has no wallet to hold a Seal. Sign in with a wallet, or with an email that has one.");
   if (await mySeal(db, user.id)) throw new AuthError(409, "You already have a Seal.");
-  const h = checkHandle(input.handle);
-  if (!h.ok) throw new AuthError(400, h.reason);
-  const displayName = cleanLine(input.displayName, "The name on your invoices", 2, 80);
-  const legalName = input.legalName ? cleanLine(input.legalName, "The legal name", 2, 200) : undefined;
-  const website = input.website ? cleanLine(input.website, "The website", 3, 200) : undefined;
+  const fields = cleanRegistration(input);
+  await verify(fields, input.issuedAt, input.signature);
   const address = getAddress(user.wallet);
   try {
-    await registerSeal(db, { userId: user.id, address, handle: h.handle, displayName, ...(legalName ? { legalName } : {}), ...(website ? { website } : {}) });
+    await registerSeal(db, { userId: user.id, address, handle: fields.handle, displayName: fields.displayName, ...(fields.legalName ? { legalName: fields.legalName } : {}), ...(fields.website ? { website: fields.website } : {}) });
+    if (typeof input.signature === "string" && typeof input.issuedAt === "number") {
+      await db.update(seals).set({ registrationSignature: input.signature, registrationIssuedAt: new Date(input.issuedAt * 1000) }).where(eq(seals.address, address.toLowerCase()));
+    }
   } catch (e) {
     const text = String((e as { cause?: Error }).cause?.message ?? e);
     if (/seals_handle_key|handle/i.test(text) && /unique|duplicate/i.test(text)) throw new AuthError(409, "That handle is taken.");
     if (/unique|duplicate/i.test(text)) throw new AuthError(409, "This wallet already has a Seal.");
     throw new AuthError(400, e instanceof Error ? e.message : "The Seal couldn't be registered.");
   }
-  return { handle: h.handle, address: address.toLowerCase() };
+  return { handle: fields.handle, address: address.toLowerCase() };
 }
 
 /**
@@ -139,6 +159,44 @@ export async function upsertClient(db: Database, user: Pick<SessionUser, "id">, 
   }
   const [row] = await db.insert(vendorClients).values({ seal: seal.address, name, vault, email }).returning();
   return { id: row!.id, name, vault, email };
+}
+
+/** Parses the identifier fields the same way for add and edit; exactly one of vault or email (edit replaces the whole identity) */
+function clientIdentity(input: Record<string, unknown>): { vault: string | null; email: string | null } {
+  const vaultText = typeof input.vault === "string" ? input.vault.trim() : "";
+  const emailText = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
+  if (!vaultText && !emailText) throw new AuthError(400, "Give the client's Vault address or an email address.");
+  if (vaultText && !isAddress(vaultText)) throw new AuthError(400, "That isn't a valid Vault address.");
+  if (emailText && (!EMAIL.test(emailText) || emailText.length > 254)) throw new AuthError(400, "That isn't a valid email address.");
+  return { vault: vaultText ? vaultText.toLowerCase() : null, email: emailText || null };
+}
+
+/**
+ * Edits a client's name and where invoices to them go (QA NEW-7). Sealed invoices keep the payer they were signed with; this only
+ * changes what the invoice form offers next. Only the vendor's own client rows can be reached.
+ */
+export async function updateClient(db: Database, user: Pick<SessionUser, "id">, input: Record<string, unknown>): Promise<{ id: string; name: string; vault: string | null; email: string | null }> {
+  const seal = await requireMySeal(db, user.id);
+  const id = typeof input.id === "string" ? input.id : "";
+  const name = cleanLine(input.name, "The client's name", 2, 200);
+  const { vault, email } = clientIdentity(input);
+  const [row] = await db.select().from(vendorClients).where(and(eq(vendorClients.id, id), eq(vendorClients.seal, seal.address))).limit(1);
+  if (!row) throw new AuthError(404, "That client isn't in your list.");
+  // another client of yours already uses this address or email: say so rather than failing on a database rule
+  const clash = (await db.select().from(vendorClients).where(eq(vendorClients.seal, seal.address))).find(
+    (c) => c.id !== id && ((vault && c.vault === vault) || (email && c.email === email)),
+  );
+  if (clash) throw new AuthError(409, `${clash.name} already uses that ${vault && clash.vault === vault ? "Vault address" : "email"}.`);
+  await db.update(vendorClients).set({ name, vault, email }).where(eq(vendorClients.id, id));
+  return { id, name, vault, email };
+}
+
+export async function removeClient(db: Database, user: Pick<SessionUser, "id">, input: Record<string, unknown>): Promise<{ ok: true }> {
+  const seal = await requireMySeal(db, user.id);
+  const id = typeof input.id === "string" ? input.id : "";
+  const gone = await db.delete(vendorClients).where(and(eq(vendorClients.id, id), eq(vendorClients.seal, seal.address))).returning({ id: vendorClients.id });
+  if (gone.length === 0) throw new AuthError(404, "That client isn't in your list.");
+  return { ok: true };
 }
 
 export async function listClients(db: Database, user: Pick<SessionUser, "id">) {

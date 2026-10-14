@@ -84,7 +84,7 @@ async function Where({ session, next }: { session: NonNullable<Awaited<ReturnTyp
                   <Avatar name={b.name} size={36} />
                   <span>
                     <span className="block font-medium">{b.name}</span>
-                    <span className="block text-sm capitalize text-graphite">{b.role} · bills you pay</span>
+                    <span className="block text-sm text-graphite first-letter:uppercase">{b.role} · bills you pay</span>
                   </span>
                 </button>
               </form>

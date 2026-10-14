@@ -44,7 +44,7 @@ export default async function SetupPage({ searchParams }: { searchParams: Promis
           <Wordmark />
         </Link>
         <Link href={owned.length > 0 ? "/business" : "/signin"} className="text-sm text-graphite underline decoration-rule underline-offset-4">
-          Back to the app
+          Back
         </Link>
       </header>
       <PrivyBoundary>

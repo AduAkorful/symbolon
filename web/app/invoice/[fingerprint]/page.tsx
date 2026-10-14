@@ -4,6 +4,10 @@ import { InvoiceDoc } from "@/components/InvoiceDoc";
 import { QR } from "@/components/QR";
 import { PrintButton } from "@/components/public/PrintButton";
 import { PublicHeader } from "@/components/public/PublicHeader";
+import { vaultLensAbi } from "@symbolon/chain";
+import { earlyPayOffers } from "@symbolon/db";
+import { and, eq, gt, isNotNull } from "drizzle-orm";
+import { getAddress, isAddress } from "viem";
 import { getClient } from "@/lib/server/chain";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
@@ -46,6 +50,25 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
   const link = `${config.appOrigin}/invoice/${view.fingerprint}`;
   const handle = view.seal.handle ?? "unregistered";
   const st = view.ledger.ok ? view.ledger.status : null;
+  // A payer Vault that can't pay this currency is the vendor's most useful thing to know before chasing payment. Said only when the
+  // chain says so; a read that fails says nothing here (QA NEW-1).
+  let cannotPayCurrency = false;
+  if (d.payer.vault && isAddress(d.payer.vault) && !(st?.paid || st?.cancelled)) {
+    const token = d.currency.symbol === "EURC" ? config.deployment.tokens.eurc : d.currency.symbol === "USDC" ? config.deployment.tokens.usdc : null;
+    if (token) {
+      cannotPayCurrency = await getClient()
+        .readContract({ address: config.deployment.contracts.vaultLens, abi: vaultLensAbi, functionName: "isSupportedToken", args: [getAddress(d.payer.vault), token] })
+        .then((ok) => ok === false, () => false);
+    }
+  }
+  // Signed Early Pay offers still open: read from the app, since they are signed separately from the sealed file (QA NEW-5)
+  const openOffers = !(st?.paid || st?.cancelled)
+    ? await (await getDb())
+        .select({ discountBps: earlyPayOffers.discountBps, validUntil: earlyPayOffers.validUntil })
+        .from(earlyPayOffers)
+        .where(and(eq(earlyPayOffers.fingerprint, view.fingerprint), eq(earlyPayOffers.status, "open"), isNotNull(earlyPayOffers.signature), gt(earlyPayOffers.validUntil, new Date())))
+        .catch(() => [])
+    : [];
   const payment = !view.ledger.ok
     ? { tone: "text-red", text: "Can’t read the ledger on Arc right now, so payment status isn’t shown. Try again in a moment." }
     : st!.cancelled
@@ -89,6 +112,14 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
                   The amounts add up, and it is sealed for Symbolon’s ledger on Arc.
                 </li>
                 <li className={payment.tone}>{payment.text}</li>
+                {openOffers.map((o) => (
+                  <li key={`${o.discountBps}-${o.validUntil.toISOString()}`} className="text-graphite">
+                    Early Pay: the vendor offers {(o.discountBps / 100).toFixed(2)}% off if paid by {showDate(Math.floor(o.validUntil.getTime() / 1000))}. It is signed separately from this file.
+                  </li>
+                ))}
+                {cannotPayCurrency ? (
+                  <li className="text-graphite">{d.payer.name}’s Vault isn’t set to pay in {d.currency.symbol} yet, so this can’t be paid until its owner turns {d.currency.symbol} on.</li>
+                ) : null}
               </ul>
               <p className="mt-3 text-xs text-graphite">
                 Anyone can check this on their own, without trusting this page: <a href="/verify" className="underline decoration-rule underline-offset-4">verify the file</a>.

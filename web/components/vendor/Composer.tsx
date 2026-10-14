@@ -240,8 +240,12 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
     setStep("signing");
     try {
       const signature = await signInvoice(signer, prepared, discover);
-      setSent(await postJson<{ fingerprint: string; path: string }>("/api/vendor/invoice", { action: "send", document: prepared.document, signature }));
+      const saved = await postJson<{ fingerprint: string; path: string }>("/api/vendor/invoice", { action: "send", document: prepared.document, signature });
+      const sent_fp = saved.fingerprint;
+      setSent(saved);
       setStep("sent");
+      // the address bar names the invoice, so the result survives a reload and the link can be shared (QA NEW-6)
+      try { window.history.replaceState(null, "", `/vendor/invoices/${sent_fp}`); } catch { /* the page still shows the result */ }
       try { sessionStorage.removeItem(DRAFT_KEY(handle)); } catch { /* nothing to clear */ }
     } catch (err) {
       fail(err);
@@ -440,7 +444,7 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
             <label className="text-sm text-graphite sm:col-start-3 sm:row-start-2">
               Unit price
               <input className={`${box} mt-1 w-full`} inputMode="decimal" value={l.unitPrice} onChange={(e) => setLine(l.id, { unitPrice: e.target.value })} placeholder="0.00" required aria-invalid={lineProblems[i]?.unitPrice ? true : undefined} />
-              {lineProblems[i]?.unitPrice ? <span role="alert" className="mt-1 block text-xs text-red">{lineProblems[i]!.unitPrice}</span> : null}
+              {lineProblems[i]?.unitPrice ? <span role="alert" className="mt-1 block text-xs text-red">{lineProblems[i]!.unitPrice}</span> : /^\d*\.\d{3,}$/.test(l.unitPrice.trim()) ? <span className="mt-1 block text-xs text-graphite">More than cents. It is allowed, and the invoice will show every digit.</span> : null}
             </label>
             {lines.length > 1 ? (
               <button type="button" onClick={() => setLines((ls) => ls.filter((x) => x.id !== l.id))} className="min-h-9 self-end text-sm text-graphite underline decoration-rule underline-offset-4 sm:col-start-4 sm:row-start-2">

@@ -20,7 +20,9 @@ export function Rename({ businessId, initialName, isOwner, onRenamed }: RenamePr
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleSubmit(e: React.FormEvent) {
+  const [same, setSame] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent, confirm = false) {
     e.preventDefault();
     if (!name.trim()) {
       setError("Business name cannot be empty.");
@@ -34,14 +36,18 @@ export function Rename({ businessId, initialName, isOwner, onRenamed }: RenamePr
     setBusy(true);
     setError(null);
     try {
-      const res = await postJson<{ ok: boolean; name: string }>(
+      const res = await postJson<{ ok: boolean; name?: string; conflict?: { name: string } }>(
         `/api/business/${businessId}/settings`,
         {
           action: "rename",
           name: name.trim(),
+          ...(confirm ? { confirm: true } : {}),
         },
       );
-      if (res.ok) {
+      if (res.conflict) {
+        setSame(res.conflict.name);
+      } else if (res.ok && res.name) {
+        setSame(null);
         setEditing(false);
         onRenamed?.(res.name);
         // the switcher and header read the name from the server; refresh so they stop showing the old one (plan 05zj E, SYM-27)
@@ -85,7 +91,7 @@ export function Rename({ businessId, initialName, isOwner, onRenamed }: RenamePr
           type="text"
           value={name}
           maxLength={80}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => { setName(e.target.value); setSame(null); }}
           disabled={busy}
           className={`${controlClass} flex-1`}
           autoFocus
@@ -98,6 +104,15 @@ export function Rename({ businessId, initialName, isOwner, onRenamed }: RenamePr
         <span>{name.length}/80</span>
       </div>
       {error && <p className="mt-1 text-xs text-red">{error}</p>}
+      {same ? (
+        <div className="mt-2 rounded-doc border border-rule p-3 text-sm">
+          <p>You already own a business called “{same}”. Two with the same name are easy to mix up in the switcher.</p>
+          <div className="mt-2 flex gap-2">
+            <Button size="sm" variant="secondary" disabled={busy} onClick={() => setSame(null)}>Choose another name</Button>
+            <Button size="sm" busy={busy} onClick={(e) => void handleSubmit(e as unknown as React.FormEvent, true)}>Use this name anyway</Button>
+          </div>
+        </div>
+      ) : null}
     </form>
   );
 }

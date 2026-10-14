@@ -129,6 +129,14 @@ export default async function VendorInvoice({ params }: { params: Promise<{ fing
                     </p>
                   </div>
                 </li>
+              ) : found.row.status === "declined" ? (
+                <li className="flex items-start gap-3">
+                  <span className="mt-1 h-2 w-2 rounded-full bg-red flex-shrink-0" />
+                  <div>
+                    <p className="font-medium text-red">Declined by {found.sealed.document.payer.name}</p>
+                    <p className="text-graphite">{found.row.declinedReason ?? "No reason was given."}</p>
+                  </div>
+                </li>
               ) : (
                 <li className="flex items-start gap-3">
                   <span className="mt-1 h-2 w-2 rounded-full bg-rule flex-shrink-0" />

@@ -1,7 +1,7 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { spacesFor, type Spaces } from "./access";
-import { getAddress } from "viem";
+import { getAddress, isAddress } from "viem";
 import { getClient } from "./chain";
 import { getConfig } from "./config";
 import { getDb } from "./db";
@@ -18,13 +18,16 @@ export interface Where {
   spaces: Spaces;
   /** The business whose screens `/business` shows: the one last opened if they still belong to it, else the first */
   business: Spaces["businesses"][number] | null;
+  /** The person's own wallet, shown under their email so they can see which address is their Seal and receives payouts */
+  wallet: string | null;
 }
 
 export async function loadSpaces(session: CurrentSession): Promise<Where> {
   const spaces = await spacesFor(await getDb(), session.user.id, getConfig().chainId);
   const wanted = (await cookies()).get(BUSINESS_COOKIE)?.value;
   const { email, wallet } = session.user;
-  const who = email ?? (wallet ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : "Signed in");
+  const shown = wallet && isAddress(wallet) ? getAddress(wallet) : wallet;
+  const who = email ?? (shown ? `${shown.slice(0, 6)}…${shown.slice(-4)}` : "Signed in");
   const business = spaces.businesses.find((b) => b.id === wanted) ?? spaces.businesses[0] ?? null;
   // Every business page's shell asks Arc about this Vault (is the Steward paused, is a newer release out). Starting those reads
   // here, before the page does its own work, means they run beside it instead of after it, and the shell and the page share them
@@ -35,5 +38,5 @@ export async function loadSpaces(session: CurrentSession): Promise<Where> {
     void readVaultState(client, config.deployment, business.vault);
     void checkReleaseNudge(client, config.deployment, getAddress(business.vault));
   }
-  return { who, spaces, business };
+  return { who, spaces, business, wallet: shown ?? null };
 }

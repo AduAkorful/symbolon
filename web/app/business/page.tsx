@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { arcChain } from "@symbolon/chain";
-import { formatUnits } from "viem";
+import { erc20Abi, formatUnits } from "viem";
 import { Shell } from "@/components/shell/Shell";
 import { getClient } from "@/lib/server/chain";
 import { getConfig } from "@/lib/server/config";
@@ -17,6 +17,8 @@ import { HomeQueues } from "@/components/home/HomeQueues";
 import { showMoney } from "@/lib/format";
 import { LinkButton } from "@/components/ui/button";
 import { Money } from "@/components/ui/Money";
+import { Callout } from "@/components/ui/Callout";
+import { listBudgets } from "@/lib/server/budgets";
 import { Eyebrow, PageTitle } from "@/components/ui/Type";
 
 export const dynamic = "force-dynamic";
@@ -32,8 +34,26 @@ export default async function BusinessHome() {
   const db = await getDb();
   // Everything the page needs is asked for together: the reads share one round trip to Arc and the loaders overlap, instead of
   // each waiting for the one before
-  const [summary, vaultState, needsYou, today, ahead] = await Promise.all([
+  const [summary, eurcHeld, operatingCap, vaultState, needsYou, today, ahead] = await Promise.all([
     b?.vault ? readVaultSummary(client, config.deployment, b.vault) : null,
+    // EURC beside USDC: a failed read is "can't confirm", never zero (QA SYM-40)
+    b?.vault
+      ? (async () => {
+          const token = config.deployment.tokens.eurc;
+          const [raw, decimals] = await Promise.all([
+            client.readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [b.vault as `0x${string}`] }),
+            client.readContract({ address: token, abi: erc20Abi, functionName: "decimals" }),
+          ]);
+          return formatUnits(raw, decimals);
+        })().catch(() => null)
+      : null,
+    // the owner is nudged to set a monthly budget once the Vault holds money and its operating budget is still "Unlimited" (QA SYM-17b);
+    // a read that fails shows no nudge, never a guess
+    b?.vault && b.role === "owner"
+      ? listBudgets(db, client, config.deployment, session.user, b.id)
+          .then((r) => r.budgets.find((x) => x.isOperating)?.cap ?? null)
+          .catch(() => null)
+      : null,
     // The Steward's standing is what the Vault says, compared with the wallet we set up (plan 05h, H13–H15)
     b?.vault ? readVaultState(client, config.deployment, b.vault) : null,
     b ? loadNeedsYou(db, client, config, session.user, b.id) : null,
@@ -134,7 +154,29 @@ export default async function BusinessHome() {
                 </dd>
               </div>
             ) : null}
+            {b.vault ? (
+              <div className="grid gap-1 py-3.5 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
+                <dt className="text-graphite">EURC held</dt>
+                <dd>
+                  {eurcHeld !== null ? (
+                    <>
+                      <Money className="font-medium">{showMoney(eurcHeld, "EURC")}</Money>
+                      <span className="ml-2 text-graphite">live from Arc</span>
+                    </>
+                  ) : (
+                    <span className="text-red">Can’t confirm the balance right now.</span>
+                  )}
+                </dd>
+              </div>
+            ) : null}
           </dl>
+
+          {operatingCap === "Unlimited" && summary?.ok && summary.usdc > 0n ? (
+            <Callout tone="info" title="Set a monthly budget" className="mt-8">
+              Nothing limits how much this Vault can spend in a month yet. A budget is a cap the Vault itself enforces.{" "}
+              <Link href="/business/policy#budgets" className="underline decoration-rule underline-offset-4">Set one in Policy</Link>.
+            </Callout>
+          ) : null}
 
           {needsYou && today ? (
             <HomeQueues needsYou={needsYou} today={today} ahead={ahead ?? undefined} />

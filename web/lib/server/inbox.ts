@@ -23,7 +23,7 @@ const CLAIM_ROLES: Role[] = ["owner", "approver", "requester"];
 const HEX_HASH = /^0x[0-9a-f]{64}$/;
 
 export type TrustState = "verified" | "new_vendor" | "blocked" | "failed";
-export type InboxFilter = "all" | "verified" | "new" | "unsigned" | "blocked";
+export type InboxFilter = "all" | "verified" | "new" | "unsigned" | "blocked" | "declined";
 
 export function duplicateCandidates(db: Database, businessId: string, seal: string, fingerprint: string) {
   return db.select({ fingerprint: invoices.fingerprint, seal: invoices.seal, invoiceNumber: invoices.invoiceNumber, total: invoices.total, issuedAt: invoices.issuedAt, receivedAt: invoices.receivedAt })
@@ -120,6 +120,8 @@ export function filterInbox(items: InboxItem[], filter: InboxFilter): InboxItem[
       return items.filter((i) => i.kind === "invoice" && i.trust === "blocked");
     case "unsigned":
       return items.filter((i) => i.kind === "unsigned");
+    case "declined":
+      return items.filter((i) => i.kind === "invoice" && i.status === "declined");
     default:
       return items;
   }

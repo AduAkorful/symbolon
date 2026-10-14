@@ -176,6 +176,13 @@
       "when": 1791979180568,
       "tag": "0024_medical_gargoyle",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791985944522,
+      "tag": "0025_lush_christian_walker",
+      "breakpoints": true
     }
   ]
 }

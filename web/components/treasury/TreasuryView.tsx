@@ -197,7 +197,7 @@ export function TreasuryView({
                   ? "No bills due"
                   : state.forecast.runwayDays !== null
                     ? `${state.forecast.runwayDays} days`
-                    : `Covered for ${state.forecast.bufferDays} days`}
+                    : `Buffer: ${state.forecast.bufferDays} days`}
           </dd>
           <dd className="mt-1.5 text-sm text-graphite">{state.forecast.runwayStatement}</dd>
         </div>

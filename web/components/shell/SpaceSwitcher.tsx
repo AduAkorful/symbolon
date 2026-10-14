@@ -20,11 +20,12 @@ const item = "flex min-h-11 w-full items-center gap-3 rounded-doc px-2.5 py-2 te
 const quiet = "flex min-h-10 w-full items-center rounded-doc px-2.5 py-1.5 text-left text-sm text-graphite outline-none hover:text-ink focus-visible:text-ink focus-visible:ring-2 focus-visible:ring-seal";
 
 /** Switch between your Seal and each business you belong to, and sign out. One person can be both a vendor and a business owner. */
-export function SpaceSwitcher({ spaces, current, who, compact = false }: { spaces: SwitcherSpaces; current: Current; who: string; compact?: boolean }) {
+export function SpaceSwitcher({ spaces, current, who, wallet = null, compact = false }: { spaces: SwitcherSpaces; current: Current; who: string; wallet?: string | null; compact?: boolean }) {
   const { logout } = usePrivy();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
   const [ask, confirmDialog] = useConfirm();
   const ref = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -80,6 +81,7 @@ export function SpaceSwitcher({ spaces, current, who, compact = false }: { space
       });
       if (!yes) return;
     }
+    setSigningOut(true);
     try {
       await postJson(everywhere ? "/api/auth/signout-all" : "/api/auth/signout");
       await logout().catch(() => undefined);
@@ -87,6 +89,7 @@ export function SpaceSwitcher({ spaces, current, who, compact = false }: { space
       router.refresh();
     } catch (e) {
       setProblem(e instanceof Error ? e.message : "Couldn't sign out. Try again.");
+      setSigningOut(false);
     }
   }
 
@@ -115,6 +118,9 @@ export function SpaceSwitcher({ spaces, current, who, compact = false }: { space
           <p className="truncate px-2.5 pb-1.5 pt-1 text-xs text-graphite">
             Signed in as <span className="text-ink">{who}</span>
           </p>
+          {wallet && who.toLowerCase() !== wallet.toLowerCase() && !who.startsWith("0x") ? (
+            <p className="break-all px-2.5 pb-1.5 font-mono text-[11px] text-graphite" title="Your wallet: your Seal, and where payouts go">{wallet}</p>
+          ) : null}
           {spaces.seal ? (
             <Link role="menuitem" href="/vendor" data-current={current.kind === "vendor"} onClick={() => setOpen(false)} className={`${item} ${current.kind === "vendor" ? "bg-rule-soft/50" : ""}`}>
               <Avatar name={spaces.seal.displayName} size={24} />
@@ -149,10 +155,10 @@ export function SpaceSwitcher({ spaces, current, who, compact = false }: { space
             <Link role="menuitem" href="/setup" onClick={() => setOpen(false)} className={quiet}>
               Set up a business
             </Link>
-            <button role="menuitem" onClick={() => signOut(false)} className={quiet}>
-              Sign out
+            <button role="menuitem" disabled={signingOut} onClick={() => signOut(false)} className={quiet}>
+              {signingOut ? "Signing out…" : "Sign out"}
             </button>
-            <button role="menuitem" onClick={() => signOut(true)} className={quiet}>
+            <button role="menuitem" disabled={signingOut} onClick={() => signOut(true)} className={quiet}>
               Sign out everywhere
             </button>
             {problem ? (

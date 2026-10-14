@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Overlay } from "@/components/Overlay";
+import { useConfirm } from "@/components/useConfirm";
 import { Button } from "@/components/ui/button";
 import { Field, controlClass, textareaClass } from "@/components/ui/Field";
 import { InlineError } from "@/components/ui/States";
@@ -79,9 +80,16 @@ export function DeclineInvoice({ businessId, fingerprint }: { businessId: string
 /** Puts a declined invoice back to "checked"; the Steward looks at it again on its next run */
 export function ReopenInvoice({ businessId, fingerprint }: { businessId: string; fingerprint: string }) {
   const router = useRouter();
+  const [ask, confirmDialog] = useConfirm();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function reopen() {
+    const yes = await ask({
+      title: "Reopen this invoice?",
+      body: "The Steward will check it again on its next run, and it returns to the list its current blockers put it in. The vendor is told.",
+      confirmLabel: "Reopen invoice",
+    });
+    if (!yes) return;
     setBusy(true);
     setError(null);
     try {
@@ -95,6 +103,7 @@ export function ReopenInvoice({ businessId, fingerprint }: { businessId: string;
   }
   return (
     <span>
+      {confirmDialog}
       <Button size="sm" variant="secondary" onClick={() => void reopen()} busy={busy}>{busy ? "Reopening…" : "Reopen"}</Button>
       {error ? <span className="ml-3 text-sm text-red">{error}</span> : null}
     </span>

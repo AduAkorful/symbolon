@@ -1,7 +1,7 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
-import { businesses, type Database } from "@symbolon/db";
+import { and, eq } from "drizzle-orm";
+import { businesses, members, type Database } from "@symbolon/db";
 import { requireMember } from "./access";
 import { appendAppDecision } from "./app-decisions";
 import { AuthError } from "./errors";
@@ -151,7 +151,8 @@ export async function renameBusiness(
   user: Pick<SessionUser, "id">,
   businessId: string,
   name: unknown,
-): Promise<{ ok: true; name: string }> {
+  confirm = false,
+): Promise<{ ok: true; name: string } | { ok: false; conflict: { id: string; name: string } }> {
   await requireMember(db, user.id, businessId, "owner");
 
   if (typeof name !== "string") {
@@ -169,6 +170,17 @@ export async function renameBusiness(
 
   const [b] = await db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1);
   if (!b) throw new AuthError(404, "Business not found.");
+
+  // another business this person owns already has this name: say so first, and go on only when they confirm (plan 05zj D, SYM-15)
+  if (!confirm) {
+    const owned = await db
+      .select({ id: businesses.id, name: businesses.name })
+      .from(members)
+      .innerJoin(businesses, eq(businesses.id, members.businessId))
+      .where(and(eq(members.userId, user.id), eq(members.role, "owner"), eq(businesses.chainId, b.chainId)));
+    const same = owned.find((o) => o.id !== businessId && o.name.normalize("NFC").trim().toLowerCase() === trimmed.normalize("NFC").toLowerCase());
+    if (same) return { ok: false, conflict: { id: same.id, name: same.name } };
+  }
 
   await db.update(businesses).set({ name: trimmed }).where(eq(businesses.id, businessId));
 

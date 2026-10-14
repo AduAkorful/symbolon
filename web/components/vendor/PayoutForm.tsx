@@ -49,7 +49,7 @@ export function PayoutForm({ initial, sealAddress }: { initial: string | null; s
       <p className="text-sm text-graphite">
         {saved
           ? <>New invoices pay out to <span className="break-all font-mono text-ink">{saved}</span>.</>
-          : <>New invoices pay out to your Seal’s own wallet, <span className="break-all font-mono text-ink">{sealAddress}</span>.</>}
+          : <>New invoices pay out to your Seal’s own wallet, <span className="break-all font-mono text-ink">{isAddress(sealAddress) ? getAddress(sealAddress) : sealAddress}</span>.</>}
       </p>
       {note ? (note.ok ? <p role="status" className="text-sm text-ok">{note.text}</p> : <InlineError>{note.text}</InlineError>) : null}
       <Button type="submit" busy={busy} disabled={problem !== null}>{busy ? "Saving…" : "Save"}</Button>

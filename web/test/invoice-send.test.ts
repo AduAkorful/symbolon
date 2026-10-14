@@ -9,6 +9,7 @@ import { AuthError } from "@/lib/server/errors";
 import type { ComposerDraft } from "@/lib/server/compose";
 import { listMyInvoices, myInvoice, nextInvoiceNumber, prepareInvoice, sendInvoice } from "@/lib/server/invoice-send";
 import { listClients, registerMySeal } from "@/lib/server/vendor";
+import { checkRegistrationSignature, registrationTypedData } from "@/lib/server/seal-registration";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => {
@@ -36,7 +37,7 @@ async function vendor() {
   const key = generatePrivateKey();
   const account = privateKeyToAccount(key);
   const [u] = await db.insert(users).values({ wallet: account.address.toLowerCase() }).returning();
-  await registerMySeal(db, u!, { handle: `vendor-${++n}-z`, displayName: "Studio Ana" });
+  await registerMySeal(db, u!, { handle: `vendor-${++n}-z`, displayName: "Studio Ana" }, async () => undefined);
   return { user: u!, account };
 }
 
@@ -241,5 +242,30 @@ describe("numbers, lists and detail", () => {
     expect((await myInvoice(db, a.user, p.fingerprint))?.row.fingerprint).toBe(p.fingerprint);
     expect(await myInvoice(db, b.user, p.fingerprint)).toBeNull();
     expect(await myInvoice(db, a.user, "0xnothash")).toBeNull();
+  });
+});
+
+describe("signed Seal registration (plan 05zo)", () => {
+  const fields = { handle: "signed-seal-z", displayName: "Studio Ana", website: "" };
+  const sign = async (account: ReturnType<typeof privateKeyToAccount>, issuedAt: number, f = fields) =>
+    account.signTypedData(registrationTypedData(cfg.chainId, account.address, f, issuedAt));
+  const nowS = 1_800_000_000;
+
+  it("accepts the account's own wallet over exactly these fields", async () => {
+    const account = privateKeyToAccount(generatePrivateKey());
+    const sig = await sign(account, nowS - 10);
+    await expect(checkRegistrationSignature(chain(), cfg.chainId, account.address, fields, nowS - 10, sig, nowS)).resolves.toBeUndefined();
+  });
+
+  it("refuses another wallet, changed details, a missing signature and a stale or future time", async () => {
+    const account = privateKeyToAccount(generatePrivateKey());
+    const other = privateKeyToAccount(generatePrivateKey());
+    const sig = await sign(account, nowS - 10);
+    const check = (w: string, f: typeof fields, at: number, s: unknown) => checkRegistrationSignature(chain(), cfg.chainId, w, f, at, s, nowS);
+    await expect(check(other.address, fields, nowS - 10, sig)).rejects.toBeInstanceOf(AuthError);
+    await expect(check(account.address, { ...fields, displayName: "Someone Else" }, nowS - 10, sig)).rejects.toBeInstanceOf(AuthError);
+    await expect(check(account.address, fields, nowS - 10, undefined)).rejects.toBeInstanceOf(AuthError);
+    await expect(check(account.address, fields, nowS - 3_600, await sign(account, nowS - 3_600))).rejects.toThrow(/expired/);
+    await expect(check(account.address, fields, nowS + 3_600, await sign(account, nowS + 3_600))).rejects.toThrow(/expired/);
   });
 });

@@ -91,6 +91,9 @@ export const seals = pgTable(
     verifiedDomain: text("verified_domain"),
     /** Replaced by a newer Seal through a signed rotation */
     rotatedTo: address("rotated_to"),
+    /** The wallet's EIP-712 signature over the handle, name and website it registered (plan 05zo); null on Seals made before it */
+    registrationSignature: text("registration_signature"),
+    registrationIssuedAt: timestamp("registration_issued_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [

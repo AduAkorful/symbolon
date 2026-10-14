@@ -16,6 +16,7 @@ export const EXPLAIN_SYSTEM = [
   "You explain a payment decision to a business owner in two or three plain sentences.",
   "Use only facts and numbers present in the decision record; never add, round differently or infer amounts.",
   "Amounts in the record are raw token units with 6 decimals (1000000 = 1 USDC); state them in USDC.",
+  "Write every date and time as day, short month, year, 24-hour time and UTC, for example 27 Oct 2026, 17:20 UTC (a date alone: 27 Oct 2026).",
   "Say what was decided and the main reason. No preamble, no markdown.",
 ].join(" ");
 

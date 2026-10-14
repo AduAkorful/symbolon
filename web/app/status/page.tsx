@@ -36,6 +36,9 @@ export default async function StatusPage() {
             ? `Release ${config.deployment.releaseVersion}. Read from the chain at ${status.readAt.toISOString().slice(11, 19)} UTC.`
             : `${failed.length} of ${status.checks.length} checks failed. Nothing on this page should be trusted until they pass.`}
         </p>
+        {process.env.VERCEL_GIT_COMMIT_SHA ? (
+          <p data-reveal className="mt-1 text-sm text-graphite">Build {process.env.VERCEL_GIT_COMMIT_SHA.slice(0, 7)}</p>
+        ) : null}
 
         <ul data-reveal className="mt-10 max-w-3xl border-t border-rule" aria-label="Contract health checks">
           {status.checks.map((c) => (

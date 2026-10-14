@@ -58,6 +58,12 @@ export async function appendAppDecision(
     if (invoice) await notifyVendor(db, invoice.seal, { kind: "invoice_declined", subject: input.subject,
       body: { businessName: biz?.name ?? null, invoiceNumber: invoice.invoiceNumber, reason: input.inputs.reason ?? null }, dedupeKey: `declined:${input.subject}:${hash}` });
   }
+  if (input.kind === "invoice_reopened" && input.subject) {
+    const [invoice] = await db.select({ seal: invoices.seal, invoiceNumber: invoices.invoiceNumber }).from(invoices).where(eq(invoices.fingerprint, input.subject));
+    const [biz] = await db.select({ name: businesses.name }).from(businesses).where(eq(businesses.id, businessId)).limit(1);
+    if (invoice) await notifyVendor(db, invoice.seal, { kind: "invoice_reopened", subject: input.subject,
+      body: { businessName: biz?.name ?? null, invoiceNumber: invoice.invoiceNumber }, dedupeKey: `reopened:${input.subject}:${hash}` });
+  }
   if ((input.kind === "offer_declined" || input.kind === "counter_sent") && input.subject) {
     const [invoice] = await db.select({ seal: invoices.seal }).from(invoices).where(eq(invoices.fingerprint, input.subject));
     if (invoice) await notifyVendor(db, invoice.seal, { kind: input.kind === "counter_sent" ? "offer_countered" : "offer_declined", subject: input.subject,

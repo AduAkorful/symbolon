@@ -38,7 +38,7 @@ export class OpenRouterError extends Error {
   }
 }
 
-const DEFAULT_TIMEOUTS: Record<Job, number> = { extract: 75_000, explain: 20_000, route: 15_000, plan: 9_000, phrase: 9_000 };
+const DEFAULT_TIMEOUTS: Record<Job, number> = { extract: 75_000, explain: 20_000, route: 15_000, plan: 20_000, phrase: 20_000 };
 const RETRYABLE = new Set([429, 502, 503, 504]);
 
 interface Choice {

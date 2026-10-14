@@ -364,10 +364,11 @@ export async function loadNeedsYou(
       problems.push("The Steward this Vault reports onchain isn't the wallet configured for this business.");
     }
 
-    if (biz.stewardMode === "auto" && biz.stewardWallet) {
+    // the Steward page's own floor: below 0.01 USDC (18-decimal native units) a run is skipped (QA SYM-21)
+    if (biz.stewardMode !== "shadow" && biz.stewardWallet) {
       const bal = await feeBalance(client, biz.stewardWallet);
-      if (bal !== null && bal === 0n) {
-        problems.push("Steward fee balance is 0 USDC. Autonomous runs will skip until funded.");
+      if (bal !== null && bal < 10_000_000_000_000_000n) {
+        problems.push("The Steward's fee balance is below 0.01 USDC, so its runs will be skipped. Add fees on the Steward page.");
       }
     }
   }

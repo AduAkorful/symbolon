@@ -191,6 +191,12 @@ export function describeDecision(
       return { what: "Moved idle cash into the USYC reserve", tone: "seal" };
     case "reserve_redeem":
       return { what: "Redeemed reserve cash for upcoming payment buffer" };
+    case "invoice_declined": {
+      const why = String(((rec?.inputs ?? {}) as { reason?: unknown }).reason ?? "");
+      return { what: `Declined invoice ${subjectShort}${why ? `: ${why}` : ""}`, tone: "red" };
+    }
+    case "invoice_reopened":
+      return { what: `Reopened invoice ${subjectShort}` };
     case "early_pay_offered":
       return { what: `Vendor submitted early pay cash-now offer for ${subjectShort}` };
     default:
@@ -286,6 +292,7 @@ export async function loadActivity(
       role: members.role,
       email: users.email,
       wallet: users.wallet,
+      displayName: users.displayName,
     })
     .from(members)
     .innerJoin(users, eq(users.id, members.userId))
@@ -338,7 +345,7 @@ export async function loadActivity(
     if (actorId) {
       const mem = memberByUserId.get(actorId);
       if (mem) {
-        return { kind: "person", label: mem.email || mem.wallet || "Member" };
+        return { kind: "person", label: mem.displayName || mem.email || mem.wallet || "Member" };
       }
     }
     const mode = (rec as { mode?: string } | null)?.mode;

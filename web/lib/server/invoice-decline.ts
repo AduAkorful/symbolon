@@ -26,6 +26,8 @@ const MAX_NOTE = 400;
 const DECLINABLE = new Set(["received", "verified", "held", "awaiting_approval", "scheduled", "partially_paid"]);
 
 export function declineText(code: DeclineReason, note: string | null): string {
+  // "Something else" is only a label for the note; the vendor should read the note itself
+  if (code === "other") return note ?? DECLINE_REASONS[code];
   return note ? `${DECLINE_REASONS[code]}: ${note}` : DECLINE_REASONS[code];
 }
 

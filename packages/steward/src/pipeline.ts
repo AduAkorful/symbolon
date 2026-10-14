@@ -74,6 +74,8 @@ export interface Deps {
   /** Node simulation of a call as the Steward; throws with the contract error if it would revert */
   simulate: (call: ContractCall) => Promise<unknown>;
   send?: (call: ContractCall) => Promise<Hex>;
+  /** True when this record would only repeat the last stored decision, so the model need not be asked to explain it again */
+  isRepeat?: (record: DecisionRecord) => Promise<boolean>;
 }
 
 export interface StewardResult {
@@ -97,7 +99,9 @@ export async function processInvoice(ctx: InvoiceContext, deps: Deps): Promise<S
   const finish = async (outcome: Outcome, record: Omit<DecisionRecord, keyof typeof base>, extra: Partial<StewardResult> = {}) => {
     // plain JSON from here on (bigints as decimal strings), so the record stores, hashes and displays identically
     let full = toRecordValue({ ...base, ...record }) as DecisionRecord;
-    if (deps.model) {
+    // a pass over unchanged invoices repeats the same decisions; each explanation is a paid model request, so only new facts get one
+    const repeat = deps.isRepeat ? await deps.isRepeat(full).catch(() => false) : false;
+    if (deps.model && !repeat) {
       try {
         full = { ...full, explanation: await deps.model.explain(full) };
       } catch {

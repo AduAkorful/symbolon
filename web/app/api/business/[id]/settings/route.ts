@@ -73,7 +73,7 @@ export const POST = routeWith<Ctx>(async (request, ctx) => {
   const client = getClient();
 
   if (body.action === "rename") {
-    const res = await renameBusiness(db, session.user, businessId, body.name);
+    const res = await renameBusiness(db, session.user, businessId, body.name, body.confirm === true);
     return NextResponse.json(res);
   }
 

@@ -10,14 +10,18 @@ import { D, E, registerMotion } from "@/lib/motion";
 import { Address } from "@/components/Address";
 import { PageTitle } from "@/components/ui/Type";
 import { controlClass } from "@/components/ui/Field";
+import { useWalletProviders } from "@/components/wallet/useWalletProviders";
+import { signTypedData } from "./seal-signer";
+import type { SignerPlan } from "@/components/setup/owner-signer";
 
 const steps = ["Your Seal", "Getting paid"] as const;
 const input = controlClass;
 const primary = "rounded-doc bg-ink px-5 py-3 font-medium text-paper disabled:opacity-40";
 
 /** Vendor sign-up (V1): the Seal is your own wallet; pick a handle and the name on your invoices, then where new invoices pay out. Plan 05i. */
-export function Onboarding({ wallet, next = "/vendor" }: { wallet: string | null; next?: string }) {
+export function Onboarding({ wallet, signer, next = "/vendor" }: { wallet: string | null; signer: SignerPlan; next?: string }) {
   const router = useRouter();
+  const discover = useWalletProviders();
   const [i, setI] = useState(0);
   const [handle, setHandle] = useState("");
   const [avail, setAvail] = useState<{ ok: boolean; reason?: string } | "checking" | null>(null);
@@ -43,6 +47,11 @@ export function Onboarding({ wallet, next = "/vendor" }: { wallet: string | null
       setAvail(null);
       return;
     }
+    // a handle that can't be one is said at once, without asking the server (QA NEW-10)
+    if (!/^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/.test(handle)) {
+      setAvail(handle.length < 3 ? null : { ok: false, reason: "Use 3 to 40 lowercase letters, digits or hyphens, starting and ending with a letter or digit." });
+      return;
+    }
     setAvail("checking");
     // an answer that arrives after the handle changed again is for a handle that is no longer there (plan 05zj F, SYM-46)
     let stale = false;
@@ -66,7 +75,10 @@ export function Onboarding({ wallet, next = "/vendor" }: { wallet: string | null
     setBusy(true);
     setProblem(null);
     try {
-      await postJson("/api/vendor/seal", { handle, displayName: name, website });
+      // the wallet signs the exact text the server built; the Seal is saved only with that signature (plan 05zo)
+      const prepared = await postJson<{ typedData: string; issuedAt: number }>("/api/vendor/seal", { action: "prepare", handle, displayName: name, website });
+      const signature = await signTypedData(signer, prepared.typedData, discover);
+      await postJson("/api/vendor/seal", { action: "register", handle, displayName: name, website, issuedAt: prepared.issuedAt, signature });
       setI(1);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong.";
@@ -103,7 +115,7 @@ export function Onboarding({ wallet, next = "/vendor" }: { wallet: string | null
           <Wordmark />
         </Link>
         <Link href="/signin" className="text-sm text-graphite underline decoration-rule underline-offset-4">
-          Back to the app
+          Back
         </Link>
       </header>
       <main className="mx-auto max-w-[980px] px-6 pb-24 pt-12">
@@ -128,7 +140,7 @@ export function Onboarding({ wallet, next = "/vendor" }: { wallet: string | null
               {wallet ? (
                 <>
                   <p className="mt-4 text-sm text-graphite">
-                    Your Seal is the wallet <Address value={wallet} full />, the one you signed in with. Registering needs no extra signature: nobody else can register this wallet as theirs.
+                    Your Seal is the wallet <Address value={wallet} full />, the one you signed in with. Registering asks that wallet to sign your handle and name, so they are yours and not just a record on our server.
                   </p>
                   <p className="mt-2 text-sm text-graphite">
                     The name and handle below are what businesses see. They don’t prove who you are: a business checks that for itself before it adds you as a payee.
@@ -160,7 +172,7 @@ export function Onboarding({ wallet, next = "/vendor" }: { wallet: string | null
                 </p>
               ) : null}
               <button disabled={busy || !wallet || (avail !== null && avail !== "checking" && !avail.ok)} className={`mt-8 ${primary}`}>
-                {busy ? "Registering…" : "Register my Seal"}
+                {busy ? "Waiting for your wallet…" : "Sign and register my Seal"}
               </button>
             </form>
           ) : (

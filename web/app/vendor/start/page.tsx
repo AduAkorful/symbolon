@@ -4,6 +4,9 @@ import { getDb } from "@/lib/server/db";
 import { requirePageSession } from "@/lib/server/http";
 import { mySeal } from "@/lib/server/vendor";
 import { safeNext } from "@/lib/next-path";
+import { PrivyBoundary } from "@/components/providers/PrivyBoundary";
+import { getConfig } from "@/lib/server/config";
+import { signerPlanFor } from "@/lib/server/signer-plan";
 
 export const dynamic = "force-dynamic";
 
@@ -13,5 +16,9 @@ export default async function VendorStart({ searchParams }: { searchParams: Prom
   const next = safeNext(query.next, "/vendor");
   const session = await requirePageSession(`/vendor/start${query.next ? `?next=${encodeURIComponent(next)}` : ""}`);
   if (await mySeal(await getDb(), session.user.id)) redirect(next);
-  return <Onboarding wallet={session.user.wallet} next={next} />;
+  return (
+    <PrivyBoundary>
+      <Onboarding wallet={session.user.wallet} signer={signerPlanFor(session, getConfig())} next={next} />
+    </PrivyBoundary>
+  );
 }

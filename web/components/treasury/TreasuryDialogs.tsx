@@ -29,6 +29,8 @@ const TOKENS = [
   { value: "EURC", label: "EURC" },
 ] as const;
 
+const FEE_RESERVE_RAW = 10_000n;
+
 export function WithdrawModal({
   businessId,
   signer,
@@ -224,9 +226,23 @@ export function FundModal({
         <Field label="Amount">
           {(a) => <input {...a} type="text" inputMode="decimal" required placeholder="500" value={amount} onChange={(e) => setAmount(e.target.value)} className={controlClass} />}
         </Field>
-        {walletRaw !== null ? <p className="text-xs text-graphite">Your wallet holds {showMoney(moneyInput(walletRaw, 6), "USDC")}.</p> : null}
+        {walletRaw !== null ? (
+          <p className="text-xs text-graphite">
+            Your wallet holds {showMoney(moneyInput(walletRaw, 6), "USDC")}.
+            {/* USDC is also Arc's fee token, so "everything" would leave nothing to pay the fee with (QA SYM-19) */}
+            {walletRaw > FEE_RESERVE_RAW ? (
+              <>
+                {" "}
+                <button type="button" className="underline decoration-rule underline-offset-4 hover:text-ink" onClick={() => setAmount(moneyInput(walletRaw - FEE_RESERVE_RAW, 6))}>
+                  Use the most I can
+                </button>{" "}
+                (keeps 0.01 for the network fee).
+              </>
+            ) : null}
+          </p>
+        ) : null}
         <WatchTokens signer={signer} tokens={watchable} />
-        {amountProblem ? <InlineError>{amountProblem}</InlineError> : null}
+        {amountProblem ? <InlineError>{amountProblem}</InlineError> : /^\d*\.\d{3,}$/.test(amount.trim()) ? <p className="text-xs text-graphite">More than cents. It is allowed, and the Vault receives exactly this amount.</p> : null}
 
         <Overlay.Footer>
           {sentHash ? (

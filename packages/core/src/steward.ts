@@ -87,6 +87,7 @@ export async function runSteward(env: StewardEnv, businessId: string): Promise<S
           return simulateCall(env.client, call, wallet.address);
         },
         ...(wallet ? { send: (call) => wallet.send(call) } : {}),
+        isRepeat: (record) => repeatsLastDecision(db, businessId, record),
       },
     );
     await storeDecision(db, businessId, result);
@@ -148,6 +149,25 @@ function statusFor(r: StewardResult, mode: string, currentStatus?: string): (typ
 }
 
 /** Appends the decision unless the last one for this invoice says the same thing; a sent tx gets its own row */
+/** The same test `storeDecision` applies before it stores, asked early so an unchanged decision costs no model request */
+async function repeatsLastDecision(db: Database, businessId: string, record: StewardResult["record"]): Promise<boolean> {
+  const subject = record.subject ?? null;
+  if (!subject) return false;
+  const [last] = await db
+    .select()
+    .from(decisions)
+    .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, subject)))
+    .orderBy(desc(decisions.createdAt))
+    .limit(1);
+  const lastRecord = last?.record as { kind?: string; outcome?: string; rule?: string; inputs?: { blockers?: unknown } } | undefined;
+  if (!lastRecord) return false;
+  const blockersOf = (inputs: { blockers?: unknown } | undefined) => JSON.stringify(inputs?.blockers ?? null);
+  return (
+    lastRecord.kind === record.kind && lastRecord.outcome === record.outcome && lastRecord.rule === record.rule &&
+    blockersOf(lastRecord.inputs) === blockersOf(record.inputs as { blockers?: unknown })
+  );
+}
+
 async function storeDecision(db: Database, businessId: string, r: StewardResult): Promise<void> {
   const subject = r.record.subject ?? null;
   if (subject) {

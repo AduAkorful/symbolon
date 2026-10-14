@@ -242,6 +242,16 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
       };
     }
 
+    case "invoice_reopened": {
+      const business = typeof body.businessName === "string" && body.businessName ? body.businessName : "A business";
+      const invoiceNumber = typeof body.invoiceNumber === "string" ? body.invoiceNumber : "an invoice";
+      return {
+        title: `Invoice reopened: ${invoiceNumber}`,
+        body: `${business} reopened invoice ${invoiceNumber}. It is being checked for payment again.`,
+        href: subject ? `/vendor/invoices/${subject}` : "/vendor",
+      };
+    }
+
     case "invoice_cancelled": {
       const invoiceNumber = typeof body.invoiceNumber === "string" && body.invoiceNumber ? body.invoiceNumber : null;
       return {

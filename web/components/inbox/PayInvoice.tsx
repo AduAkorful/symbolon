@@ -132,6 +132,7 @@ export function PayInvoice({
           {checking ? <InlineLoading>Checking this payment with the Vault…</InlineLoading> : null}
           {refused ? <InlineError>{refused}</InlineError> : null}
           {error ? <InlineError>{error}</InlineError> : null}
+          {prepared ? <p className="text-sm text-seal">The Vault's checks all pass for this payment.</p> : null}
           {prepared ? (
             <DetailList
               stacked

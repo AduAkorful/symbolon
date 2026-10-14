@@ -416,7 +416,7 @@ export function PolicyView({
       </section>
 
       {/* Budgets */}
-      <section className="mt-16 border-t border-rule pt-10">
+      <section id="budgets" className="mt-16 border-t border-rule pt-10">
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
           <div className="min-w-0">
             <SectionTitle>Budgets</SectionTitle>
