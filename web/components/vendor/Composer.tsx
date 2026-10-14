@@ -167,7 +167,15 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
       if (typeof d.earlyOn === "boolean") setEarlyOn(d.earlyOn);
       if (Array.isArray(d.tiers) && d.tiers.length) setTiers((d.tiers as Tier[]).filter((t) => t && typeof t.id === "number").slice(0, 3));
       if (typeof d.notes === "string") setNotes(d.notes);
-      setRestored(true);
+      // the notice appears only when the draft holds something typed, not an empty form that was auto-saved (QA UI-v7)
+      const lines = Array.isArray(d.lines) ? (d.lines as Partial<Line>[]) : [];
+      const typed =
+        (typeof d.newName === "string" && d.newName.trim() !== "") ||
+        (typeof d.newValue === "string" && d.newValue.trim() !== "") ||
+        (typeof d.po === "string" && d.po.trim() !== "") ||
+        (typeof d.notes === "string" && d.notes.trim() !== "") ||
+        lines.some((l) => (l.description ?? "").trim() !== "" || (l.unitPrice ?? "").trim() !== "");
+      if (typed) setRestored(true);
     } catch {
       /* no saved draft, or a browser that won't give it back */
     }

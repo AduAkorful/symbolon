@@ -120,7 +120,7 @@ export function ReceiptView({ data, explorerUrl }: Props) {
                   </div>
                   <div>
                     Payout address:{" "}
-                    <Address value={s.payoutAddress} full className="text-ink" /> (domain {s.payoutDomain})
+                    <Address value={s.payoutAddress} full className="text-ink" /> ({s.payoutDomain === 26 ? "on Arc" : `network ${s.payoutDomain}`})
                   </div>
                 </div>
 

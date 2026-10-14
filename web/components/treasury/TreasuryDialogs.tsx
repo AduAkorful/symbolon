@@ -35,18 +35,27 @@ export function WithdrawModal({
   businessId,
   signer,
   explorer,
+  balances,
   onClose,
   onSuccess,
 }: {
   businessId: string;
   signer: SignerPlan;
   explorer: string;
+  /** What the Vault holds now, as decimal strings (null when the read failed), so the amount can be checked before signing */
+  balances?: { usdc: string | null; eurc: string | null };
   onClose: () => void;
   onSuccess: (txHash: string) => void;
 }) {
   const [tokenSymbol, setTokenSymbol] = useState<"USDC" | "EURC">("USDC");
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
+  const held = balances ? (tokenSymbol === "USDC" ? balances.usdc : balances.eurc) : null;
+  const amountOk = /^\d+(\.\d{1,6})?$/.test(amount.trim()) && Number(amount) > 0;
+  // string compare in raw units, so no float rounding decides a withdrawal's limit (UI-20)
+  const raw = (v: string) => { const [i, f = ""] = v.split("."); return BigInt(i + f.padEnd(6, "0").slice(0, 6)); };
+  const overBalance = held !== null && amountOk && /^\d+(\.\d+)?$/.test(held) && raw(amount.trim()) > raw(held);
+  const canSubmit = amountOk && reason.trim().length > 0 && !overBalance;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const getProviders = useWalletProviders();
@@ -93,7 +102,11 @@ export function WithdrawModal({
 
         <Segmented label="Token" value={tokenSymbol} options={TOKENS} onChange={setTokenSymbol} />
 
-        <Field label="Amount">
+        <Field
+          label="Amount"
+          hint={held !== null ? `The Vault holds ${showMoney(held, tokenSymbol)}.` : "Can’t read the Vault’s balance right now; the Vault refuses more than it holds."}
+          error={overBalance ? "That is more than the Vault holds." : amount && !amountOk ? "Enter an amount above zero, with at most 6 decimals." : undefined}
+        >
           {(a) => <input {...a} type="text" inputMode="decimal" required placeholder="100.50" value={amount} onChange={(e) => setAmount(e.target.value)} className={controlClass} />}
         </Field>
 
@@ -105,7 +118,7 @@ export function WithdrawModal({
 
         <Overlay.Footer>
           <Button variant="secondary" onClick={onClose}>{tx.locked ? "Close" : "Cancel"}</Button>
-          <Button type="submit" busy={busy || tx.busy} disabled={tx.locked}>{busy || tx.busy ? "Signing…" : "Sign and withdraw"}</Button>
+          <Button type="submit" busy={busy || tx.busy} disabled={tx.locked || !canSubmit}>{busy || tx.busy ? "Signing…" : "Sign and withdraw"}</Button>
         </Overlay.Footer>
       </form>
     </Overlay>
@@ -157,7 +170,7 @@ export function FundModal({
   const eurcOff = tokenSymbol === "EURC" && eurcSupported === false;
   const amountProblem =
     eurcOff
-      ? "EURC is off for this Vault, so it can’t pay in it. Turn EURC on in Settings (it waits your Vault’s delay), then add it."
+      ? "EURC is off for this Vault, so it can’t pay in it. Turn EURC on in Settings (it waits for your Vault’s delay), then add it."
       : typed === null
       ? null
       : typed.error !== undefined
@@ -576,7 +589,7 @@ export function EarlyPayModal({
           <span className="font-medium text-ink">Accept Early Pay offers</span>
         </label>
 
-        <Field label="Smallest worthwhile discount (%)" hint="The discount has to beat what the reserve would earn by at least this much.">
+        <Field label="Smallest worthwhile discount (%)" hint="Offers are accepted only when their discount is at least this many points above what the reserve would earn.">
           {(a) => <input {...a} type="number" inputMode="decimal" step="0.1" min="0" max="100" value={minSpreadPercent} onChange={(e) => setMinSpreadPercent(e.target.value)} className={controlClass} />}
         </Field>
 

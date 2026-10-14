@@ -226,7 +226,7 @@ export function AskView({
             </div>
           ) : null}
           {viewing ? null : typingAvailable ? (
-            <form onSubmit={handleFormSubmit} className="flex gap-2">
+            <form onSubmit={handleFormSubmit} className="sticky bottom-0 z-10 -mx-1 flex gap-2 bg-paper px-1 py-3 sm:static sm:bg-transparent sm:p-0">
               <input
                 type="text"
                 value={input}

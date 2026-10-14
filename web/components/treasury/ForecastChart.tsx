@@ -26,7 +26,13 @@ const plotH = H - PAD_T - PAD_B;
 const k = (v: number) => `${v < 0 ? "−" : ""}$${Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}k`;
 
 /** A label cut to `max` characters with an ellipsis, so it can't run out of the plot */
-const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+const clip = (text: string, max: number) => {
+  if (text.length <= max) return text;
+  // "Vendor (INV-2026-0003)": the invoice number is the part that tells bills apart, so it is kept whole before the vendor is cut (QA VIS-8)
+  const number = text.match(/\(([^()]+)\)\s*$/)?.[1];
+  if (number && number.length <= max) return number;
+  return `${text.slice(0, max - 1)}…`;
+};
 
 /**
  * The operating balance over the forecast as one stepped line (plan 05zb A3). Drawn at the width it is shown at, so its text is

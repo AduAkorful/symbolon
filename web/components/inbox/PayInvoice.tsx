@@ -141,8 +141,8 @@ export function PayInvoice({
                 { label: "Invoice", value: prepared.summary.invoiceNumber },
                 { label: "Invoice amount", value: <Money>{showMoney(prepared.summary.credit, symbol)}</Money> },
                 ...(prepared.summary.discountSigned ? [{ label: "You pay", value: <Money>{showMoney(prepared.summary.amount, symbol)}</Money> }] : []),
-                { label: "Paid to", value: <Address value={prepared.summary.payoutAddress} full /> },
-                { label: "Paid by", value: <Address value={prepared.summary.signerWallet} full /> },
+                { label: "Pays to", value: <span>{prepared.summary.vendor} <Address value={prepared.summary.payoutAddress} /></span> },
+                { label: "From", value: <span>Your Vault, sent by your wallet <Address value={prepared.summary.signerWallet} /></span> },
               ]}
             />
           ) : null}

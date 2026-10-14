@@ -1,7 +1,7 @@
 import "server-only";
 
 import { and, eq } from "drizzle-orm";
-import { businesses, members, type Database } from "@symbolon/db";
+import { businesses, members, queuedChanges, type Database } from "@symbolon/db";
 import { requireMember } from "./access";
 import { appendAppDecision } from "./app-decisions";
 import { AuthError } from "./errors";
@@ -139,6 +139,8 @@ export interface SettingsViewData {
       address: Address;
       symbol: string;
       supported: boolean;
+      /** A turn-on that is queued: when it can be applied (QA UI-10) */
+      pendingOnAt?: string;
     }[];
   } | null;
 }
@@ -245,6 +247,16 @@ export async function loadSettings(
       }),
     );
 
+    const waiting = await db
+      .select({ summary: queuedChanges.summary, eta: queuedChanges.eta })
+      .from(queuedChanges)
+      .where(and(eq(queuedChanges.businessId, businessId), eq(queuedChanges.kind, "set_supported_token"), eq(queuedChanges.status, "queued")));
+    const turnOnAt = new Map<string, string>();
+    for (const row of waiting) {
+      const d = (row.summary as { details?: { token?: string; supported?: boolean } } | null)?.details;
+      if (d?.token && d.supported !== false) turnOnAt.set(d.token.toLowerCase(), new Date(row.eta).toISOString());
+    }
+
     vaultDetails = {
       address: vault,
       owner: getAddress(state.owner),
@@ -255,7 +267,10 @@ export async function loadSettings(
       accountingDecimals: Number(state.accountingDecimals),
       autoUpdate: state.autoUpdate,
       currentImplementation: currentImpl,
-      supportedTokens: tokenSupport,
+      supportedTokens: tokenSupport.map((t) => {
+        const pendingOnAt = t.supported ? undefined : turnOnAt.get(t.address.toLowerCase());
+        return pendingOnAt ? { ...t, pendingOnAt } : t;
+      }),
     };
   }
 

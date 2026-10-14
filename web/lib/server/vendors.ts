@@ -61,6 +61,7 @@ export async function vendorDetail(db: Database, client: PublicClient, deploymen
     fingerprint: invoices.fingerprint,
     invoiceNumber: invoices.invoiceNumber,
     total: invoices.total,
+    token: invoices.token,
     dueDate: invoices.dueDate,
   }).from(invoices).where(and(eq(invoices.businessId, businessId), eq(invoices.seal, seal))).orderBy(desc(invoices.receivedAt));
 
@@ -83,6 +84,8 @@ export async function vendorDetail(db: Database, client: PublicClient, deploymen
       fingerprint: row.fingerprint,
       invoiceNumber: row.invoiceNumber,
       total: row.total.toString(),
+      // a euro invoice is shown in euros, not dollars (QA UI-1)
+      symbol: row.token.toLowerCase() === deployment.tokens.eurc?.toLowerCase() ? "EURC" : "USDC",
       dueDate: row.dueDate,
     })),
   };

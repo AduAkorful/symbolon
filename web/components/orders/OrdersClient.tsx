@@ -214,6 +214,8 @@ function OrderDetail({
   onMutate: () => void;
 }) {
   const closed = Boolean(o.closedAt);
+  // nothing is left on a fully used order, so there is nothing to close (QA UI-18)
+  const used = o.live.ok && o.live.remaining === "0";
 
   return (
     <div className="grid gap-6 py-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -224,11 +226,11 @@ function OrderDetail({
           { label: "Invoiced", value: o.invoiceCount > 0 ? `${formatRaw(o.invoicedTotal)} across ${o.invoiceCount} invoice${o.invoiceCount === 1 ? "" : "s"}` : "No invoices yet" },
           { label: "Paid", value: <Money>{formatRaw(o.paidTotal)}</Money> },
           { label: "Release after", value: o.releaseAfter ? formatDay(o.releaseAfter, { year: "always" }) : "No release date" },
-          { label: "Opened", value: o.openTx ? <TxLink href={`${explorer}/tx/${o.openTx}`} label="View the opening transaction on the Arc explorer">{o.openTx.slice(0, 10)}…</TxLink> : "Not recorded" },
+          { label: "Opened", value: <span>{formatDay(o.createdAt, { year: "always" })}{o.openTx ? <> · <TxLink href={`${explorer}/tx/${o.openTx}`} label="View the opening transaction on the Arc explorer">transaction</TxLink></> : ""}</span> },
         ]}
       />
       <div>
-        {!closed ? (
+        {!closed && !used ? (
           <CloseButton businessId={businessId} poRef={o.poRef} poNumber={o.poNumber} wallets={wallets} explorer={explorer} onMutate={onMutate} />
         ) : (
           <p className="text-graphite">

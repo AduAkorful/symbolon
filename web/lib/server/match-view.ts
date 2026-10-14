@@ -62,30 +62,30 @@ export function evidenceFor(input: MatchViewInput): { rows: EvidenceRow[]; match
   if (!input.facts) {
     add("Vault and ledger reads", "blocks", "Can't confirm the onchain facts right now", "Arc");
   } else {
-    add("Vault", input.facts.paused ? "blocks" : "holds", input.facts.paused ? "Payments are paused" : "Active", "VaultLens");
-    add("Supported token", input.facts.isSupportedToken(input.invoice.token) ? "holds" : "blocks", input.facts.isSupportedToken(input.invoice.token) ? "Supported by this Vault" : "This Vault does not support the invoice token", "VaultLens");
+    add("Vault", input.facts.paused ? "blocks" : "holds", input.facts.paused ? "Payments are paused" : "Active", "Vault check");
+    add("Supported token", input.facts.isSupportedToken(input.invoice.token) ? "holds" : "blocks", input.facts.isSupportedToken(input.invoice.token) ? "Supported by this Vault" : "This Vault does not support the invoice token", "Vault check");
     const payee = input.facts.payee;
     if (!payee?.exists) {
-      add("Payee onchain", "missing", "The Seal is not an onchain payee", "VaultLens");
-      add("Payee payout", "blocks", "Can't compare the invoice payout with an onchain payee", "VaultLens");
-      add("Payee active", "blocks", "Can't confirm an active onchain payee", "VaultLens");
+      add("Payee onchain", "missing", "The Seal is not an onchain payee", "Vault check");
+      add("Payee payout", "blocks", "Can't compare the invoice payout with an onchain payee", "Vault check");
+      add("Payee active", "blocks", "Can't confirm an active onchain payee", "Vault check");
     } else {
-      add("Payee onchain", "holds", "Payee exists", "VaultLens");
+      add("Payee onchain", "holds", "Payee exists", "Vault check");
       const payoutMatches = isAddressEqual(payee.payout, input.invoice.payoutAddress) && payee.payoutDomain === input.invoice.payoutDomain;
-      add("Payee payout", payoutMatches ? "holds" : "blocks", payoutMatches ? "Payout and domain match the sealed invoice" : "Payout or domain differs from the sealed invoice", "VaultLens");
+      add("Payee payout", payoutMatches ? "holds" : "blocks", payoutMatches ? "Payout and domain match the sealed invoice" : "Payout or domain differs from the sealed invoice", "Vault check");
       const active = payee.activeAt <= input.facts.now && (payee.retireAt === 0n || input.facts.now < payee.retireAt);
-      add("Payee active", active ? "holds" : "blocks", active ? "Active now" : "Not active at this chain time", "VaultLens");
+      add("Payee active", active ? "holds" : "blocks", active ? "Active now" : "Not active at this chain time", "Vault check");
     }
 
     if (!payee?.exists || payee.risk === BLOCKED_RISK) {
-      add("Screening", payee?.risk === BLOCKED_RISK ? "blocks" : "missing", payee?.risk === BLOCKED_RISK ? "Onchain screening blocks this payee" : "No onchain screening record", "VaultLens");
+      add("Screening", payee?.risk === BLOCKED_RISK ? "blocks" : "missing", payee?.risk === BLOCKED_RISK ? "Onchain screening blocks this payee" : "No onchain screening record", "Vault check");
     } else if (input.facts.policy.screeningMaxAge === 0n) {
       // The Vault treats a max age of zero as "screening isn't required" (SymbolonVault._checkPayee); the row must say the same
-      add("Screening", "info", "This Vault's policy doesn't require screening", "VaultLens");
+      add("Screening", "info", "This Vault's policy doesn't require screening", "Vault check");
     } else {
       const age = input.facts.now >= payee.screenedAt ? input.facts.now - payee.screenedAt : input.facts.policy.screeningMaxAge + 1n;
       const fresh = payee.screenedAt !== 0n && age <= input.facts.policy.screeningMaxAge;
-      add("Screening", fresh ? "holds" : "missing", fresh ? "Screening is current" : "Screening is missing or stale", "VaultLens");
+      add("Screening", fresh ? "holds" : "missing", fresh ? "Screening is current" : "Screening is missing or stale", "Vault check");
     }
 
     const terms = input.payeeTerms ?? payee?.terms;
@@ -98,7 +98,7 @@ export function evidenceFor(input: MatchViewInput): { rows: EvidenceRow[]; match
     const poProblems = settled ? [] : (input.match?.problems.filter((p) => p.includes("purchase order") || p.includes("PO")) ?? []);
 
     if (!poRequired && !citedPo) {
-      add("Purchase order", "info", "No purchase order required", "Policy mirror");
+      add("Purchase order", "info", "No purchase order required", "Policy check");
     } else if (input.dbPo) {
       // We have a DB record: show the number and real state
       const po = input.dbPo;
@@ -117,13 +117,13 @@ export function evidenceFor(input: MatchViewInput): { rows: EvidenceRow[]; match
         );
       }
     } else if (citedPo && !input.match) {
-      add("Purchase order", "blocks", "Invoice cites a PO but the status can't be confirmed right now", "Policy mirror");
+      add("Purchase order", "blocks", "Invoice cites a PO but the status can't be confirmed right now", "Policy check");
     } else if (citedPo && input.match) {
-      add("Purchase order", poProblems.length === 0 ? "holds" : "missing", poProblems.length === 0 ? "Required purchase-order checks hold" : sentence(poProblems.join("; ")), "Policy mirror");
+      add("Purchase order", poProblems.length === 0 ? "holds" : "missing", poProblems.length === 0 ? "Required purchase-order checks hold" : sentence(poProblems.join("; ")), "Policy check");
     } else if (!input.match) {
-      add("Purchase order", "blocks", "Can't confirm the purchase-order rules right now", "Policy mirror");
+      add("Purchase order", "blocks", "Can't confirm the purchase-order rules right now", "Policy check");
     } else {
-      add("Purchase order", poProblems.length === 0 ? "holds" : "missing", poProblems.length === 0 ? "Required purchase-order checks hold" : sentence(poProblems.join("; ")), "Policy mirror");
+      add("Purchase order", poProblems.length === 0 ? "holds" : "missing", poProblems.length === 0 ? "Required purchase-order checks hold" : sentence(poProblems.join("; ")), "Policy check");
     }
 
     const deliveryRequired = terms?.requireDelivery ?? false;
@@ -147,22 +147,22 @@ export function evidenceFor(input: MatchViewInput): { rows: EvidenceRow[]; match
         );
       }
     } else if (!deliveryRequired) {
-      add("Delivery", "info", "Delivery confirmation is not required", "Policy mirror");
+      add("Delivery", "info", "Delivery confirmation is not required", "Policy check");
     } else if (!input.match) {
-      add("Delivery", "blocks", "Can't confirm the delivery rules right now", "Policy mirror");
+      add("Delivery", "blocks", "Can't confirm the delivery rules right now", "Policy check");
     } else {
-      add("Delivery", deliveryProblems.length === 0 ? "holds" : "missing", deliveryProblems.length === 0 ? "Delivery confirmed" : sentence(deliveryProblems.join("; ")), "VaultLens / policy mirror");
+      add("Delivery", deliveryProblems.length === 0 ? "holds" : "missing", deliveryProblems.length === 0 ? "Delivery confirmed" : sentence(deliveryProblems.join("; ")), "Vault and policy checks");
     }
 
     if (input.match && !input.match.ok && !settled) {
-      add("Policy match", "blocks", sentence(input.match.problems.join("; ")) || "The policy match did not hold", "Policy mirror");
+      add("Policy match", "blocks", sentence(input.match.problems.join("; ")) || "The policy match did not hold", "Policy check");
     }
   }
 
-  if (!input.ledger) add("Ledger", "blocks", "Can't confirm payment state", "InvoiceLedger");
-  else if (input.ledger.cancelled) add("Ledger", "blocks", "Cancelled onchain", "InvoiceLedger");
-  else if (input.ledger.paid) add("Ledger", "info", "Already paid onchain", "InvoiceLedger");
-  else add("Ledger", "holds", input.ledger.seen ? `Remaining to pay: ${showAmount(formatAmount(input.ledger.remaining, 6))}` : "Not settled yet", "InvoiceLedger");
+  if (!input.ledger) add("Ledger", "blocks", "Can't confirm payment state", "Arc ledger");
+  else if (input.ledger.cancelled) add("Ledger", "blocks", "Cancelled onchain", "Arc ledger");
+  else if (input.ledger.paid) add("Ledger", "info", "Already paid onchain", "Arc ledger");
+  else add("Ledger", "holds", input.ledger.seen ? `Remaining to pay: ${showAmount(formatAmount(input.ledger.remaining, 6))}` : "Not settled yet", "Arc ledger");
 
   if (input.duplicates?.length) add("Duplicates", "blocks", input.duplicates.map((d) => d.detail).join("; "), "Duplicate screening");
   else add("Duplicates", "holds", "No duplicate found in the current inbox", "Duplicate screening");

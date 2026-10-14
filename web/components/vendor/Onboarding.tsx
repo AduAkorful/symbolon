@@ -140,7 +140,7 @@ export function Onboarding({ wallet, signer, next = "/vendor" }: { wallet: strin
               {wallet ? (
                 <>
                   <p className="mt-4 text-sm text-graphite">
-                    Your Seal is the wallet <Address value={wallet} full />, the one you signed in with. Registering asks that wallet to sign your handle and name, so they are yours and not just a record on our server.
+                    Your Seal is the wallet you signed in with: <Address value={wallet} full />. Registering asks that wallet to sign your handle and name, so they are yours and not just a record on our server.
                   </p>
                   <p className="mt-2 text-sm text-graphite">
                     The name and handle below are what businesses see. They don’t prove who you are: a business checks that for itself before it adds you as a payee.
@@ -165,7 +165,7 @@ export function Onboarding({ wallet, signer, next = "/vendor" }: { wallet: strin
               </label>
               <label className="mt-6 block text-sm">
                 Website, if you have one
-                <input className={input} value={website} onChange={(e) => setWebsite(e.target.value)} maxLength={200} placeholder="studio-ana.com" />
+                <input className={input} value={website} onChange={(e) => setWebsite(e.target.value)} maxLength={200} placeholder="yourcompany.com" />
               </label>
               {problem ? (
                 <p role="alert" className="mt-4 text-sm text-red">

@@ -33,7 +33,8 @@ async function queuedChangesReady(db: Database, businessId: string, now: Date): 
     await notifyBusiness(db, businessId, {
       kind: "change_ready",
       subject: change.changeId,
-      body: { changeKind: change.kind },
+      // the title says which change is ready, so the notice isn't generic (QA UI-24)
+      body: { changeKind: change.kind, title: (change.summary as { title?: string } | null)?.title ?? "" },
       dedupeKey: `change_ready:${businessId}:${change.changeId}`,
     }, { roles: ["owner"] });
   }

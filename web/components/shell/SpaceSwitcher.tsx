@@ -28,7 +28,7 @@ function BusinessOption({ name, role, here, itemClass }: { name: string; role: s
     <button role="menuitem" data-current={here} disabled={pending} aria-busy={pending} className={`${itemClass} ${pending ? "opacity-70" : ""}`}>
       <Avatar name={name} size={24} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate font-medium">{name}</span>
+        <span className="block break-words font-medium leading-snug">{name}</span>
         <span className="block truncate text-xs capitalize text-graphite">{pending ? "Opening…" : role}</span>
       </span>
       {pending ? <span aria-hidden className="h-3 w-3 animate-spin rounded-full border-2 border-rule border-t-ink" /> : here ? <span aria-label="Current account" className="text-seal">✓</span> : null}
@@ -129,7 +129,7 @@ export function SpaceSwitcher({ spaces, current, who, wallet = null, compact = f
       {open ? (
         <div role="menu" aria-label="Switch account" onKeyDown={onMenuKey} className={`menu-in absolute right-0 top-full z-50 mt-1.5 origin-top rounded-doc border border-rule bg-paper-raised p-1.5 shadow-xl ${
             // hangs from the button's right edge so it can't run off a phone screen; in the wide sidebar it matches the button's width
-            compact ? "min-w-[15rem]" : "min-w-[17rem] lg:left-0 lg:min-w-0"
+            compact ? "min-w-[15rem] max-w-[min(22rem,calc(100vw-2rem))]" : "min-w-[17rem] lg:left-0 lg:min-w-0"
           }`}>
           <p className="truncate px-2.5 pb-1.5 pt-1 text-xs text-graphite">
             Signed in as <span className="text-ink">{who}</span>
@@ -141,7 +141,7 @@ export function SpaceSwitcher({ spaces, current, who, wallet = null, compact = f
             <Link role="menuitem" href="/vendor" data-current={current.kind === "vendor"} onClick={() => setOpen(false)} className={`${item} ${current.kind === "vendor" ? "bg-rule-soft/50" : ""}`}>
               <Avatar name={spaces.seal.displayName} size={24} />
               <span className="min-w-0 flex-1">
-                <span className="block truncate font-medium">{spaces.seal.displayName}</span>
+                <span className="block break-words font-medium leading-snug">{spaces.seal.displayName}</span>
                 <span className="block truncate text-xs text-graphite">Your Seal · @{spaces.seal.handle}</span>
               </span>
               {current.kind === "vendor" ? <span aria-label="Current account" className="text-seal">✓</span> : null}

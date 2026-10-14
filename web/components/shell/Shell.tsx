@@ -75,13 +75,13 @@ async function Frame({
     return (
       <div className="min-h-screen">
         <header className="border-b border-rule">
-          <div className={`${CONTAINER} flex flex-wrap items-center gap-x-6 gap-y-2 py-3 lg:flex-nowrap`}>
+          <div className={`${CONTAINER} flex flex-wrap items-center gap-x-6 gap-y-2 py-3 min-[1440px]:flex-nowrap`}>
             <Link href="/vendor" aria-label="Symbolon home" className="shrink-0">
               <Wordmark />
             </Link>
             {where.spaces.seal ? <VendorNav /> : null}
             <div className="ml-auto flex shrink-0 items-center gap-3">
-              <span className="hidden xl:inline-block">{chain}</span>
+              <span className="hidden sm:inline-block">{chain}</span>
               {where.spaces.seal ? (
                 <Link href="/vendor/new" className={buttonClass({ size: "sm", className: "hidden sm:inline-flex" })}>
                   New invoice

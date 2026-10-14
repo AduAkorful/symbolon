@@ -18,7 +18,7 @@ export function Avatar({ name, src, show = true, size = 24, letters = 1, classNa
     .join("");
   return (
     <span
-      className={`inline-grid shrink-0 place-items-center overflow-hidden rounded-sm font-display ${drawn ? "border border-rule bg-paper-raised" : "bg-ink text-paper"} ${className}`}
+      className={`inline-grid shrink-0 place-items-center overflow-hidden rounded-sm font-semibold ${drawn ? "border border-rule bg-paper-raised" : "bg-ink text-paper"} ${className}`}
       style={{ width: size, height: size, fontSize: Math.round(size * (letters === 2 ? 0.42 : 0.52)) }}
       {...(drawn ? { role: "img", "aria-label": `${name}` } : { "aria-hidden": true })}
     >

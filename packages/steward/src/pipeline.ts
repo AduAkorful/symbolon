@@ -288,7 +288,7 @@ export async function processInvoice(ctx: InvoiceContext, deps: Deps): Promise<S
       subject,
       inputs,
       options,
-      rule: policy.requiredApproval === ApprovalLevel.Owner ? "owner sign-off required" : "approver sign-off required",
+      rule: policy.requiredApproval === ApprovalLevel.Owner ? "the owner must sign off" : "an owner or approver must sign off",
       outcome: "awaiting_approval",
     });
   }

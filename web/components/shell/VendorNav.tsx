@@ -19,8 +19,9 @@ const isActive = (path: string, href: string) => (href === "/vendor" ? path === 
 export function VendorNav() {
   const path = usePathname();
   return (
-    <nav aria-label="Vendor" className="order-3 w-full lg:order-none lg:w-auto">
-      <ul className="flex flex-wrap gap-1">
+    <nav aria-label="Vendor" className="order-3 -mx-1 w-full min-[1440px]:order-none min-[1440px]:mx-0 min-[1440px]:w-auto">
+      {/* one row at every width: it scrolls sideways on a phone instead of taking a second row (QA UI-v1, UI-v2) */}
+      <ul className="flex gap-1 overflow-x-auto px-1 min-[1440px]:overflow-visible">
         {nav.map((n) => {
           const active = isActive(path, n.href);
           return (
@@ -28,7 +29,7 @@ export function VendorNav() {
               <Link
                 href={n.href}
                 aria-current={active ? "page" : undefined}
-                className={`flex min-h-10 items-center rounded-doc px-3 py-2 text-sm transition-colors duration-[var(--dur-quick)] ${active ? "bg-ink text-paper" : "text-ink/80 hover:bg-rule-soft/70"}`}
+                className={`flex min-h-10 items-center border-b-2 px-3 py-2 text-sm transition-colors duration-[var(--dur-quick)] ${active ? "border-ink font-medium text-ink" : "border-transparent text-ink/70 hover:text-ink"}`}
               >
                 {n.name}
               </Link>

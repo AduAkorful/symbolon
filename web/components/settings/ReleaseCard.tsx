@@ -227,7 +227,7 @@ export function ReleaseCard({
             {state === "revoked" && `Release ${latest.version} (revoked)`}
           </span>
           <span className="ml-3 font-mono text-sm text-graphite">
-            Current: {current.version ? `v${current.version}` : "unknown"}
+            · Current: {current.version ? `v${current.version}` : "unknown"}
           </span>
         </div>
         <span className="font-mono text-sm text-graphite">

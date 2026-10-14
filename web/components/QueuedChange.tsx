@@ -33,6 +33,8 @@ interface QueuedChangeProps {
   onRefresh?: () => void;
   /** Changes when something on the page has queued a change, so the list reads again instead of showing what it first loaded */
   version?: number;
+  /** Only these kinds of change are listed (the Team page lists role changes, not lending or currencies) */
+  kinds?: string[];
 }
 
 export function QueuedChangeList({
@@ -41,8 +43,10 @@ export function QueuedChangeList({
   explorer = "https://explorer.testnet.arc.io",
   onRefresh,
   version = 0,
+  kinds,
 }: QueuedChangeProps) {
   const [changes, setChanges] = useState<QueuedChangeRow[]>([]);
+  const [tokenNames, setTokenNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +60,7 @@ export function QueuedChangeList({
       if (res.ok) {
         const data = await res.json();
         setChanges(data.changes ?? []);
+        setTokenNames(data.tokens ?? {});
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Can't load queued changes.");
@@ -133,7 +138,15 @@ export function QueuedChangeList({
     }
   }
 
-  const activeChanges = changes.filter((c) => c.status === "queued");
+  const activeChanges = changes.filter((c) => c.status === "queued" && (!kinds || kinds.includes(c.kind)));
+
+  /** "Enable token 0x89B5…" reads as "Turn on EURC" once the address is one of the Vault's currencies (QA VIS-2) */
+  function titleOf(change: QueuedChangeRow): string {
+    const token = typeof change.summary.details?.token === "string" ? change.summary.details.token.toLowerCase() : "";
+    const name = token ? tokenNames[token] : undefined;
+    if (change.kind === "set_supported_token" && name) return change.summary.details?.supported === false ? `Turn off ${name}` : `Turn on ${name}`;
+    return change.summary.title || "Vault policy change";
+  }
 
   if (loading) {
     return <div className="p-4 text-xs text-graphite">Loading queued changes…</div>;
@@ -147,7 +160,7 @@ export function QueuedChangeList({
     <div className="space-y-4 rounded border border-rule bg-paper-raised p-4">
       <div className="flex items-center justify-between">
         <h3 className="font-display text-sm font-medium text-ink">
-          Queued loosening changes ({activeChanges.length})
+          Waiting to apply ({activeChanges.length})
         </h3>
         <span className="text-xs text-graphite">Delayed by Vault policy</span>
       </div>
@@ -165,24 +178,24 @@ export function QueuedChangeList({
           return (
             <div
               key={change.id}
-              className="flex flex-col gap-2 rounded border border-rule-soft bg-paper p-3 text-xs sm:flex-row sm:items-center sm:justify-between"
+              className="flex flex-col gap-3 rounded border border-rule-soft bg-paper p-3 text-xs sm:flex-row sm:items-center sm:justify-between"
             >
-              <div>
+              <div className="min-w-0">
                 <div className="font-medium text-ink">
-                  {change.summary.title || "Vault policy change"}
+                  {titleOf(change)}
                 </div>
-                <div className="mt-0.5 font-mono text-xs text-graphite">
-                  ID: {change.changeId.slice(0, 10)}…{change.changeId.slice(-8)}
-                  {" · "}
+                <div className="mt-0.5 text-xs text-graphite">
                   {isReady ? (
-                    <span className="font-medium text-forest">Ready to apply</span>
+                    <span className="font-medium text-forest">Ready to apply since {formatDateTime(new Date(change.eta))}</span>
                   ) : (
                     <span>Ready at {formatDateTime(new Date(change.eta))}</span>
                   )}
+                  {" · "}
+                  <span className="font-mono">ID {change.changeId.slice(0, 8)}…{change.changeId.slice(-6)}</span>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
                 {change.queueTx ? (
                   <TxLink href={`${explorer}/tx/${change.queueTx}`} label="Queued transaction">
                     Queued tx

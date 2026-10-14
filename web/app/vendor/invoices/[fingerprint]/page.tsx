@@ -40,7 +40,7 @@ export default async function VendorInvoice({ params }: { params: Promise<{ fing
         <InvoiceDoc document={found.sealed.document} fingerprint={found.row.fingerprint} handle={seal.handle} sealed={found.row.status !== "rejected"} />
         <section className="lg:pt-6">
           <StatusPill tone={pillTone[st.tone]}>{st.label}</StatusPill>
-          <PageTitle className="mt-2">Invoice {found.row.invoiceNumber}</PageTitle>
+          <PageTitle className="mt-2">Invoice <span className="whitespace-nowrap">{found.row.invoiceNumber}</span></PageTitle>
           <p className="mt-3 max-w-[52ch] text-graphite">To {found.sealed.document.payer.name}. Send them this link; anyone who has it can open the invoice and check it.</p>
           {found.sealed.document.replaces ? (
             <p className="mt-2 text-sm text-seal">

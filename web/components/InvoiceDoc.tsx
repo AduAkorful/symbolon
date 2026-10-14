@@ -95,7 +95,7 @@ export function InvoiceDoc({ document: d, fingerprint, handle, sealed = false }:
           ) : null}
 
           <p className="mt-3 break-all text-xs text-graphite">
-            Paid in {sym} on Arc to <span data-wrap-ok className="font-mono">{checksum(d.payout.address)}</span>
+            Pays in {sym} on Arc to <span data-wrap-ok className="font-mono">{checksum(d.payout.address)}</span>
           </p>
           {d.terms ? <p className="mt-3 whitespace-pre-line text-xs text-graphite">{d.terms}</p> : null}
           {d.notes ? <p className="mt-3 whitespace-pre-line text-xs text-graphite">{d.notes}</p> : null}

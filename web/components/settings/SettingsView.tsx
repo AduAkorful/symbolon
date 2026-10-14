@@ -194,7 +194,7 @@ export function SettingsView({
                 ))}
             </ul>
             <p className="mt-2 max-w-[62ch] text-sm text-graphite">
-              Turning a currency off applies at once. Turning one on loosens what the Vault can do, so it waits your loosening delay like any other loosening change.
+              Turning a currency off applies at once. Turning one on loosens what the Vault can do, so it waits for your loosening delay like any other loosening change.
             </p>
           </div>
 
@@ -246,7 +246,7 @@ export function SettingsView({
       <section aria-labelledby="queued-heading">
         <SectionTitle id="queued-heading">Changes waiting</SectionTitle>
         <p className="mt-1 max-w-[64ch] text-sm text-graphite">
-          Every change that loosens a limit (a relaxed policy, a bigger budget, a new currency, automatic updates) is queued onchain and waits your delay before it applies.
+          Every change that loosens a limit (a relaxed policy, a bigger budget, a new currency, automatic updates) is queued onchain and waits for your delay before it applies.
         </p>
         <div className="mt-4">
           <QueuedChangeList businessId={business.id} signer={signer} explorer={explorer} onRefresh={handleRefresh} version={queueVersion} />

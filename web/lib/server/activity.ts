@@ -75,6 +75,13 @@ function invoiceAmountText(inv: { total: bigint; token: string; chainId: number 
   return symbol === "UNKNOWN" ? "currency unavailable" : showMoney(formatAmount(inv.total, 6), symbol);
 }
 
+/** A line that names an invoice by the start of its hash names it by its number when we have one (QA VIS-7) */
+function withInvoiceNumber(desc: { what: string; tone?: "seal" | "red" }, args: Record<string, unknown>, invoiceNumber: string | undefined) {
+  const fp = args.fingerprint ? String(args.fingerprint) : "";
+  if (!invoiceNumber || !fp) return desc;
+  return { ...desc, what: desc.what.replace(`invoice ${fp.slice(0, 10)}…`, `invoice ${invoiceNumber}`) };
+}
+
 /** Pure function describing Vault and Ledger chain events per K12; `symbol` is the token the event's amount is in, when known */
 export function describeEvent(eventName: string, args: Record<string, unknown>, txHash?: string, symbol?: string): { what: string; tone?: "seal" | "red" } {
   switch (eventName) {
@@ -427,7 +434,7 @@ export async function loadActivity(
       const args = e.args as Record<string, unknown>;
       const inv0 = args.fingerprint ? invoiceByFp.get(String(args.fingerprint).toLowerCase()) : undefined;
       const tokenOf = args.token ? String(args.token) : inv0?.token;
-      const desc = describeEvent(e.eventName, args, e.txHash, tokenOf ? resolveTokenSymbol(tokenOf, business.chainId) : undefined);
+      const desc = withInvoiceNumber(describeEvent(e.eventName, args, e.txHash, tokenOf ? resolveTokenSymbol(tokenOf, business.chainId) : undefined), args, inv0?.invoiceNumber);
       const caller = String(args.caller || args.sender || args.by || args.from || "");
       const actor = resolveActorForEvent(caller);
       const fp = args.fingerprint ? String(args.fingerprint).toLowerCase() : undefined;
@@ -464,7 +471,7 @@ export async function loadActivity(
       if (fps.includes(fp)) {
         const inv = invoiceByFp.get(fp);
         const ledgerToken = args.token ? String(args.token) : inv?.token;
-        const desc = describeEvent(le.eventName, args, le.txHash, ledgerToken ? resolveTokenSymbol(ledgerToken, business.chainId) : undefined);
+        const desc = withInvoiceNumber(describeEvent(le.eventName, args, le.txHash, ledgerToken ? resolveTokenSymbol(ledgerToken, business.chainId) : undefined), args, inv?.invoiceNumber);
         const vendor = inv ? (sealMap.get(inv.seal.toLowerCase()) || inv.seal) : undefined;
         items.push({
           id: `lev-${le.txHash}-${le.logIndex}`,

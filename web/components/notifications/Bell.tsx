@@ -111,11 +111,17 @@ export function Bell({ unreadCount: initialUnread }: { unreadCount: number }) {
         >
           <div className="sticky top-0 flex items-center justify-between gap-3 border-b border-rule bg-paper-raised px-4 py-3">
             <SectionTitle as="h2" className="text-xl">Notifications</SectionTitle>
-            {unread > 0 ? (
-              <Button variant="quiet" size="sm" onClick={() => void mark("read-all")}>
-                Mark all read
+            <div className="flex items-center gap-1">
+              {unread > 0 ? (
+                <Button variant="quiet" size="sm" onClick={() => void mark("read-all")}>
+                  Mark all read
+                </Button>
+              ) : null}
+              {/* a phone's panel covers the page, so it needs its own way out (QA UI-13) */}
+              <Button variant="quiet" size="sm" onClick={() => { setOpen(false); trigger.current?.focus(); }}>
+                Close
               </Button>
-            ) : null}
+            </div>
           </div>
 
           <div className="px-4 py-3">

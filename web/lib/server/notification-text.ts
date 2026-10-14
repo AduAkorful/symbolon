@@ -141,9 +141,10 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
     }
 
     case "payee_active_business": {
+      const vendor = typeof body.vendorName === "string" && body.vendorName ? body.vendorName : "A payee you added";
       return {
-        title: "A vendor can be paid now",
-        body: "A payee you added has finished the waiting period. Its invoices can be paid.",
+        title: typeof body.vendorName === "string" && body.vendorName ? `${body.vendorName} can be paid now` : "A vendor can be paid now",
+        body: `${vendor} has finished the waiting period. Its invoices can be paid.`,
         href: subject ? `/business/vendors/${subject}` : "/business/vendors",
       };
     }
@@ -167,10 +168,11 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
     }
 
     case "change_ready": {
+      const what = typeof body.title === "string" && body.title ? `“${body.title}”` : "A change to your Vault's rules";
       return {
         title: "A queued change is ready to apply",
-        body: "A change to your Vault's rules has finished its waiting period. Apply it, or cancel it, from Policy or Settings.",
-        href: "/business/policy",
+        body: `${what} has finished its waiting period. Apply it, or cancel it, under “Policy changes waiting” in Treasury.`,
+        href: "/business/treasury#queued",
       };
     }
 

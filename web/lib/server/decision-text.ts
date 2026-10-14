@@ -143,6 +143,8 @@ function summarizeRecord(record: Record<string, unknown>): DecisionSummary {
     }
 
     case "skip": {
+      // after a payment settles, the next pass finds nothing left to pay; saying "skipped" next to "paid" read as a contradiction (QA UI-2)
+      if (outcome === "already_settled") return { sentence: "Nothing left to pay: this invoice is already settled on Arc", explanation };
       return { sentence: rule ? `Skipped: ${rule}` : "Skipped invoice", explanation };
     }
 
@@ -172,8 +174,10 @@ function summarizeRecord(record: Record<string, unknown>): DecisionSummary {
 
     // App decisions
     case "steward_mode_changed": {
-      const from = String(inputs.from ?? "shadow");
-      const to = String(inputs.to ?? outcome);
+      // the Steward page names the modes Shadow / Assisted / Autonomous; stored values are shadow / assist / auto (QA VIS-5)
+      const modeName = (m: string) => (m === "shadow" ? "Shadow" : m === "assist" ? "Assisted" : m === "auto" ? "Autonomous" : m);
+      const from = modeName(String(inputs.from ?? "shadow"));
+      const to = modeName(String(inputs.to ?? outcome));
       return { sentence: `Steward mode switched from ${from} to ${to}`, explanation };
     }
 

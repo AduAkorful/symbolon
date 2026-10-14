@@ -184,7 +184,9 @@ export function AccountingView({
             rowKey={(p, i) => `${p.tx}:${i}`}
             columns={[
               { key: "vendor", header: "Vendor", primary: true, cell: (p) => p.vendor },
-              { key: "amount", header: "Amount", amount: true, cell: (p) => (p.token === "UNKNOWN" ? `${p.amount} (currency unavailable)` : showMoney(p.amount, p.token)) },
+              { key: "amount", header: "Paid", amount: true, cell: (p) => (p.token === "UNKNOWN" ? `${p.amount} (currency unavailable)` : showMoney(p.amount, p.token)) },
+              // what the invoice was credited with beside what left the Vault: the gap is the discount the vendor signed (QA UI-11)
+              { key: "credit", header: "Invoice amount", amount: true, cell: (p) => (p.token === "UNKNOWN" ? p.credit : p.credit === p.amount ? showMoney(p.credit, p.token) : `${showMoney(p.credit, p.token)} (early-payment discount)`) },
               { key: "date", header: "Date", nowrap: true, cell: (p) => p.date },
               { key: "invoice", header: "Invoice", cell: (p) => p.invoice },
               { key: "po", header: "Order", cell: (p) => p.po },

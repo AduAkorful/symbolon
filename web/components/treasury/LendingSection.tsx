@@ -27,6 +27,13 @@ import type { LendingView } from "@/lib/server/lending";
 const money = (raw: string) => showMoney(formatUnits(BigInt(raw), 6), "USDC");
 const REFRESH_MS = 30_000;
 
+/** Says what the queued change does, from its own recorded summary (QA REL4-2, VIS-3) */
+function pendingTitle(change: NonNullable<LendingView["pendingChange"]>): string {
+  if (change.enabled === false) return "Switching lending off is waiting";
+  const bits = [change.venueName ? `into ${change.venueName}` : null, typeof change.maxLendingBps === "number" ? `up to ${change.maxLendingBps / 100}% of the Vault’s cash` : null].filter(Boolean);
+  return bits.length ? `Lending ${bits.join(", ")} is waiting` : "A lending policy change is waiting";
+}
+
 type Dialog = "policy" | "deposit" | "redeem" | null;
 
 export function LendingSection({ businessId, signer, explorer, isOwner }: { businessId: string; signer: SignerPlan; explorer: string; isOwner: boolean }) {
@@ -107,16 +114,16 @@ export function LendingSection({ businessId, signer, explorer, isOwner }: { busi
       {failed ? <p className="mt-3 text-sm text-warn">Couldn’t refresh just now; what is shown may be out of date.</p> : null}
 
       {view.pendingChange ? (
-        <Callout tone="info" className="mt-4" title="A lending policy change is waiting">
+        <Callout tone="info" className="mt-4" title={pendingTitle(view.pendingChange)}>
           {view.pendingChange.ready
-            ? "The wait is over. Apply it from Queued policy changes."
-            : `It can be applied from ${formatDateTime(view.pendingChange.eta)}. The Vault holds it for its waiting period; you can cancel it while it waits.`}
+            ? "The wait is over. Apply or cancel it under “Policy changes waiting” on this page."
+            : `It can be applied from ${formatDateTime(view.pendingChange.eta)}. The Vault holds it for its waiting period; you can cancel it under “Policy changes waiting” on this page while it waits.`}
         </Callout>
       ) : null}
 
       {!view.readOk ? (
         <Callout tone="warn" className="mt-4" title="Can’t confirm the lending reserve">Arc didn’t answer for this Vault. Nothing is shown rather than a guess; try again shortly.</Callout>
-      ) : !venueSet ? (
+      ) : !venueSet && view.pendingChange ? null : !venueSet ? (
         <EmptyState
           title="Lending is off"
           className="mt-4"

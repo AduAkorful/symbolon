@@ -17,7 +17,8 @@ import { signerPlanFor } from "@/lib/server/signer-plan";
 import { vendorDetail } from "@/lib/server/vendors";
 import { listBudgets } from "@/lib/server/budgets";
 import { PayeeTermsEditor } from "@/components/vendors/PayeeTermsEditor";
-import { formatDay, formatDateTime, shortenAddressesIn, usd } from "@/lib/format";
+import { formatAmount } from "@symbolon/seal";
+import { formatDay, formatDateTime, shortenAddressesIn, showMoney, usd } from "@/lib/format";
 import { Address } from "@/components/Address";
 import { Eyebrow, PageTitle, SectionTitle } from "@/components/ui/Type";
 
@@ -107,7 +108,7 @@ export default async function BusinessVendorDetailPage({ params }: { params: Pro
           {!vendor.canBePaid.confirmed ? <p className="mt-2 text-sm text-red">Can't confirm the Vault record right now.</p> : vendor.canBePaid.exists ? <>
             <p className="mt-2 text-sm">{activeLabel(vendor.canBePaid.activeAt)}</p>
             <dl className="mt-4 space-y-3 text-sm">
-              <div><dt className="text-graphite">Payout address · domain {vendor.canBePaid.payoutDomain}</dt><dd className="mt-1"><Address value={vendor.canBePaid.payout} full copy /></dd></div>
+              <div><dt className="text-graphite">Payout address · {vendor.canBePaid.payoutDomain === 26 ? "on Arc" : "network " + vendor.canBePaid.payoutDomain}</dt><dd className="mt-1"><Address value={vendor.canBePaid.payout} full copy /></dd></div>
               <div><dt className="text-graphite">Monthly cap</dt><dd className="break-all">{usd(BigInt(vendor.canBePaid.terms.monthlyCap))} a month</dd></div>
               <div><dt className="text-graphite">Paid invoices</dt><dd>{vendor.canBePaid.paidCount}</dd></div>
               <div><dt className="text-graphite">Matching requirements</dt><dd>PO {vendor.canBePaid.terms.requirePo ? "required" : "not required"} · delivery {vendor.canBePaid.terms.requireDelivery ? "required" : "not required"}</dd></div>
@@ -141,7 +142,7 @@ export default async function BusinessVendorDetailPage({ params }: { params: Pro
         {vendor.invoices.length ? <ul className="mt-3 divide-y divide-rule border-y border-rule">
           {vendor.invoices.map((invoice) => <li key={invoice.fingerprint} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
             <Link className="underline decoration-rule underline-offset-4" href={"/business/inbox/" + invoice.fingerprint}>{invoice.invoiceNumber}</Link>
-            <span>{usd(BigInt(invoice.total))} · due {formatDay(invoice.dueDate)}</span>
+            <span>{showMoney(formatAmount(BigInt(invoice.total), 6), invoice.symbol)} · due {formatDay(invoice.dueDate)}</span>
           </li>)}
         </ul> : <p className="mt-3 text-sm text-graphite">No invoices on file for this business.</p>}
       </section>

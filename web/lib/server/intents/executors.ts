@@ -260,7 +260,7 @@ export const awaitingApprovalIntent: IntentHandler = {
 export const cashPositionIntent: IntentHandler = {
   descriptor: {
     name: "cash_position",
-    description: "Vault cash balances, EURC, USYC reserve, and forward runway",
+    description: "The Vault's balance: operating cash in USDC and EURC, the USYC reserve, and forward runway",
     params: {},
   },
   async execute(ctx: IntentContext): Promise<IntentAnswer> {
@@ -274,7 +274,8 @@ export const cashPositionIntent: IntentHandler = {
 
       const runwayText = treasury.forecast.runwayStatement;
 
-      const text = `Operating cash is ${usdcFormatted} and ${eurcFormatted}. Reserve holds ${reserveFormatted}. Forward runway: ${runwayText} (with a ${treasury.forecast.bufferDays}-day buffer).`;
+      // "Vault's balance" is the question people ask: the reply names it, so a model wording it can't say it can't see one (QA NEW-17)
+      const text = `The Vault's balance is ${usdcFormatted} and ${eurcFormatted}, all of it operating cash. Reserve holds ${reserveFormatted}. Forward runway: ${runwayText} (with a ${treasury.forecast.bufferDays}-day buffer).`;
       return {
         text,
         links: [["Treasury dashboard", "/business/treasury"]],
@@ -433,7 +434,7 @@ export const earlyPaySavingsIntent: IntentHandler = {
 export const whyDecisionIntent: IntentHandler = {
   descriptor: {
     name: "why_decision",
-    description: "Reason why a particular invoice was paid, held, or queued",
+    description: "Where one invoice stands (paid, open, cancelled) and why it was paid, held, or queued",
     params: {
       invoice: { type: "string", description: "Invoice number or fingerprint", required: false },
     },
@@ -528,6 +529,24 @@ export const whyDecisionIntent: IntentHandler = {
     }
 
     const matched = candidates[0]!;
+    const [own] = await ctx.db
+      .select({ status: invoices.status, total: invoices.total, credited: invoices.credited, token: invoices.token })
+      .from(invoices)
+      .where(and(eq(invoices.businessId, ctx.businessId), eq(invoices.fingerprint, matched.fingerprint)))
+      .limit(1);
+    // The latest decision can be "skipped: already settled"; the invoice's own standing comes first (QA NEW-17)
+    const number = matched.invoiceNumber ?? matched.fingerprint.slice(0, 8);
+    const standing = !own
+      ? ""
+      : own.status === "paid"
+        ? `Invoice ${number} is paid (${currencyTotals(ctx, [{ token: own.token, amount: own.credited }])}).`
+        : own.status === "cancelled"
+          ? `Invoice ${number} is cancelled and will not be paid.`
+          : own.status === "declined"
+            ? `Invoice ${number} was declined.`
+            : own.credited > 0n
+              ? `Invoice ${number} is partly paid (${currencyTotals(ctx, [{ token: own.token, amount: own.credited }])} of ${currencyTotals(ctx, [{ token: own.token, amount: own.total }])}).`
+              : "";
     const [dec] = await ctx.db
       .select()
       .from(decisions)
@@ -542,7 +561,7 @@ export const whyDecisionIntent: IntentHandler = {
 
     if (!dec) {
       return {
-        text: `Invoice ${matched.invoiceNumber ?? matched.fingerprint.slice(0, 8)} is in your records, but no Steward decision has evaluated it yet.`,
+        text: standing || `Invoice ${number} is in your records, but no Steward decision has evaluated it yet.`,
         links: [["View in inbox", `/business/inbox/${matched.fingerprint}`]],
         source: `From: inbox at ${formatDateTime(now)}`,
         intent: "why_decision",
@@ -554,7 +573,9 @@ export const whyDecisionIntent: IntentHandler = {
     const rec = dec.record as { kind?: string; inputs?: { blockers?: unknown } };
     const askLive = rec.kind === "schedule" && !Array.isArray(rec.inputs?.blockers) ? " What is in the way today is on the invoice page." : "";
     return {
-      text: `Invoice ${matched.invoiceNumber ?? matched.fingerprint.slice(0, 8)}: ${sum.sentence}.${askLive}`,
+      text: standing
+        ? `${standing} The Steward's latest decision: ${sum.sentence}.`
+        : `Invoice ${number}: ${sum.sentence}.${askLive}`,
       links: [
         ["View decision detail", `/business/decisions/${dec.id}`],
         ["View in inbox", `/business/inbox/${matched.fingerprint}`],

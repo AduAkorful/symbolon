@@ -11,6 +11,7 @@ import { requireMember } from "./access";
 import { prepareChange, recordChange, listQueuedChanges } from "./queued-change";
 import { describePolicyLines, describePolicyRuleItems, type PolicyRuleItem } from "./policy-text";
 import { isLooseningPolicy } from "./loosening";
+import { usd } from "@/lib/format";
 
 export interface PolicyViewData {
   vault: Address;
@@ -40,6 +41,13 @@ export interface PolicyViewData {
 
 export function validatePolicySanity(p: VaultPolicy): string[] {
   const warnings: string[] = [];
+  // an auto-pay limit above the per-payment cap is never reached: the cap stops the payment first (QA UI-9)
+  if (p.autoPayLimit > p.perTxCap) {
+    warnings.push(`Auto-pay limit (${usd(p.autoPayLimit, 6)}) is above the largest single payment (${usd(p.perTxCap, 6)}), so auto-pay never goes above ${usd(p.perTxCap, 6)}.`);
+  }
+  if (p.newVendorMinPaid >= 2) {
+    warnings.push(`A vendor is paid automatically only after ${p.newVendorMinPaid} paid ${p.newVendorMinPaid === 1 ? "invoice" : "invoices"}; until then each payment waits for a person, and paying it yourself with Pay now counts toward that.`);
+  }
   if (p.autoPayLimit > p.ownerThreshold) {
     warnings.push("Auto-pay limit exceeds the owner threshold; payments between them will still require owner sign-off.");
   }

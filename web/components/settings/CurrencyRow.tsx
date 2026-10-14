@@ -27,7 +27,7 @@ export function CurrencyRow({
   onChanged,
 }: {
   businessId: string;
-  token: { address: string; symbol: string; supported: boolean };
+  token: { address: string; symbol: string; supported: boolean; pendingOnAt?: string };
   signer: SignerPlan;
   explorer: string;
   isOwner: boolean;
@@ -41,7 +41,8 @@ export function CurrencyRow({
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   // a turn-on that was queued stays queued until it is applied: asking again would queue the same change twice
-  const [queued, setQueued] = useState(false);
+  const [queuedHere, setQueuedHere] = useState(false);
+  const queued = queuedHere || Boolean(token.pendingOnAt);
   const next = !token.supported;
 
   async function change() {
@@ -57,7 +58,7 @@ export function CurrencyRow({
         send: () => sendCall(signer, { to: prep.to, data: prep.data }, discover),
         record: (hash) => recordQueuedChange(businessId, hash),
         onDone: () => {
-          if (prep.loosening) setQueued(true);
+          if (prep.loosening) setQueuedHere(true);
           setNote(
             prep.loosening
               ? `Queued. ${token.symbol} turns on after your Vault's waiting period; apply it under “Changes waiting” further down this page.`
@@ -78,10 +79,10 @@ export function CurrencyRow({
       <div className="flex flex-wrap items-center gap-3">
         <span className="font-medium text-ink">{token.symbol}</span>
         <span className="text-graphite">{token.address.slice(0, 6)}…{token.address.slice(-4)}</span>
-        <StatusPill tone={token.supported ? "ok" : "neutral"}>{token.supported ? "On" : "Off"}</StatusPill>
+        <StatusPill tone={token.supported ? "ok" : queued ? "info" : "neutral"}>{token.supported ? "On" : token.pendingOnAt ? (new Date(token.pendingOnAt).getTime() <= Date.now() ? "Ready to turn on" : "Turning on") : queuedHere ? "Turning on" : "Off"}</StatusPill>
         {isOwner && (next || canTurnOff) ? (
           <Button variant="secondary" size="sm" busy={busy || tx.busy} disabled={tx.locked || (next && queued)} onClick={() => void change()}>
-            {busy || tx.busy ? "Waiting…" : next && queued ? "Queued" : next ? `Turn on ${token.symbol}` : `Turn off ${token.symbol}`}
+            {busy || tx.busy ? "Waiting…" : next && queued ? "Queued; apply it under Changes waiting" : next ? `Turn on ${token.symbol}` : `Turn off ${token.symbol}`}
           </Button>
         ) : null}
       </div>

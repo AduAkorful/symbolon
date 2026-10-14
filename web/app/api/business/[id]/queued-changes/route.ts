@@ -19,7 +19,9 @@ export const GET = routeWith<Ctx>(async (_request, ctx) => {
   const session = await requireSession();
   const db = await getDb();
   const changes = await listQueuedChanges(db, businessId, session.user);
-  return NextResponse.json({ ok: true, changes });
+  // currency addresses by lowercase address, so a queued "enable token 0x…" can be shown by name (QA VIS-2)
+  const tokens = Object.fromEntries(Object.entries(getConfig().deployment.tokens).map(([symbol, address]) => [String(address).toLowerCase(), symbol.toUpperCase()]));
+  return NextResponse.json({ ok: true, changes, tokens });
 });
 
 export const POST = routeWith<Ctx>(async (request, ctx) => {

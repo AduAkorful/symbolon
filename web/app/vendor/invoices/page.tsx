@@ -11,12 +11,24 @@ import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/States";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { PageTitle } from "@/components/ui/Type";
+import { chipClass } from "@/components/ui/chip";
 
 export const dynamic = "force-dynamic";
 
-export default async function VendorInvoices() {
+const FILTERS = [
+  ["all", "All", () => true],
+  ["open", "Open", (st: string) => st !== "paid" && st !== "cancelled" && st !== "declined" && st !== "rejected"],
+  ["paid", "Paid", (st: string) => st === "paid" || st === "partially_paid"],
+  ["declined", "Declined", (st: string) => st === "declined"],
+  ["cancelled", "Cancelled", (st: string) => st === "cancelled"],
+] as const;
+
+export default async function VendorInvoices({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
   const { session, where } = await requireVendorPage("/vendor/invoices");
-  const invoices = await listMyInvoices(await getDb(), session.user);
+  const all = await listMyInvoices(await getDb(), session.user);
+  const wanted = (await searchParams).filter;
+  const active = FILTERS.find(([key]) => key === wanted) ?? FILTERS[0];
+  const invoices = all.filter((i) => active[2](i.status));
   return (
     <Shell where={where} current={{ kind: "vendor" }}>
       <div>
@@ -24,11 +36,23 @@ export default async function VendorInvoices() {
           <PageTitle>Invoices</PageTitle>
           <LinkButton href="/vendor/new">New invoice</LinkButton>
         </div>
-        {invoices.length === 0 ? (
+        {all.length > 0 ? (
+          <nav aria-label="Invoice filters" className="mt-6 flex flex-wrap gap-2">
+            {FILTERS.map(([key, label, test]) => (
+              <Link key={key} href={key === "all" ? "/vendor/invoices" : `/vendor/invoices?filter=${key}`} aria-current={active[0] === key ? "page" : undefined} className={chipClass(active[0] === key)}>
+                {label}
+                <span className={active[0] === key ? "text-paper/70" : "text-graphite"}>{all.filter((i) => test(i.status)).length}</span>
+              </Link>
+            ))}
+          </nav>
+        ) : null}
+        {all.length === 0 ? (
           <EmptyState title="No invoices yet" className="mt-8">Invoices you sign appear here with their link.</EmptyState>
+        ) : invoices.length === 0 ? (
+          <EmptyState title="Nothing in this view" className="mt-8">No invoices match this filter.</EmptyState>
         ) : (
           <DataTable
-            className="mt-8"
+            className="mt-6"
             caption="Your invoices"
             rows={invoices}
             rowKey={(i) => i.fingerprint}

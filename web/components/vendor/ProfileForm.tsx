@@ -45,7 +45,7 @@ export function ProfileForm({ initialName, initialWebsite, handle }: { initialNa
         {(a) => <input {...a} className={controlClass} value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />}
       </Field>
       <Field label="Website" {...(websiteProblem ? { error: websiteProblem } : {})}>
-        {(a) => <input {...a} className={controlClass} value={website} onChange={(e) => setWebsite(e.target.value)} maxLength={200} placeholder="studio-ana.com" />}
+        {(a) => <input {...a} className={controlClass} value={website} onChange={(e) => setWebsite(e.target.value)} maxLength={200} placeholder="yourcompany.com" />}
       </Field>
       <p className="text-sm text-graphite">Handle: <span className="font-mono">@{handle}</span>. It is part of your public invoice links, so it can’t be changed.</p>
       {note ? (note.ok ? <p role="status" className="text-sm text-ok">{note.text}</p> : <InlineError>{note.text}</InlineError>) : null}

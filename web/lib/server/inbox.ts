@@ -4,7 +4,7 @@ import "server-only";
 import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import { getAddress, keccak256, stringToBytes, type Address, type Hex, type PublicClient } from "viem";
 import { notifyBusiness, readVaultFacts, receiveInvoice, vaultFromPayerRef } from "@symbolon/core";
-import { invoiceStatus, symbolonContracts } from "@symbolon/chain";
+import { invoiceStatus, symbolonContracts, vaultLensAbi } from "@symbolon/chain";
 import { businesses, deliveries, invoices, payees, purchaseOrders, seals, unsignedBills, type Database } from "@symbolon/db";
 import { decodeSealedInvoice, deriveInvoice, verifySealedInvoice, type InvoiceDocument } from "@symbolon/seal";
 import { findDuplicates, matchInvoice } from "@symbolon/steward";
@@ -23,7 +23,7 @@ const CLAIM_ROLES: Role[] = ["owner", "approver", "requester"];
 const HEX_HASH = /^0x[0-9a-f]{64}$/;
 
 export type TrustState = "verified" | "new_vendor" | "blocked" | "failed";
-export type InboxFilter = "all" | "verified" | "new" | "unsigned" | "blocked" | "declined";
+export type InboxFilter = "all" | "verified" | "new" | "unsigned" | "blocked" | "declined" | "cancelled";
 
 export function duplicateCandidates(db: Database, businessId: string, seal: string, fingerprint: string) {
   return db.select({ fingerprint: invoices.fingerprint, seal: invoices.seal, invoiceNumber: invoices.invoiceNumber, total: invoices.total, issuedAt: invoices.issuedAt, receivedAt: invoices.receivedAt })
@@ -43,6 +43,8 @@ export interface InboxItem {
   status: string;
   holdSource?: string | null;
   holdKind?: string | null;
+  /** True when the Vault is known not to pay this invoice's currency; undefined when that wasn't or couldn't be read */
+  currencyOff?: boolean;
   createdAt: Date;
   assessment?: { verdict: string; reasons: string[] };
 }
@@ -84,6 +86,22 @@ export async function listInbox(db: Database, client: PublicClient, cfg: ChainSe
     }
     return { row, trust, document };
   }));
+  // One read per currency, not per invoice. A read that fails leaves the flag unset: never a guess either way (QA UI-3)
+  const [vaultRow] = await db.select({ vault: businesses.vault }).from(businesses).where(eq(businesses.id, businessId)).limit(1);
+  const supported = new Map<string, boolean>();
+  if (vaultRow?.vault) {
+    const vaultAddress = getAddress(vaultRow.vault);
+    await Promise.all([...new Set(rows.map((r) => r.token.toLowerCase()))].map(async (token) => {
+      try {
+        const ok = await withDeadline(
+          client.readContract({ address: cfg.deployment.contracts.vaultLens, abi: vaultLensAbi, functionName: "isSupportedToken", args: [vaultAddress, getAddress(token)] }) as Promise<boolean>,
+          CHAIN_READ_DEADLINE_MS,
+          "Checking the Vault's currencies",
+        );
+        supported.set(token, Boolean(ok));
+      } catch { /* unread stays unknown */ }
+    }));
+  }
   const items: InboxItem[] = checked.map(({ row, trust, document }) => ({
     kind: "invoice",
     id: row.fingerprint,
@@ -97,6 +115,7 @@ export async function listInbox(db: Database, client: PublicClient, cfg: ChainSe
     status: row.status,
     holdSource: row.holdSource,
     holdKind: row.holdKind,
+    currencyOff: supported.get(row.token.toLowerCase()) === false ? true : undefined,
     createdAt: row.receivedAt,
   }));
   const bills = await db.select().from(unsignedBills).where(eq(unsignedBills.businessId, businessId)).orderBy(desc(unsignedBills.createdAt));
@@ -113,7 +132,8 @@ export async function listInbox(db: Database, client: PublicClient, cfg: ChainSe
 export function filterInbox(items: InboxItem[], filter: InboxFilter): InboxItem[] {
   switch (filter) {
     case "verified":
-      return items.filter((i) => i.kind === "invoice" && i.trust === "verified");
+      // declined and cancelled invoices have their own chips; counting them here made the chip wrong (QA UI-17)
+      return items.filter((i) => i.kind === "invoice" && i.trust === "verified" && i.status !== "declined" && i.status !== "cancelled");
     case "new":
       return items.filter((i) => i.kind === "invoice" && i.trust === "new_vendor");
     case "blocked":
@@ -122,6 +142,8 @@ export function filterInbox(items: InboxItem[], filter: InboxFilter): InboxItem[
       return items.filter((i) => i.kind === "unsigned");
     case "declined":
       return items.filter((i) => i.kind === "invoice" && i.status === "declined");
+    case "cancelled":
+      return items.filter((i) => i.kind === "invoice" && i.status === "cancelled");
     default:
       return items;
   }

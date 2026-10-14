@@ -85,7 +85,8 @@ export interface LendingView {
   minOperating: string;
   paused: boolean;
   /** A lending-policy change that is queued and not yet applied: the card says so, with the time the queue itself shows (QA REL4-2, REL4-3) */
-  pendingChange?: { eta: string; ready: boolean };
+  /** What is queued, from its own summary: whether lending ends up on, the most of the cash, and the vault's name */
+  pendingChange?: { eta: string; ready: boolean; enabled?: boolean; maxLendingBps?: number; venueName?: string };
 }
 
 function listed(deployment: Deployment): LendingVenueView[] {
@@ -145,7 +146,7 @@ export async function loadLending(
     const exit = venue && status.shares > 0n ? await simulateLendingExit(client, venue, vault, status.shares) : null;
     const yieldNow = venue ? await lendingYield(db, deployment.chainId, venue).catch(() => null) : null;
     const [queued] = await db
-      .select({ eta: queuedChanges.eta })
+      .select({ eta: queuedChanges.eta, summary: queuedChanges.summary })
       .from(queuedChanges)
       .where(and(eq(queuedChanges.businessId, businessId), eq(queuedChanges.kind, "set_lending_policy"), eq(queuedChanges.status, "queued")))
       .orderBy(desc(queuedChanges.createdAt))
@@ -162,11 +163,23 @@ export async function loadLending(
       yield: yieldNow,
       minOperating: reserve.minOperating.toString(),
       paused: state.paused,
-      ...(queued ? { pendingChange: { eta: queued.eta.toISOString(), ready: queued.eta.getTime() <= Date.now() } } : {}),
+      ...(queued ? { pendingChange: pendingFrom(queued, venues) } : {}),
     };
   } catch {
     return { ...empty, supported: true, readOk: false };
   }
+}
+
+function pendingFrom(queued: { eta: Date; summary: unknown }, venues: { address: string; name: string }[]): NonNullable<LendingView["pendingChange"]> {
+  const d = (queued.summary as { details?: { enabled?: boolean; maxLendingBps?: number; venue?: string } } | null)?.details ?? {};
+  const venueName = d.venue ? venues.find((v) => v.address.toLowerCase() === d.venue!.toLowerCase())?.name : undefined;
+  return {
+    eta: queued.eta.toISOString(),
+    ready: queued.eta.getTime() <= Date.now(),
+    ...(typeof d.enabled === "boolean" ? { enabled: d.enabled } : {}),
+    ...(typeof d.maxLendingBps === "number" ? { maxLendingBps: d.maxLendingBps } : {}),
+    ...(venueName ? { venueName } : {}),
+  };
 }
 
 export interface LendingPolicyInput {

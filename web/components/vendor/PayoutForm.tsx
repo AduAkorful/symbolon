@@ -1,5 +1,6 @@
 "use client";
 
+import { Address } from "@/components/Address";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { getAddress, isAddress, zeroAddress } from "viem";
@@ -44,12 +45,12 @@ export function PayoutForm({ initial, sealAddress }: { initial: string | null; s
   return (
     <form onSubmit={save} className="mt-4 max-w-xl space-y-4">
       <Field label="Payout address on Arc" {...(showProblem ? { error: problem } : {})} hint="Leave it empty to be paid at your Seal’s wallet. Invoices you have already signed keep the address they were signed with.">
-        {(a) => <input {...a} className={`${controlClass} font-mono`} value={value} onChange={(e) => { setValue(e.target.value); setLeft(false); }} onBlur={() => setLeft(true)} placeholder={sealAddress} spellCheck={false} />}
+        {(a) => <input {...a} className={`${controlClass} font-mono`} value={value} onChange={(e) => { setValue(e.target.value); setLeft(false); }} onBlur={() => setLeft(true)} placeholder="Empty: your Seal’s wallet" spellCheck={false} />}
       </Field>
       <p className="text-sm text-graphite">
         {saved
-          ? <>New invoices pay out to <span className="break-all font-mono text-ink">{saved}</span>.</>
-          : <>New invoices pay out to your Seal’s own wallet, <span className="break-all font-mono text-ink">{isAddress(sealAddress) ? getAddress(sealAddress) : sealAddress}</span>.</>}
+          ? <>New invoices pay out to <Address value={saved} full copy className="text-ink" />.</>
+          : <>New invoices pay out to your Seal’s own wallet: {isAddress(sealAddress) ? <Address value={sealAddress} full copy className="text-ink" /> : sealAddress}.</>}
       </p>
       {note ? (note.ok ? <p role="status" className="text-sm text-ok">{note.text}</p> : <InlineError>{note.text}</InlineError>) : null}
       <Button type="submit" busy={busy} disabled={problem !== null}>{busy ? "Saving…" : "Save"}</Button>

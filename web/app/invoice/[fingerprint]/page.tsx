@@ -85,7 +85,7 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
       <main className={`${CONTAINER} pb-24 pt-12 print:pt-0`}>
         <Eyebrow>Invoice for {d.payer.name}</Eyebrow>
         <h1 className="mt-3 max-w-[20ch] font-display text-[clamp(2.2rem,5vw,3.8rem)] leading-[1.02] tracking-[-0.01em]">
-          {d.vendor.name} sent you an invoice for <span className="whitespace-nowrap">{showAmount(d.total)} {d.currency.symbol}.</span>
+          Invoice from {d.vendor.name} for <span className="whitespace-nowrap">{showAmount(d.total)} {d.currency.symbol}.</span>
         </h1>
         <p className="mt-4 text-graphite">Due {showDate(d.dueDate)}.</p>
 
@@ -102,8 +102,7 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
                   <span className="text-seal" aria-hidden>
                     ✓{" "}
                   </span>
-                  Signed by the Seal <Address value={view.seal.address} full className="text-xs" />
-                  {view.seal.handle ? <> (@{view.seal.handle})</> : null}. The signature matches the invoice exactly as written.
+                  Signed by {d.vendor.name}{view.seal.handle ? <> (@{view.seal.handle})</> : null}, Seal <Address value={view.seal.address} className="text-xs" />. The signature matches the invoice exactly as written.
                 </li>
                 <li>
                   <span className="text-seal" aria-hidden>
@@ -140,7 +139,9 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
                 <span data-wrap-ok className="mt-1 block font-mono">{link}</span>
               </p>
             </div>
-            <p className="text-xs text-graphite">Paying from this page isn’t available yet.</p>
+            <p className="text-xs text-graphite">
+              To pay it, sign in to Symbolon as {d.payer.name}, choose “Add to the inbox” and paste this invoice’s link, or send the link to whoever pays your bills. Paying straight from this page isn’t available yet.
+            </p>
           </section>
         </div>
       </main>

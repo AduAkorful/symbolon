@@ -151,7 +151,7 @@ export function AddPayee({ businessId, seal, signer, explorer }: { businessId: s
               <Field label="Payout address signed by this vendor">
                 {(a) => (
                   <select {...a} value={selected} onChange={(e) => setSelected(e.target.value)} className={`${controlClass} min-w-0`}>
-                    {options.map((o) => <option key={`${o.address}:${o.domain}`} value={`${o.address}:${o.domain}`}>{checksum(o.address)} · domain {o.domain} · {o.source}</option>)}
+                    {options.map((o) => <option key={`${o.address}:${o.domain}`} value={`${o.address}:${o.domain}`}>{checksum(o.address)} · {o.domain === 26 ? "Arc" : `network ${o.domain}`} · {o.source}</option>)}
                   </select>
                 )}
               </Field>

@@ -3,7 +3,7 @@ import "server-only";
 import { and, desc, eq } from "drizzle-orm";
 
 import { notifyBusiness, notifyVendor } from "@symbolon/core";
-import { businesses, decisions, type Database } from "@symbolon/db";
+import { businesses, decisions, seals, type Database } from "@symbolon/db";
 
 /**
  * Tells a vendor their payee record became active (plan 05zj E, D11 a). Becoming active is a moment in time, not an event
@@ -29,6 +29,7 @@ export async function notifyPayeesActive(db: Database, scope: { businessId: stri
     const activeAt = typeof inputs.activeAt === "string" && /^\d+$/.test(inputs.activeAt) ? Number(inputs.activeAt) * 1000 : null;
     if (!row.subject || activeAt === null || activeAt > now.getTime()) continue;
     const key = typeof inputs.txHash === "string" ? inputs.txHash : row.hash;
+    const [sealRow] = await db.select({ name: seals.displayName }).from(seals).where(eq(seals.address, row.subject.toLowerCase())).limit(1);
     const result = await notifyVendor(db, row.subject, {
       kind: "payee_active",
       subject: row.subject,
@@ -39,7 +40,7 @@ export async function notifyPayeesActive(db: Database, scope: { businessId: stri
     await notifyBusiness(db, row.businessId, {
       kind: "payee_active_business",
       subject: row.subject,
-      body: { seal: row.subject },
+      body: { seal: row.subject, ...(sealRow?.name ? { vendorName: sealRow.name } : {}) },
       dedupeKey: `payee_active_biz:${row.businessId}:${key}`,
     }, { roles: ["owner"] });
     told += result.inserted;

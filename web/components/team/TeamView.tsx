@@ -294,6 +294,7 @@ export function TeamView({
                       <StatusPill tone="neutral" className="capitalize">{m.appRole}</StatusPill>
                     </p>
                     {m.displayName && m.email ? <p className="mt-0.5 text-sm text-graphite">{m.email}</p> : null}
+                    {!m.displayName && !m.email ? <p className="mt-0.5 text-sm text-graphite">No name yet. A name can be added on the Profile page.</p> : null}
                     {/* a person with no name or email is already shown by their wallet: the address is not printed twice (plan 05zj G, SYM-50) */}
                     {m.wallet && (m.displayName || m.email) ? <div className="mt-1 text-sm text-graphite"><Address value={m.wallet} full /></div> : null}
                     <p className="mt-2 flex flex-wrap items-center gap-2 text-sm">
@@ -340,7 +341,7 @@ export function TeamView({
           Any change that gives someone more onchain power waits for the Vault’s delay. When it is over, the owner applies it with a matching signature.
         </p>
         <div className="mt-4">
-          <QueuedChangeList businessId={business.id} signer={signer} onRefresh={() => window.location.reload()} />
+          <QueuedChangeList businessId={business.id} signer={signer} kinds={["set_approver", "set_requester", "set_screener", "set_steward"]} onRefresh={() => window.location.reload()} />
         </div>
       </section>
 

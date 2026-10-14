@@ -150,7 +150,7 @@ export function TreasuryView({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <Button variant="quiet" size="sm" busy={loading} onClick={refresh}>
+          <Button variant="secondary" busy={loading} onClick={refresh}>
             {loading ? "Refreshing…" : "Refresh"}
           </Button>
           {isOwner ? (
@@ -211,7 +211,7 @@ export function TreasuryView({
           className="mt-8"
           actions={isOwner ? <LinkButton href="/business/settings" variant="secondary">Open settings</LinkButton> : undefined}
         >
-          <p>EURC can be held here, but no EURC invoice can be paid until EURC is turned on. Turning a currency on waits your Vault’s loosening delay.</p>
+          <p>EURC can be held here, but no EURC invoice can be paid until EURC is turned on. Turning a currency on waits for your Vault’s loosening delay.</p>
         </Callout>
       ) : null}
 
@@ -253,7 +253,7 @@ export function TreasuryView({
       <div className="mt-12 grid gap-12 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
         <section aria-labelledby="ahead" className="min-w-0">
           <SectionTitle id="ahead">The next five weeks</SectionTitle>
-          <p className="mt-1 text-sm text-graphite">Based on invoices you’ve received. It doesn’t include money you expect to receive.</p>
+          <p className="mt-1 text-sm text-graphite">Based on invoices you’ve received. It doesn’t include money you expect to receive.{eurcShortfall ? ` The line is the USDC balance; EURC is held and paid separately, so its ${eur(eurcShortfall.due)} of bills are not drawn on it.` : ""}</p>
           <ForecastChart start={operatingUsdc / 1000} days={35} {...(bufferLine !== null ? { buffer: bufferLine } : {})} events={chartEvents} dates={chartDates} tableRows={state.forecast.days} />
         </section>
 
@@ -366,7 +366,7 @@ export function TreasuryView({
             </div>
           )}
 
-          <div className="mt-10">
+          <div id="queued" className="mt-10 scroll-mt-24">
             <SmallTitle>Policy changes waiting</SmallTitle>
             <p className="mt-1 text-sm text-graphite">Changes that loosen a limit wait out the Vault’s delay before they can be applied.</p>
             <div className="mt-3">
@@ -387,7 +387,7 @@ export function TreasuryView({
               className="mt-5"
               items={[
                 { label: "Status", value: <StatusPill tone={state.earlyPay?.enabled ? "ok" : "neutral"}>{state.earlyPay?.enabled ? "On" : "Off"}</StatusPill> },
-                { label: "Must beat the reserve by", value: `${(state.earlyPay?.minSpreadBps ?? 300) / 100} points` },
+                { label: "Smallest worthwhile discount", value: `${(state.earlyPay?.minSpreadBps ?? 300) / 100}% above what the reserve earns` },
                 { label: "Most committed at once", value: `${(state.earlyPay?.cashCapBps ?? 3000) / 100}% of operating cash` },
                 {
                   label: "Cash buffer",
@@ -418,6 +418,7 @@ export function TreasuryView({
           businessId={businessId}
           signer={signer}
           explorer={explorer}
+          balances={{ usdc: state.balances.usdc?.amount ?? null, eurc: state.balances.eurc?.amount ?? null }}
           onClose={() => setActiveModal(null)}
           onSuccess={(txHash) => {
             setActiveModal(null);

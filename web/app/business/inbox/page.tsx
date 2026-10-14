@@ -24,7 +24,7 @@ export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 25;
 
-const filters: [InboxFilter, string][] = [["all", "All"], ["verified", "Verified"], ["new", "New vendor"], ["unsigned", "Unsigned"], ["blocked", "Blocked"], ["declined", "Declined"]];
+const filters: [InboxFilter, string][] = [["all", "All"], ["verified", "Verified"], ["new", "New vendor"], ["unsigned", "Unsigned"], ["blocked", "Blocked"], ["declined", "Declined"], ["cancelled", "Cancelled"]];
 
 export default async function InboxPage({ searchParams }: { searchParams: Promise<{ filter?: string; page?: string }> }) {
   const session = await requirePageSession("/business/inbox");
@@ -69,7 +69,8 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
               : `Payment records from Arc can't be updated right now (${sync.reason}). Statuses below are read from Arc directly.`}
           </Callout>
         ) : null}
-        <nav aria-label="Inbox filters" className="mt-8 flex flex-wrap gap-2">
+        <p className="mt-6 text-sm text-graphite">Newest first, by the day each invoice arrived.</p>
+        <nav aria-label="Inbox filters" className="mt-3 flex flex-wrap gap-2">
           {filters.map(([value, label]) => (
             <Link
               key={value}
@@ -85,7 +86,13 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
         {items.length ? (
           <ul className="mt-5 divide-y divide-rule-soft border-y border-rule">
             {items.map((item) => {
-              const state = item.kind === "unsigned" ? unsignedLabel(item.assessment?.verdict, item.status) : businessStatus(item.status, { source: item.holdSource, kind: item.holdKind });
+              const openBill = item.kind === "invoice" && ["verified", "scheduled", "awaiting_approval", "received"].includes(item.status);
+              // a Vault that doesn't pay this currency can't pay the invoice, whatever the Steward has scheduled (QA UI-3)
+              const state = item.kind === "unsigned"
+                ? unsignedLabel(item.assessment?.verdict, item.status)
+                : openBill && item.currencyOff
+                  ? { label: "Can't pay yet", tone: "red" as const, note: `This Vault isn't set to pay in ${item.token}` }
+                  : businessStatus(item.status, { source: item.holdSource, kind: item.holdKind });
               const trust = item.kind === "invoice" && item.trust ? trustName(item.trust) : null;
               return (
                 <li key={`${item.kind}:${item.id}`}>

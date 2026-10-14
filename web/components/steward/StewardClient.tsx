@@ -132,6 +132,26 @@ export interface StewardClientProps {
   explorer: string;
 }
 
+/** Runs that did the same thing, back to back, are one row with a count: a 15-minute schedule isn't news (QA UI-19) */
+function groupRuns(runs: RunView[], skipId: string | undefined) {
+  const out: { run: RunView; counts: string; repeats: number; from: string }[] = [];
+  for (const r of runs.filter((x) => x.id !== skipId)) {
+    const counts = Object.entries(r.summary ?? {})
+      .flatMap(([k, v]) => (typeof v === "object" && v !== null ? Object.entries(v as Record<string, number>) : [[k, v] as const]))
+      .map(([k, v]) => `${humanKey(k)} ${String(v)}`)
+      .join(" · ");
+    const last = out[out.length - 1];
+    // runs arrive newest first, so the row being extended is the later one and `from` moves back in time
+    if (last && last.run.status === r.status && last.run.trigger === r.trigger && last.run.mode === r.mode && last.counts === counts && !r.error && !last.run.error) {
+      last.repeats += 1;
+      last.from = r.startedAt;
+    } else {
+      out.push({ run: r, counts, repeats: 1, from: r.startedAt });
+    }
+  }
+  return out;
+}
+
 const MODE_NAMES: Record<string, string> = { shadow: "Shadow", assist: "Assisted", auto: "Autonomous" };
 
 export function StewardClient({
@@ -513,27 +533,21 @@ export function StewardClient({
           <EmptyState title="No runs yet">Press “Run now” and the Steward will look at every invoice waiting for it.</EmptyState>
         )}
 
-        {runs.filter((r) => r.id !== lastRun?.id).length > 0 ? (
+        {groupRuns(runs, lastRun?.id).length > 0 ? (
           <div>
             <Eyebrow as="p">Earlier runs</Eyebrow>
             <ul className="mt-2 divide-y divide-rule-soft rounded-doc border border-rule text-sm">
-              {runs
-                .filter((r) => r.id !== lastRun?.id)
-                .map((r) => {
-                  const counts = Object.entries(r.summary ?? {})
-                    .flatMap(([k, v]) => (typeof v === "object" && v !== null ? Object.entries(v as Record<string, number>) : [[k, v] as const]))
-                    .map(([k, v]) => `${humanKey(k)} ${String(v)}`)
-                    .join(" · ");
-                  return (
-                    <li key={r.id} className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-5 py-3">
-                      <span className="flex flex-wrap items-center gap-3">
-                        <StatusPill tone={runTone(r.status)}>{runLabel(r.status)}</StatusPill>
-                        <span className="text-graphite">{r.trigger}, {r.mode} mode{counts ? ` · ${counts}` : ""}</span>
-                      </span>
-                      <span className="text-graphite">{formatDateTime(new Date(r.startedAt))}</span>
-                    </li>
-                  );
-                })}
+              {groupRuns(runs, lastRun?.id).map(({ run: r, counts, repeats, from }) => (
+                <li key={r.id} className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-5 py-3">
+                  <span className="flex flex-wrap items-center gap-3">
+                    <StatusPill tone={runTone(r.status)}>{runLabel(r.status)}</StatusPill>
+                    <span className="text-graphite">{r.trigger}, {r.mode} mode{counts ? ` · ${counts}` : ""}{repeats > 1 ? ` · ${repeats} runs with the same result` : ""}</span>
+                  </span>
+                  <span className="text-graphite">
+                    {repeats > 1 ? `${formatDateTime(new Date(from))} to ${formatDateTime(new Date(r.startedAt))}` : formatDateTime(new Date(r.startedAt))}
+                  </span>
+                </li>
+              ))}
             </ul>
           </div>
         ) : null}
