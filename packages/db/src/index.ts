@@ -38,24 +38,38 @@ export async function migrateDb(url: string): Promise<void> {
 }
 
 const persist = globalThis as typeof globalThis & { __symbolonPgliteSnapshot?: Blob | File };
-// keyed by the newest migration, so a new migration never meets a snapshot cached from before it
-const SNAP_DIR = join(tmpdir(), `symbolon-pglite-snap-${readdirSync(MIGRATIONS).filter((f) => f.endsWith(".sql")).sort().at(-1)?.replace(/\W/g, "") ?? "none"}`);
-const SNAP_DATA = join(SNAP_DIR, "data");
-const SNAP_READY = join(SNAP_DIR, "ready");
-const SNAP_LOCK = join(SNAP_DIR, "lock");
+// Keyed by the newest migration, so a new migration never meets a snapshot cached from before it. Computed on first use and only for
+// tests: this module is loaded by the running app, where the migrations folder is not necessarily on disk, and reading it at load
+// time took every page down.
+let snapDirCache: string | undefined;
+function snapDir(): string {
+  if (!snapDirCache) {
+    let newest = "none";
+    try {
+      newest = readdirSync(MIGRATIONS).filter((f) => f.endsWith(".sql")).sort().at(-1)?.replace(/\W/g, "") ?? "none";
+    } catch {
+      // no migrations folder here: the snapshot is only ever used in tests, which have one
+    }
+    snapDirCache = join(tmpdir(), `symbolon-pglite-snap-${newest}`);
+  }
+  return snapDirCache;
+}
+const snapData = () => join(snapDir(), "data");
+const snapReady = () => join(snapDir(), "ready");
+const snapLock = () => join(snapDir(), "lock");
 
 let snapshot: Blob | File | undefined;
 let opening: Promise<void> | undefined;
 
 function loadSnapFile() {
-  if (!existsSync(SNAP_READY)) return;
-  snapshot = new Blob([readFileSync(SNAP_DATA)]);
+  if (!existsSync(snapReady())) return;
+  snapshot = new Blob([readFileSync(snapData())]);
   persist.__symbolonPgliteSnapshot = snapshot;
 }
 
 async function waitForSnapFile() {
   const deadline = Date.now() + 60_000;
-  while (!existsSync(SNAP_READY)) {
+  while (!existsSync(snapReady())) {
     if (Date.now() > deadline) throw new Error("timed out waiting for the PGlite test snapshot");
     await new Promise((r) => setTimeout(r, 50));
   }
@@ -68,9 +82,9 @@ async function migrateSnapFile() {
   await migratePglite(db, { migrationsFolder: MIGRATIONS });
   snapshot = await client.dumpDataDir();
   persist.__symbolonPgliteSnapshot = snapshot;
-  mkdirSync(SNAP_DIR, { recursive: true });
-  writeFileSync(SNAP_DATA, Buffer.from(await snapshot.arrayBuffer()));
-  writeFileSync(SNAP_READY, "1");
+  mkdirSync(snapDir(), { recursive: true });
+  writeFileSync(snapData(), Buffer.from(await snapshot.arrayBuffer()));
+  writeFileSync(snapReady(), "1");
   await client.close();
 }
 
@@ -80,9 +94,9 @@ async function ensureSnapshot() {
   loadSnapFile();
   if (snapshot) return;
   opening ??= (async () => {
-    mkdirSync(SNAP_DIR, { recursive: true });
+    mkdirSync(snapDir(), { recursive: true });
     try {
-      const fd = openSync(SNAP_LOCK, "wx");
+      const fd = openSync(snapLock(), "wx");
       closeSync(fd);
     } catch {
       await waitForSnapFile();
