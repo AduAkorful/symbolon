@@ -595,20 +595,31 @@ export async function loadAhead(
   }
   const dueTotals = [...totals].map(([tokenSymbol, t]) => ({ tokenSymbol, totalFormatted: formatAmount(t.raw, 6), count: t.count }));
   const SHOWN = 8;
-  const soonest = [...unpaid].sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
+  // soonest first within each currency, so a list under a EURC shortfall is EURC bills and no other (QA retest 4); an invoice with
+  // nothing left to pay is never listed
+  const owing = unpaid.filter((inv) => inv.total > inv.credited);
+  const soonest = [...owing].sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
+  const perToken = new Map<string, number>();
+  const shownInvoices = soonest.filter((inv) => {
+    const key = symbolOf(inv.token);
+    const n = perToken.get(key) ?? 0;
+    perToken.set(key, n + 1);
+    return n < SHOWN;
+  });
+  shownInvoices.sort((a, b) => symbolOf(a.token).localeCompare(symbolOf(b.token)) || a.dueDate.getTime() - b.dueDate.getTime());
 
-  const upcomingInvoices = soonest.slice(0, SHOWN).map((inv) => ({
+  const upcomingInvoices = shownInvoices.map((inv) => ({
     fingerprint: inv.fingerprint,
     invoiceNumber: inv.invoiceNumber,
     vendorName: inv.vendorName || inv.vendorHandle || inv.seal,
-    amountFormatted: formatAmount(inv.total > inv.credited ? inv.total - inv.credited : 0n, 6),
+    amountFormatted: formatAmount(inv.total - inv.credited, 6),
     dueDate: inv.dueDate,
-    token: inv.token.toLowerCase() === eurcAddress ? "EURC" : inv.token.toLowerCase() === usdcAddress ? "USDC" : "Unknown token",
+    token: symbolOf(inv.token),
   }));
 
   return {
     dueTotals,
-    moreCount: Math.max(0, unpaid.length - SHOWN),
+    moreCount: Math.max(0, owing.length - upcomingInvoices.length),
     upcomingInvoices,
     shortfalls: shortfallsList,
     runwayStatement,

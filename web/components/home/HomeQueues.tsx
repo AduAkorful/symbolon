@@ -222,9 +222,10 @@ export function HomeQueues({ needsYou, today, ahead }: Props) {
             <EmptyState title="No unpaid invoices coming due">Invoices that fall due in the forecast period are listed here.</EmptyState>
           ) : (
             <ul className="divide-y divide-rule-soft border-y border-rule text-sm">
-              {ahead.upcomingInvoices.map((inv) => (
+              {ahead.upcomingInvoices.map((inv, i) => (
                 <li key={inv.fingerprint} className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3">
                   <span className="min-w-0">
+                    {i === 0 || ahead.upcomingInvoices[i - 1]!.token !== inv.token ? <span className="mr-2 text-xs uppercase tracking-wide text-graphite">{inv.token}</span> : null}
                     <span className="font-medium text-ink">{inv.vendorName}</span>
                     <span className="ml-2 text-graphite">Invoice {inv.invoiceNumber}</span>
                   </span>
