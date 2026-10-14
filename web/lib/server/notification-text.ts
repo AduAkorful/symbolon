@@ -14,6 +14,10 @@ export interface NotificationViewItem {
   href?: string;
 }
 
+function vendorOf(body: Record<string, unknown>): string {
+  return typeof body.vendorName === "string" && body.vendorName ? body.vendorName : "A vendor";
+}
+
 function truncate(text: string, max = 120): string {
   if (text.length <= max) return text;
   return `${text.slice(0, max - 1)}…`;
@@ -115,7 +119,7 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
     case "vendor_payout_change": {
       return {
         title: "Payout address change requested",
-        body: "A vendor requested a payout address change. 72-hour cooldown started.",
+        body: `${vendorOf(body)} requested a payout address change. 72-hour cooldown started.`,
         href: "/business/vendors",
       };
     }
@@ -123,7 +127,7 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
     case "vendor_seal_rotation": {
       return {
         title: "Seal rotation requested",
-        body: "A vendor requested to rotate their signing Seal key.",
+        body: `${vendorOf(body)} requested to rotate their signing Seal key.`,
         href: "/business/vendors",
       };
     }
@@ -131,7 +135,7 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
     case "vendor_cancel": {
       return {
         title: "Invoice cancellation requested",
-        body: "A vendor submitted an invoice cancellation request.",
+        body: `${vendorOf(body)} asked to cancel ${typeof body.invoiceNumber === "string" ? `invoice ${body.invoiceNumber}` : "an invoice"}.`,
         href: "/business/inbox",
       };
     }
@@ -139,7 +143,7 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
     case "vendor_credit_note": {
       return {
         title: "Credit note submitted",
-        body: "A vendor submitted a credit note.",
+        body: `${vendorOf(body)} submitted a credit note${typeof body.invoiceNumber === "string" ? ` for invoice ${body.invoiceNumber}` : ""}.`,
         href: "/business/inbox",
       };
     }

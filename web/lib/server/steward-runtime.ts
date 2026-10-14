@@ -21,10 +21,11 @@ import { notifyPayeesActive } from "./payee-active";
 export const MIN_STEWARD_FEE_BALANCE = 10_000_000_000_000_000n;
 
 /**
- * Lease timeout. A run's route is cut off at 60 s (`maxDuration`), so a run still "running" after 90 s was killed and will never
- * report; waiting five minutes left it on "Running" long after it had stopped (QA payment retest).
+ * Lease timeout. A run's route is cut off at 120 s (`maxDuration`), so a run still "running" after 150 s was killed and will never
+ * report; waiting five minutes left it on "Running" long after it had stopped (QA payment retest). Runs were being cut off at the
+ * old 60 s and then shown as "Failed: previous lease expired" (QA retest 4).
  */
-export const STEWARD_RUN_LEASE_MS = 90 * 1000;
+export const STEWARD_RUN_LEASE_MS = 150 * 1000;
 /** One run reads at most this much of a Vault's history, for at most this long (a few Arc log requests) */
 const RUN_VAULT_WINDOW_BLOCKS = 20_000n;
 const RUN_VAULT_SYNC_DEADLINE_MS = 8_000;

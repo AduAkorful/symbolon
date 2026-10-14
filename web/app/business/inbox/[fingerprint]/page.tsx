@@ -148,13 +148,15 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
             ))}
           </ul>
 
-          <BusinessOffers
-            businessId={where.business.id}
-            fingerprint={fingerprint}
-            view={offers}
-            symbol={view.verification.document.currency.symbol}
-            pay={canPay ? { signer, explorer, ...(unavailable ? { unavailable } : {}) } : undefined}
-          />
+          {!closed ? (
+            <BusinessOffers
+              businessId={where.business.id}
+              fingerprint={fingerprint}
+              view={offers}
+              symbol={view.verification.document.currency.symbol}
+              pay={canPay ? { signer, explorer, ...(unavailable ? { unavailable } : {}) } : undefined}
+            />
+          ) : null}
           {showDeliveryActions ? (
             <div className="mt-6">
               <DeliveryActions

@@ -134,6 +134,7 @@ export function PayInvoice({
           {error ? <InlineError>{error}</InlineError> : null}
           {prepared ? (
             <DetailList
+              stacked
               items={[
                 { label: "Vendor", value: prepared.summary.vendor },
                 { label: "Invoice", value: prepared.summary.invoiceNumber },

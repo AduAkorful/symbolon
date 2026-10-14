@@ -155,7 +155,18 @@ async function loadNotYetApprovable(db: Database, businessId: string): Promise<N
   for (const fp of subjects) {
     const failures = (latest.get(fp)?.inputs as { policy?: { failures?: { rule: string; detail: string }[] } } | undefined)?.policy?.failures ?? [];
     const named = failures.filter((f) => f.rule !== "ApprovalRequired").map((f) => describeRule(f, { seal: "" }).title);
-    const reasons = named.length > 0 ? [...new Set(named)] : [latest.has(fp) ? "The Steward is holding it for another reason" : "The Steward hasn’t looked at it yet"];
+    const record = latest.get(fp);
+    const outcome = String(record?.outcome ?? "");
+    const rule = String(record?.rule ?? "").trim();
+    // a finding with no rule failing says what it did instead: waiting for the due date, or the reason it recorded
+    const own = !record
+      ? "The Steward hasn’t looked at it yet"
+      : outcome.startsWith("scheduled")
+        ? "Waiting for its due date"
+        : rule
+          ? rule.charAt(0).toUpperCase() + rule.slice(1)
+          : "The Steward is holding it, with no reason recorded";
+    const reasons = named.length > 0 ? [...new Set(named)] : [own];
     for (const title of reasons) counts.set(title, (counts.get(title) ?? 0) + 1);
   }
   return { count: open.length, reasons: [...counts].map(([title, count]) => ({ title, count })).sort((a, b) => b.count - a.count) };

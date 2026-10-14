@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { getAddress, type Address, type Hex } from "viem";
 
 import { ledgerCall, vaultCall } from "@symbolon/chain";
-import { members, vendorRequests, type Database } from "@symbolon/db";
+import { members, seals, vendorRequests, type Database } from "@symbolon/db";
 import { notifyMany } from "./notify.js";
 import {
   decodeSealedInvoice,
@@ -87,13 +87,24 @@ export async function submitVendorRequest(
   if (businessId) {
     const owners = await db.select({ userId: members.userId }).from(members).where(and(eq(members.businessId, businessId), eq(members.role, "owner")));
     if (owners.length) {
+      // name the vendor and, for a cancellation or credit note, the invoice, so the bell says what it is about
+      const [sealRow] = await db.select({ displayName: seals.displayName, handle: seals.handle }).from(seals).where(eq(seals.address, signer.toLowerCase()));
+      const vendorName = sealRow?.displayName || sealRow?.handle || undefined;
+      let invoiceNumber: string | undefined;
+      if (request.kind === "cancel" || request.kind === "credit_note") {
+        try {
+          invoiceNumber = decodeSealedInvoice(request.envelope).document.invoiceNumber;
+        } catch {
+          invoiceNumber = undefined;
+        }
+      }
       await notifyMany(
         db,
         owners.map((o) => ({
           userId: o.userId,
           kind: `vendor_${request.kind}`,
           subject: row!.id,
-          body: { seal: signer.toLowerCase(), kind: request.kind, loud: request.kind === "payout_change" || request.kind === "seal_rotation" },
+          body: { seal: signer.toLowerCase(), kind: request.kind, loud: request.kind === "payout_change" || request.kind === "seal_rotation", ...(vendorName ? { vendorName } : {}), ...(invoiceNumber ? { invoiceNumber } : {}) },
           dedupeKey: `vendor_req:${row!.id}:${o.userId}`,
         })),
       );

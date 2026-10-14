@@ -524,12 +524,18 @@ export async function recordOpenPo(
     .where(and(eq(payees.businessId, businessId), eq(payees.seal, ev.seal.toLowerCase())))
     .limit(1);
 
-  // Re-check against the lens
+  // Re-check against the lens at the receipt's block. A public RPC that no longer keeps state that old can't answer; then the
+  // order is read as it stands now and only its Seal is compared, because it may be spent or closed by now (QA retest 4:
+  // an older order was never adopted).
   const c = symbolonContracts(client, deployment);
-  const onchain = await c.lens.read.getPurchaseOrder([vault, ev.poRef], { blockNumber: receipt.blockNumber }).catch(() => {
-    throw new AuthError(409, "Can't confirm the PO against the Vault yet. Checking again in a moment.", TX_PENDING);
-  });
-  if (!onchain.open || getAddress(onchain.seal) !== getAddress(ev.seal)) {
+  let onchain = await c.lens.read.getPurchaseOrder([vault, ev.poRef], { blockNumber: receipt.blockNumber }).catch(() => null);
+  const atBlock = onchain !== null;
+  if (!onchain) {
+    onchain = await c.lens.read.getPurchaseOrder([vault, ev.poRef]).catch(() => {
+      throw new AuthError(409, "Can't confirm the PO against the Vault yet. Checking again in a moment.", TX_PENDING);
+    });
+  }
+  if ((atBlock && !onchain.open) || getAddress(onchain.seal) !== getAddress(ev.seal)) {
     throw new AuthError(409, "The Vault's purchase order doesn't match the receipt. Try again shortly.");
   }
 

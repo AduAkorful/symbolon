@@ -23,7 +23,7 @@ import { readVaultState, stewardStanding } from "@/lib/server/vault-read";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export const GET = routeWith<Ctx>(async (_request, ctx) => {
   const { id: businessId } = await ctx.params;
