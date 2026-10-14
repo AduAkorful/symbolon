@@ -1,6 +1,6 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { formatUnits, getAddress, parseUnits, type Address, type Hex, type PublicClient } from "viem";
 
 import {
@@ -13,7 +13,7 @@ import {
   type Deployment,
 } from "@symbolon/chain";
 import { lendingYield } from "@symbolon/core";
-import { businesses, decisions, type Database } from "@symbolon/db";
+import { businesses, decisions, queuedChanges, type Database } from "@symbolon/db";
 import { hashRecord, type DecisionRecord } from "@symbolon/steward";
 
 import { requireMember } from "./access";
@@ -84,6 +84,8 @@ export interface LendingView {
   yield: { bps: number; days: number } | null;
   minOperating: string;
   paused: boolean;
+  /** A lending-policy change that is queued and not yet applied: the card says so, with the time the queue itself shows (QA REL4-2, REL4-3) */
+  pendingChange?: { eta: string; ready: boolean };
 }
 
 function listed(deployment: Deployment): LendingVenueView[] {
@@ -142,6 +144,12 @@ export async function loadLending(
     const venue = status.policy.venue === ZERO ? null : getAddress(status.policy.venue);
     const exit = venue && status.shares > 0n ? await simulateLendingExit(client, venue, vault, status.shares) : null;
     const yieldNow = venue ? await lendingYield(db, deployment.chainId, venue).catch(() => null) : null;
+    const [queued] = await db
+      .select({ eta: queuedChanges.eta })
+      .from(queuedChanges)
+      .where(and(eq(queuedChanges.businessId, businessId), eq(queuedChanges.kind, "set_lending_policy"), eq(queuedChanges.status, "queued")))
+      .orderBy(desc(queuedChanges.createdAt))
+      .limit(1);
     return {
       ...empty,
       supported: true,
@@ -154,6 +162,7 @@ export async function loadLending(
       yield: yieldNow,
       minOperating: reserve.minOperating.toString(),
       paused: state.paused,
+      ...(queued ? { pendingChange: { eta: queued.eta.toISOString(), ready: queued.eta.getTime() <= Date.now() } } : {}),
     };
   } catch {
     return { ...empty, supported: true, readOk: false };
@@ -179,7 +188,13 @@ export async function prepareLendingPolicy(
 ): Promise<PreparedChangeResult> {
   await requireMember(db, user.id, businessId, "owner");
   const vault = await vaultOf(db, businessId);
+  if (typeof input.maxPercent === "string" && /^\s*-/.test(input.maxPercent)) {
+    throw new AuthError(400, "The share of cash can't be negative. Enter a percentage from 1 to 50.");
+  }
   const maxLendingBps = percentToBps(input.maxPercent);
+  if (input.enabled === true && maxLendingBps < 100) {
+    throw new AuthError(400, "Enter a percentage from 1 to 50 to switch lending on.");
+  }
   if (maxLendingBps > MAX_LENDING_BPS) throw new AuthError(400, "The Vault allows at most 50% of its cash in a lending vault.");
 
   await requireLendingRelease(client, deployment, vault);

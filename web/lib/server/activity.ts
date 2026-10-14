@@ -387,7 +387,13 @@ export async function loadActivity(
 
   for (const d of decRows) {
     if (isPreparedPayment(d.record)) continue;
-    const desc = describeDecision(d, refFor);
+    let desc = describeDecision(d, refFor);
+    // a reopen recorded before the reason was stored with it: take it from the decline it undid (QA R7-2)
+    if (d.kind === "invoice_reopened" && d.subject && !String((d.record as { inputs?: { previousReason?: unknown } } | null)?.inputs?.previousReason ?? "")) {
+      const earlier = decRows.find((x) => x.kind === "invoice_declined" && x.subject === d.subject && x.createdAt.getTime() <= d.createdAt.getTime());
+      const why = String((earlier?.record as { inputs?: { reason?: unknown } } | undefined)?.inputs?.reason ?? "");
+      if (why) desc = { what: `${desc.what} (it had been declined: ${why})` };
+    }
     const actor = resolveActorForDecision(d);
     const rec = d.record as Record<string, unknown> | null;
     const inputs = rec?.inputs as Record<string, unknown> | null;
@@ -489,7 +495,7 @@ export async function loadActivity(
   }
 
   // Filter options sets
-  const whoOptions = ["All", "Steward", "Vault", ...new Set(memberRows.map((m) => m.email || m.wallet || "Member"))];
+  const whoOptions = ["All", "Steward", "Vault", ...new Set(memberRows.map((m) => personLabel(m)))];
   const vendorOptions = ["All vendors", ...new Set(items.flatMap((i) => (i.vendor ? [i.vendor] : [])))];
   const budgetOptions = ["All budgets", ...new Set(items.flatMap((i) => (i.budget ? [i.budget] : [])))];
 

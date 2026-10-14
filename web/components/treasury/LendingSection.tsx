@@ -58,7 +58,7 @@ export function LendingSection({ businessId, signer, explorer, isOwner }: { busi
   const title = (
     <div className="flex flex-wrap items-baseline justify-between gap-3">
       <SectionTitle id="lending">Lending reserve</SectionTitle>
-      {isOwner && view?.supported && view.readOk ? (
+      {isOwner && view?.supported && view.readOk && view.policy.venue !== null && !view.pendingChange ? (
         <Button variant="secondary" size="sm" onClick={() => setDialog("policy")}>Change lending policy</Button>
       ) : null}
     </div>
@@ -106,13 +106,21 @@ export function LendingSection({ businessId, signer, explorer, isOwner }: { busi
       {notice ? <p role="status" className="mt-3 rounded-doc border border-seal/40 bg-seal/5 p-3 text-sm text-seal">{notice}</p> : null}
       {failed ? <p className="mt-3 text-sm text-warn">Couldn’t refresh just now; what is shown may be out of date.</p> : null}
 
+      {view.pendingChange ? (
+        <Callout tone="info" className="mt-4" title="A lending policy change is waiting">
+          {view.pendingChange.ready
+            ? "The wait is over. Apply it from Queued policy changes."
+            : `It can be applied from ${formatDateTime(view.pendingChange.eta)}. The Vault holds it for its waiting period; you can cancel it while it waits.`}
+        </Callout>
+      ) : null}
+
       {!view.readOk ? (
         <Callout tone="warn" className="mt-4" title="Can’t confirm the lending reserve">Arc didn’t answer for this Vault. Nothing is shown rather than a guess; try again shortly.</Callout>
       ) : !venueSet ? (
         <EmptyState
           title="Lending is off"
           className="mt-4"
-          action={isOwner && view.venues.length > 0 ? <Button size="sm" onClick={() => setDialog("policy")}>Set it up</Button> : undefined}
+          action={isOwner && view.venues.length > 0 && !view.pendingChange ? <Button size="sm" onClick={() => setDialog("policy")}>Set it up</Button> : undefined}
         >
           {view.venues.length === 0 ? "No lending vault is listed for this network yet." : "Choose a lending vault and the most of the cash that may sit in it."}
         </EmptyState>
@@ -170,6 +178,7 @@ export function LendingSection({ businessId, signer, explorer, isOwner }: { busi
         <LendingPolicyDialog
           businessId={businessId}
           signer={signer}
+          explorer={explorer}
           view={view}
           onClose={() => setDialog(null)}
           onDone={(message) => {
@@ -208,12 +217,14 @@ interface PreparedPolicy {
 function LendingPolicyDialog({
   businessId,
   signer,
+  explorer,
   view,
   onClose,
   onDone,
 }: {
   businessId: string;
   signer: SignerPlan;
+  explorer: string;
   view: LendingView;
   onClose: () => void;
   onDone: (notice: string) => void;
@@ -230,8 +241,13 @@ function LendingPolicyDialog({
 
   async function review(e: React.FormEvent) {
     e.preventDefault();
-    setBusy(true);
     setErr(null);
+    const typed = maxPercent.trim();
+    if (!/^\d{1,2}(\.\d{1,2})?$/.test(typed) || Number(typed) > 50 || (enabled && Number(typed) < 1)) {
+      setErr(enabled ? "Enter a percentage from 1 to 50 (no minus sign)." : "Enter a percentage from 0 to 50 (no minus sign).");
+      return;
+    }
+    setBusy(true);
     try {
       const prep = await postJson<PreparedPolicy>(`/api/business/${businessId}/treasury`, { action: "prepare-lending-policy", enabled, maxPercent, venue });
       if (prep.state === "already-queued") {
@@ -260,7 +276,7 @@ function LendingPolicyDialog({
       onDone(
         prepared.state === "apply-now" || prepared.state === "ready"
           ? "Lending policy updated."
-          : `Lending policy change queued. It takes effect from ${prepared.eta ? formatDateTime(prepared.eta) : "the end of the wait"}.`,
+          : "Lending policy change queued. The card below shows when it can be applied.",
       );
     } catch (e: any) {
       setErr(e.message || "The change wasn’t signed");
@@ -314,6 +330,16 @@ function LendingPolicyDialog({
             </select>
           )}
         </Field>
+        {chosen ? (
+          <div className="space-y-1 text-sm text-graphite">
+            <p>Vault address: <Address value={chosen.address} full explorer={explorer} copy /></p>
+            <p>
+              {view.yield && view.policy.venue?.toLowerCase() === chosen.address.toLowerCase()
+                ? `Measured yield: ${(view.yield.bps / 100).toFixed(1)}% a year over ${view.yield.days} days. Not a promise.`
+                : "Measured yield: none yet. It appears after a week of this vault’s own share prices; a published rate is never shown."}
+            </p>
+          </div>
+        ) : null}
         {chosen?.kind === "test" ? <p className="text-sm text-graphite">This is a test vault: it shows how lending works here, not a return.</p> : null}
 
         <Field label="Most that may sit in it (% of cash)" hint="Up to 50%. Raising it waits the loosening delay; lowering it applies at once.">

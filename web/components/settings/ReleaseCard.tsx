@@ -231,7 +231,8 @@ export function ReleaseCard({
           </span>
         </div>
         <span className="font-mono text-sm text-graphite">
-          Implementation: {latest.implementation.slice(0, 6)}…{latest.implementation.slice(-4)}
+          {state === "up-to-date" ? "Implementation" : `Release ${latest.version} implementation`}: {latest.implementation.slice(0, 6)}…{latest.implementation.slice(-4)}
+          {current.implementation && state !== "up-to-date" ? ` · running ${current.implementation.slice(0, 6)}…${current.implementation.slice(-4)}` : ""}
         </span>
         <Link href="/business/settings/releases" className="text-sm text-graphite underline decoration-rule underline-offset-4 hover:text-ink">
           See every release

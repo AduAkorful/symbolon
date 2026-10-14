@@ -2,7 +2,7 @@ import "server-only";
 import { describeRule } from "../blockers";
 
 import { formatAmount } from "@symbolon/seal";
-import { showMoney } from "../format";
+import { formatDateTime, showMoney } from "../format";
 import { usd } from "./policy-text";
 
 export interface DecisionSummary {
@@ -97,6 +97,15 @@ function summarizeRecord(record: Record<string, unknown>): DecisionSummary {
   const explanation = typeof record.explanation === "string" ? record.explanation : undefined;
 
   switch (kind) {
+    // a queued change names what it changes and when it can be applied (QA REL4-6)
+    case "change_queued": {
+      const summary = (inputs.summary as { title?: unknown } | undefined) ?? {};
+      const title = typeof summary.title === "string" ? summary.title : "";
+      const eta = typeof inputs.eta === "string" ? new Date(inputs.eta) : null;
+      const when = eta && !Number.isNaN(eta.getTime()) ? `, ready to apply from ${formatDateTime(eta)}` : "";
+      return { sentence: title ? `Queued a change: ${title}${when}` : `Queued a change to the Vault's rules${when}`, explanation };
+    }
+
     case "pay": {
       const amount = inputs.paid ?? inputs.amount;
       const amountStr = typeof amount === "string" ? usd(BigInt(amount)) : "";

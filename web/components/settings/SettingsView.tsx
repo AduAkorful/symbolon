@@ -123,7 +123,7 @@ export function SettingsView({
         <Lead className="mt-3">Your business’s name, the Vault’s details, upgrades and the links to roles and rules.</Lead>
       </div>
 
-      <ReleaseNudge nudge={nudge} />
+      <ReleaseNudge nudge={nudge} state={release?.state as never} readyAt={release?.scheduled?.readyAt} />
 
       <section aria-labelledby="org-heading">
         <SectionTitle id="org-heading">Organization</SectionTitle>

@@ -12,7 +12,7 @@ import { controlClass, Field } from "@/components/ui/Field";
 import { Segmented } from "@/components/ui/Segmented";
 import { InlineError } from "@/components/ui/States";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
-import { WatchTokens } from "@/components/wallet/WatchTokens";
+import { WatchTokens, rememberTokens } from "@/components/wallet/WatchTokens";
 import { postJson, postRecord } from "@/lib/client/api";
 import { SentTransactionNotice, useSentTransaction } from "@/components/wallet/useSentTransaction";
 import { getConversionWallet } from "@/lib/client/conversion-wallet";
@@ -189,6 +189,7 @@ export function FundModal({
       });
 
       const providers = await getProviders();
+      await rememberTokens(providers, signer, watchable);
       const hash = await sendWithWallet(providers, signer, { to: prep.to, data: prep.data });
 
       // The Vault emits nothing for a token transfer, so the app writes the Activity record from the receipt (plan 05zj E, SYM-14).
@@ -211,13 +212,8 @@ export function FundModal({
   return (
     <Overlay
       title="Add funds to the Vault"
-      description={
-        mode === null
-          ? "Sends tokens from your connected wallet to the Vault. Use this button rather than your wallet’s own Send screen."
-          : mode.walletSends
-          ? "Sends tokens from your connected wallet to the Vault. This Vault also accepts USDC sent straight from any Arc wallet; this button is the path we’ve checked end to end."
-          : `Sends tokens from your connected wallet to the Vault. Use this button rather than your wallet’s own Send screen: sending USDC that way to this Vault’s address fails on Arc.${mode?.release ? " Upgrade the Vault to release 3 in Settings to accept sends from any wallet." : ""}`
-      }
+      // one statement that doesn't change when the Vault's release is read: the app's button is the checked path (QA NEW-13)
+      description="Sends tokens from your connected wallet to the Vault. Use this button rather than your wallet’s own Send screen; it is the path we’ve checked end to end."
       onClose={onClose}
     >
       <form onSubmit={submit} className="space-y-4">

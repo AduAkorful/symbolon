@@ -1,6 +1,7 @@
 import "server-only";
 import { plainRunError } from "../run-error";
 import { tidyMoney } from "./decision-text";
+import { formatDateTime } from "../format";
 
 export interface NotificationDescriberInput {
   kind: string;
@@ -144,6 +145,24 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
         title: "A vendor can be paid now",
         body: "A payee you added has finished the waiting period. Its invoices can be paid.",
         href: subject ? `/business/vendors/${subject}` : "/business/vendors",
+      };
+    }
+
+    case "change_queued": {
+      const title = typeof body.title === "string" && body.title ? body.title : "A change to the Vault's rules";
+      const eta = typeof body.eta === "string" ? new Date(body.eta) : null;
+      return {
+        title: "A change is waiting",
+        body: `${title} is queued${eta && !Number.isNaN(eta.getTime()) ? ` and can be applied from ${formatDateTime(eta)}` : ""}. You can cancel it while it waits.`,
+        href: "/business/policy",
+      };
+    }
+
+    case "upgrade_applied": {
+      return {
+        title: "Your Vault was upgraded",
+        body: body.stateMatch === false ? "The upgrade was applied, but some state differs from before. Check Settings." : "The upgrade was applied and the Vault's state matches what it was before.",
+        href: "/business/settings",
       };
     }
 

@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { getAddress } from "viem";
 import { formatAmount } from "@symbolon/seal";
 import { formatDateTime, showMoney } from "@/lib/format";
@@ -64,6 +64,8 @@ export const paymentsDueIntent: IntentHandler = {
           eq(invoices.businessId, ctx.businessId),
           lte(invoices.dueDate, cutoff),
           sql`${invoices.credited} < ${invoices.total}`,
+          // the same open-bill statuses as Home and Treasury: a cancelled, declined or rejected invoice is not owed (QA NEW-16)
+          inArray(invoices.status, ["received", "verified", "held", "awaiting_approval", "scheduled", "partially_paid"]),
         ),
       )
       .orderBy(invoices.dueDate)

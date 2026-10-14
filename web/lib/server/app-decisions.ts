@@ -58,6 +58,18 @@ export async function appendAppDecision(
     if (invoice) await notifyVendor(db, invoice.seal, { kind: "invoice_declined", subject: input.subject,
       body: { businessName: biz?.name ?? null, invoiceNumber: invoice.invoiceNumber, reason: input.inputs.reason ?? null }, dedupeKey: `declined:${input.subject}:${hash}` });
   }
+  // the owners are told when a rule change is waiting and when an upgrade landed, including the person who did it (QA REL4-6)
+  if (input.kind === "change_queued" || input.kind === "upgrade_applied") {
+    const summary = (input.inputs.summary as { title?: unknown } | undefined) ?? {};
+    await notifyBusiness(db, businessId, {
+      kind: input.kind,
+      subject: input.subject ?? null,
+      body: input.kind === "change_queued"
+        ? { title: typeof summary.title === "string" ? summary.title : null, eta: input.inputs.eta ?? null }
+        : { stateMatch: input.outcome === "applied" },
+      dedupeKey: `${input.kind}:${hash}`,
+    }, { roles: ["owner"] });
+  }
   if (input.kind === "invoice_reopened" && input.subject) {
     const [invoice] = await db.select({ seal: invoices.seal, invoiceNumber: invoices.invoiceNumber }).from(invoices).where(eq(invoices.fingerprint, input.subject));
     const [biz] = await db.select({ name: businesses.name }).from(businesses).where(eq(businesses.id, businessId)).limit(1);

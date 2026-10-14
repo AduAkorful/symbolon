@@ -12,6 +12,35 @@ export interface WatchableToken {
 }
 
 /**
+ * Best effort, once per wallet and token in this browser: asks the wallet to remember the tokens just before the person's own
+ * transfer, so its approval window names USDC or EURC instead of "Unknown" (QA SYM-20). It runs inside the person's click on the
+ * button that sends the deposit, never on its own; a wallet that refuses or doesn't support it is left alone and the transfer goes on.
+ */
+export async function rememberTokens(providers: Parameters<typeof findWalletFor>[1], signer: SignerPlan, tokens: WatchableToken[]): Promise<void> {
+  if (signer.kind !== "wallet" || tokens.length === 0) return;
+  const key = (t: WatchableToken) => `symbolon.watched.${signer.chain.chainIdHex}.${signer.address.toLowerCase()}.${t.address.toLowerCase()}`;
+  const seen = (t: WatchableToken) => {
+    try { return window.localStorage.getItem(key(t)) === "1"; } catch { return false; }
+  };
+  const todo = tokens.filter((t) => !seen(t));
+  if (todo.length === 0) return;
+  try {
+    const provider = await findWalletFor(signer.address, providers);
+    if (!provider) return;
+    await ensureChain(provider, signer.chain);
+    for (const t of todo) {
+      await provider.request({
+        method: "wallet_watchAsset",
+        params: { type: "ERC20", options: { address: t.address, symbol: t.symbol, decimals: t.decimals } },
+      } as never);
+      try { window.localStorage.setItem(key(t), "1"); } catch { /* the prompt may come again; harmless */ }
+    }
+  } catch {
+    // refused or unsupported: the transfer itself still works, its window may say "Unknown"
+  }
+}
+
+/**
  * Asks the person's wallet to remember USDC and EURC (EIP-747, `wallet_watchAsset`), so a deposit shows as "USDC" in its approval
  * window instead of "Unknown token" (plan 05zj E, D10 a, SYM-20). Only on the person's click: it opens a wallet prompt, and a
  * wallet that doesn't support it says so rather than failing quietly. The addresses come from the deployment registry.
