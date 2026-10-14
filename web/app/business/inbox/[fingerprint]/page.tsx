@@ -90,17 +90,17 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
           <Link href="/business/inbox" className="text-sm text-graphite underline decoration-rule underline-offset-4 hover:text-ink">
             ← Inbox
           </Link>
-          <Eyebrow className="mt-6">{view.evidence.matched ? "Matched" : "Evidence still open"}</Eyebrow>
+          <Eyebrow className="mt-6">{view.ledger?.paid ? "Paid" : view.evidence.matched ? "Matched" : "Evidence still open"}</Eyebrow>
           <PageTitle className="mt-2">Invoice {view.row.invoiceNumber}</PageTitle>
           <p className="mt-3 text-graphite">
             The vendor’s sealed invoice is shown beside the checks Symbolon can make for this business right now. Matched does not mean paid.
           </p>
 
           {/* Paid banner and receipt link (Fact 4 / Decision A11) */}
-          {view.row.status === "paid" || view.row.credited > 0n ? (
+          {view.row.status === "paid" || view.row.credited > 0n || view.ledger?.paid ? (
             <Callout
               tone="ok"
-              title={view.row.status === "paid" ? "Paid onchain" : "Partly settled onchain"}
+              title={view.row.status === "paid" || view.ledger?.paid ? "Paid onchain" : "Partly settled onchain"}
               className="mt-5"
               actions={<Link href={`/receipt/${fingerprint}`} className={buttonClass({ variant: "secondary", size: "sm" })}>View the public receipt</Link>}
             >

@@ -91,7 +91,11 @@ export function evidenceFor(input: MatchViewInput): { rows: EvidenceRow[]; match
     const terms = input.payeeTerms ?? payee?.terms;
     const poRequired = terms?.requirePo ?? input.invoice.poRef !== ZERO_BYTES32;
     const citedPo = input.invoice.poRef !== ZERO_BYTES32;
-    const poProblems = input.match?.problems.filter((p) => p.includes("purchase order") || p.includes("PO")) ?? [];
+    // Once an invoice is paid its order has been drawn down, so "more than the order has left" would be this invoice measured
+    // against its own payment (QA payment retest: "exceeds the 0 left on the PO" on a paid invoice). A settled invoice is not
+    // matched again.
+    const settled = input.ledger?.paid === true;
+    const poProblems = settled ? [] : (input.match?.problems.filter((p) => p.includes("purchase order") || p.includes("PO")) ?? []);
 
     if (!poRequired && !citedPo) {
       add("Purchase order", "info", "No purchase order required", "Policy mirror");
@@ -103,7 +107,7 @@ export function evidenceFor(input: MatchViewInput): { rows: EvidenceRow[]; match
       } else if (!po.open) {
         add("Purchase order", "blocks", `Cites PO ${po.poNumber} · can't confirm status right now`, "Orders · Vault");
       } else {
-        const rem = po.remainingRaw ? ` · ${po.remainingRaw} left` : "";
+        const rem = po.remainingRaw ? ` · ${showAmount(formatAmount(BigInt(po.remainingRaw), 6))} left` : "";
         const rel = po.releaseAfter ? ` · not before ${po.releaseAfter.toISOString().slice(0, 10)}` : "";
         add(
           "Purchase order",
@@ -123,7 +127,7 @@ export function evidenceFor(input: MatchViewInput): { rows: EvidenceRow[]; match
     }
 
     const deliveryRequired = terms?.requireDelivery ?? false;
-    const deliveryProblems = input.match?.problems.filter((p) => p.includes("delivery")) ?? [];
+    const deliveryProblems = settled ? [] : (input.match?.problems.filter((p) => p.includes("delivery")) ?? []);
 
     if (input.dbDelivery) {
       // We have a DB record: show the actual outcome
@@ -150,7 +154,7 @@ export function evidenceFor(input: MatchViewInput): { rows: EvidenceRow[]; match
       add("Delivery", deliveryProblems.length === 0 ? "holds" : "missing", deliveryProblems.length === 0 ? "Delivery confirmed" : sentence(deliveryProblems.join("; ")), "VaultLens / policy mirror");
     }
 
-    if (input.match && !input.match.ok) {
+    if (input.match && !input.match.ok && !settled) {
       add("Policy match", "blocks", sentence(input.match.problems.join("; ")) || "The policy match did not hold", "Policy mirror");
     }
   }

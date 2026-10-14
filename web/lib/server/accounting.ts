@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
-import { formatAmount } from "@symbolon/seal";
+import { decodeSealedInvoice, formatAmount, poRef as computePoRef } from "@symbolon/seal";
 import {
   paymentsBeancount,
   paymentsCsv,
@@ -140,7 +140,8 @@ export async function loadAccounting(
     const a = e.args as Record<string, string | number>;
     const inv = byFp.get(String(a.fingerprint).toLowerCase())!;
     const vendorName = sealMap.get(inv.seal.toLowerCase()) || inv.seal;
-    const poNumber = inv.poRef ? poMap.get(inv.poRef.toLowerCase()) ?? "—" : "—";
+    // an order the app has no row for is still named by the invoice that cites it, when that number hashes to the reference
+    const poNumber = inv.poRef ? poMap.get(inv.poRef.toLowerCase()) ?? citedPoNumber(inv.envelope, inv.poRef) ?? "—" : "—";
     const delivery = delMap.get(inv.fingerprint.toLowerCase());
     const deliveryStr = delivery
       ? delivery.state === "confirmed"
@@ -339,4 +340,13 @@ export async function resyncLedger(
 
 function accountingInvoiceDigest(rows: (typeof invoices.$inferSelect)[]): string {
   return createHash("sha256").update(JSON.stringify(rows.map(r => [r.fingerprint, r.credited.toString(), r.status, r.total.toString(), r.token, r.ledger, r.chainId.toString(), r.invoiceNumber, r.poRef ?? ""]).sort((a,b) => String(a[0]).localeCompare(String(b[0]))))).digest("hex");
+}
+
+function citedPoNumber(envelope: Parameters<typeof decodeSealedInvoice>[0], ref: string): string | undefined {
+  try {
+    const number = decodeSealedInvoice(envelope).document.poNumber;
+    return number && computePoRef(number).toLowerCase() === ref.toLowerCase() ? number : undefined;
+  } catch {
+    return undefined;
+  }
 }

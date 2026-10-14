@@ -30,12 +30,12 @@ export function Address({
   const whole = checksum(value);
   const short = shortAddress(value);
   const text = full ? (
-    <span title={whole} className={`min-w-0 font-mono ${className}`}>
+    <span title={whole} className={`min-w-0 whitespace-nowrap break-normal font-mono ${className}`}>
       <span className="@[28rem]:hidden">{short}</span>
       <span className="hidden @[28rem]:inline">{whole}</span>
     </span>
   ) : (
-    <span title={whole} className={`font-mono ${className}`}>
+    <span title={whole} className={`whitespace-nowrap break-normal font-mono ${className}`}>
       {short}
     </span>
   );

@@ -56,6 +56,10 @@ import type { SessionUser } from "./session";
 import { readPaymentBudget, readPaymentLedger, verifyPaymentDocument } from "./payment-ledger";
 import { buildStewardEnv } from "./steward-runtime";
 
+/** How much of the Vault's history one recorded payment may read before it answers, and for how long */
+const RECORD_SYNC_WINDOW_BLOCKS = 20_000n;
+const RECORD_SYNC_DEADLINE_MS = 8_000;
+
 const HASH_RE = /^0x[0-9a-fA-F]{64}$/;
 const MIN_REASON_LENGTH = 3;
 const MAX_REASON_LENGTH = 500;
@@ -891,10 +895,20 @@ export async function recordPayNow(
     });
   }
 
-  // Sync ledger immediately so the invoice's status and credited come from the ledger
-  await syncVault(db, client, cfg.deployment, vault, { fromBlock: await ensureVaultBlock(db, client, cfg.deployment, businessId, vault) });
-  const ledger = await ensureFresh(db, client, cfg, { force: true });
-  if (!ledger.ok) console.error("ledger sync after a confirmed payment failed", ledger.reason);
+  // The payment is recorded above; bringing the copies forward is a courtesy and must never hold the answer (QA payment retest:
+  // an unbounded Vault scan left the dialog on "Sending…"). The scheduled sync finishes whatever this window doesn't reach.
+  try {
+    const fromBlock = await ensureVaultBlock(db, client, cfg.deployment, businessId, vault);
+    await withDeadline(
+      syncVault(db, client, cfg.deployment, vault, { fromBlock, maxBlocks: RECORD_SYNC_WINDOW_BLOCKS }),
+      RECORD_SYNC_DEADLINE_MS,
+      "Syncing the Vault's events",
+    );
+    const ledger = await ensureFresh(db, client, cfg, { force: true });
+    if (!ledger.ok) console.error("ledger sync after a confirmed payment failed", ledger.reason);
+  } catch (e) {
+    console.error("sync after a confirmed payment didn't finish; the scheduled sync will", e);
+  }
 
   return { ok: true, txHash };
 }

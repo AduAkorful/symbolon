@@ -151,7 +151,7 @@ export function PayInvoice({
           <Overlay.Footer>
             <Button variant="secondary" onClick={close} disabled={tx.busy}>{tx.locked ? "Close" : "Cancel"}</Button>
             {prepared ? (
-              <Button onClick={() => void confirm()} busy={tx.busy} disabled={tx.locked}>{tx.busy ? "Sending…" : "Confirm and pay"}</Button>
+              <Button onClick={() => void confirm()} busy={tx.busy} disabled={tx.locked}>{tx.phase === "recording" ? "Confirming…" : tx.busy ? "Sending…" : "Confirm and pay"}</Button>
             ) : null}
           </Overlay.Footer>
         </Overlay>

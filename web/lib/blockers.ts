@@ -93,7 +93,14 @@ export function describeRule(failure: { rule: string; detail: string }, ctx: Blo
     case "UnknownBudget":
       return { rule, kind: "action", title: "The budget doesn't exist", detail: "The budget this payee or order uses can't be found in the Vault.", action: { label: "Open policy", href: "/business/policy" } };
     case "ApprovalRequired":
-      return { rule, kind: "info", title: "It will need a sign-off", detail: sentence(detail), action: { label: "Open approvals", href: "/business/approvals" } };
+      return {
+        rule,
+        kind: "info",
+        title: "It will need a sign-off",
+        // it reaches Approvals when it comes due, not before; an owner or approver can also sign it off now with Pay now (QA payment retest)
+        detail: `${sentence(detail)} It appears in Approvals when it comes due. The owner or an approver can also sign it off now with Pay now.`,
+        action: { label: "Open approvals", href: "/business/approvals" },
+      };
     case "CrossChainPayout":
     case "CrossChainTokenUnsupported":
     case "CrossChainAmountTooLarge":

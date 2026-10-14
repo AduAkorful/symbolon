@@ -474,7 +474,7 @@ export function StewardClient({
             </div>
 
             {lastRun.status === "stalled" ? (
-              <p className="mt-3 text-warn">This run began more than five minutes ago and never reported back. Running again replaces it.</p>
+              <p className="mt-3 text-warn">This run was cut off before it could report back. Running again replaces it.</p>
             ) : null}
             {lastRun.error ? <p className="mt-3 text-red">Reason: {plainRunError(lastRun.error)}</p> : null}
 

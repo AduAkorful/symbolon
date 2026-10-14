@@ -37,7 +37,14 @@ export async function subjectRefs(db: Database, businessId: string, subjects: (s
     db.select({ vault: businesses.vault }).from(businesses).where(eq(businesses.id, businessId)).limit(1),
   ]);
 
-  const vendorOf = new Map(sealRows.map((s) => [s.address.toLowerCase(), s.displayName || s.handle || s.address]));
+  // an invoice names its vendor by Seal; those Seals are not among the subjects, so they are read here (QA payment retest: the
+  // list said "from a vendor" for every invoice)
+  const known = new Set(sealRows.map((s) => s.address.toLowerCase()));
+  const invoiceSeals = [...new Set(invoiceRows.map((r) => r.seal.toLowerCase()))].filter((a) => !known.has(a));
+  const moreSeals = invoiceSeals.length
+    ? await db.select({ address: seals.address, displayName: seals.displayName, handle: seals.handle }).from(seals).where(inArray(seals.address, invoiceSeals))
+    : [];
+  const vendorOf = new Map([...sealRows, ...moreSeals].map((s) => [s.address.toLowerCase(), s.displayName || s.handle || s.address]));
   const invoiceBy = new Map(invoiceRows.map((r) => [r.fingerprint.toLowerCase(), r]));
 
   for (const subject of wanted) {

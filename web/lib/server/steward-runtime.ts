@@ -20,8 +20,11 @@ import { notifyPayeesActive } from "./payee-active";
  */
 export const MIN_STEWARD_FEE_BALANCE = 10_000_000_000_000_000n;
 
-/** Lease timeout: 5 minutes */
-export const STEWARD_RUN_LEASE_MS = 5 * 60 * 1000;
+/**
+ * Lease timeout. A run's route is cut off at 60 s (`maxDuration`), so a run still "running" after 90 s was killed and will never
+ * report; waiting five minutes left it on "Running" long after it had stopped (QA payment retest).
+ */
+export const STEWARD_RUN_LEASE_MS = 90 * 1000;
 /** One run reads at most this much of a Vault's history, for at most this long (a few Arc log requests) */
 const RUN_VAULT_WINDOW_BLOCKS = 20_000n;
 const RUN_VAULT_SYNC_DEADLINE_MS = 8_000;

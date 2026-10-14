@@ -154,6 +154,10 @@ export function describeDecision(
 
   switch (d.kind) {
     case "pay":
+      // a payment a person chose, from the invoice or Approvals, is theirs; the Steward's own wording is for what it decided
+      if (rule.startsWith("payment confirmed onchain by wallet") || rule.startsWith("a person chose to pay now")) {
+        return { what: `Invoice ${subjectShort} paid from a member's wallet`, tone: "seal" };
+      }
       return { what: `Steward approved payment for invoice ${subjectShort}`, tone: "seal" };
     case "schedule":
       return { what: `Steward scheduled payment for invoice ${subjectShort} on due date` };

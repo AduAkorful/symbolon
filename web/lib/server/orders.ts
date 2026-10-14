@@ -12,7 +12,7 @@ import {
 } from "viem";
 import { decodeSealedInvoice, poRef as computePoRef, formatAmount, parseAmount } from "@symbolon/seal";
 import { scanLogs, symbolonContracts, symbolonVaultAbi, vaultCall, type Deployment } from "@symbolon/chain";
-import { businesses, decisions, invoices, payees, purchaseOrders, type Database } from "@symbolon/db";
+import { businesses, chainEvents, decisions, invoices, payees, purchaseOrders, type Database } from "@symbolon/db";
 import { requireMember } from "./access";
 import { appendAppDecision } from "./app-decisions";
 import { CHAIN_READ_DEADLINE_MS, withDeadline } from "./deadline";
@@ -433,10 +433,24 @@ async function adoptOpenedPo(
 ) {
   let hash: Hex | undefined;
   try {
-    const opened = getAbiItem({ abi: symbolonVaultAbi, name: "PurchaseOrderOpened" });
-    const from = await ensureVaultBlock(db, client, deployment, businessId, vault);
-    const { logs } = await scanLogs(client, { address: vault, events: [opened], fromBlock: from, args: { poRef: ref } });
-    hash = logs[0]?.transactionHash ?? undefined;
+    // The Vault's own event sync has usually stored it already; reading that is one query, where a scan from the Vault's first
+    // block is dozens of log requests and ran past the page's patience (QA payment retest: "No orders yet" for an order held)
+    const stored = await db
+      .select({ txHash: chainEvents.txHash })
+      .from(chainEvents)
+      .where(and(eq(chainEvents.chainId, deployment.chainId), eq(chainEvents.address, vault.toLowerCase()), eq(chainEvents.eventName, "PurchaseOrderOpened"), sql`lower(${chainEvents.args}->>'poRef') = ${ref.toLowerCase()}`))
+      .limit(1);
+    hash = (stored[0]?.txHash as Hex | undefined) ?? undefined;
+    if (!hash) {
+      const opened = getAbiItem({ abi: symbolonVaultAbi, name: "PurchaseOrderOpened" });
+      const from = await ensureVaultBlock(db, client, deployment, businessId, vault);
+      const { logs } = await withDeadline(
+        scanLogs(client, { address: vault, events: [opened], fromBlock: from, args: { poRef: ref }, concurrency: 2 }),
+        4 * CHAIN_READ_DEADLINE_MS,
+        "Looking for the order's opening event",
+      );
+      hash = logs[0]?.transactionHash ?? undefined;
+    }
   } catch (e) {
     console.error("orders: looking for an unrecorded order's opening event failed", e);
     return null;
