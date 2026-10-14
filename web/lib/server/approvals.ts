@@ -4,7 +4,7 @@ import { ensureFresh } from "./sync";
 import { isPreparedPayment } from "./prepared-payment";
 import "server-only";
 
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import {
   getAddress,
   parseEventLogs,
@@ -21,6 +21,7 @@ import {
   deliveries,
   invoices,
   payees,
+  preparedPayments,
   purchaseOrders,
   seals,
   users,
@@ -60,6 +61,8 @@ import { buildStewardEnv } from "./steward-runtime";
 /** How much of the Vault's history one recorded payment may read before it answers, and for how long */
 const RECORD_SYNC_WINDOW_BLOCKS = 20_000n;
 const RECORD_SYNC_DEADLINE_MS = 8_000;
+/** Proposals that were never sent are dropped after this long */
+const PREPARED_KEEP_MS = 3 * 24 * 60 * 60 * 1000;
 
 const HASH_RE = /^0x[0-9a-fA-F]{64}$/;
 const MIN_REASON_LENGTH = 3;
@@ -778,8 +781,13 @@ export async function preparePayNow(
     };
   }
 
-  // Store the decision record with hash matching the onchain decisionHash (Decision A2)
-  await storePayNowDecision(db, businessId, fingerprint, processed);
+  // Keep the proposal until the payment is sent: its hash is what the Vault will emit, and recording the sent payment turns it into
+  // a decision. A dialog that is opened and cancelled leaves nothing in the decisions (QA retest 6, R5-6).
+  await db
+    .insert(preparedPayments)
+    .values({ businessId, hash: processed.hash.toLowerCase(), fingerprint, kind: processed.record.kind, record: processed.record as unknown as Record<string, unknown> })
+    .onConflictDoNothing();
+  await db.delete(preparedPayments).where(and(eq(preparedPayments.businessId, businessId), lt(preparedPayments.createdAt, new Date(Date.now() - PREPARED_KEEP_MS))));
 
   const creditRaw = ledger.credit;
   const paidRaw = BigInt(String(processed.record.inputs.paid));
@@ -877,7 +885,20 @@ export async function recordPayNow(
     .limit(1);
 
   if (!recordedDec) {
-    throw new AuthError(409, "The onchain decision hash does not match any decision recorded for this business.");
+    // the proposal the Vault was asked about is kept apart until the payment is sent; it becomes a decision now
+    const [prepared] = await db
+      .select()
+      .from(preparedPayments)
+      .where(and(eq(preparedPayments.businessId, businessId), eq(preparedPayments.hash, paid.args.decisionHash.toLowerCase())))
+      .limit(1);
+    if (!prepared || prepared.fingerprint.toLowerCase() !== fingerprint.toLowerCase()) {
+      throw new AuthError(409, "The onchain decision hash does not match any decision recorded for this business.");
+    }
+    await db
+      .insert(decisions)
+      .values({ businessId, kind: prepared.kind, subject: fingerprint, record: prepared.record, hash: prepared.hash })
+      .onConflictDoNothing();
+    await db.delete(preparedPayments).where(and(eq(preparedPayments.businessId, businessId), eq(preparedPayments.hash, prepared.hash)));
   }
 
   // Idempotently record superseding tx decision

@@ -169,6 +169,13 @@
       "when": 1791976475269,
       "tag": "0023_thick_vivisector",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791979180568,
+      "tag": "0024_medical_gargoyle",
+      "breakpoints": true
     }
   ]
 }

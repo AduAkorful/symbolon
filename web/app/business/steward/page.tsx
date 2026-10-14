@@ -91,8 +91,12 @@ export default async function BusinessStewardPage() {
   const rawFee = business.stewardWallet ? await feeBalance(client, business.stewardWallet) : null;
   const fee = formatFeeBalance(rawFee);
 
-  const run = await lastRun(db, business.id);
+  const latest = await lastRun(db, business.id);
   const scheduled = await lastScheduledRun(db, business.id);
+  // Runs come every minute or so, so the newest one is usually in progress. The card shows the last one that finished, and a line
+  // says a run is going on now (QA retest 6, R5-11); a run past its lease is shown as stalled as before.
+  const inProgress = latest && latest.status === "running" && Date.now() - latest.startedAt.getTime() <= STEWARD_RUN_LEASE_MS ? latest : null;
+  const run = inProgress ? (await listRuns(db, business.id, 5)).find((r) => r.status !== "running") ?? latest : latest;
   const lastRunView: RunView | null = run
     ? {
         id: run.id,
@@ -165,6 +169,7 @@ export default async function BusinessStewardPage() {
         fee={fee}
         policyLines={policyLines}
         lastRun={lastRunView}
+        runningSince={inProgress?.startedAt.toISOString() ?? null}
         runs={runs}
         lastScheduledAt={scheduled?.startedAt.toISOString() ?? null}
         recentDecisions={recentDecisions}

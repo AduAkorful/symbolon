@@ -575,6 +575,24 @@ export const decisions = pgTable(
   ],
 );
 
+/**
+ * A payment proposal the Vault has checked, written when Pay now is opened and before anything is sent (plan 05zn follow-up).
+ * The payment's onchain decision hash must match a stored record, but a dialog that is opened and cancelled must leave no decision
+ * behind, so the proposal waits here and becomes a decision only when the sent payment is recorded.
+ */
+export const preparedPayments = pgTable(
+  "prepared_payments",
+  {
+    businessId: uuid("business_id").notNull().references(() => businesses.id),
+    hash: hash("hash").notNull(),
+    fingerprint: hash("fingerprint").notNull(),
+    kind: text("kind").notNull(),
+    record: jsonb("record").$type<Record<string, unknown>>().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.businessId, t.hash] })],
+);
+
 /** Batches of decision hashes anchored onchain with `SymbolonVault.anchorDecisions(root, count)` */
 export const decisionAnchors = pgTable("decision_anchors", {
   root: hash("root").primaryKey(),

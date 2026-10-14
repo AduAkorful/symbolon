@@ -125,6 +125,8 @@ export interface StewardClientProps {
   recentDecisions: DecisionView[];
   shadow: ShadowView;
   pendingAnchorCount?: number;
+  /** When a run that is still going began (the card above shows the last one that finished) */
+  runningSince?: string | null;
   signer: SignerPlan | null;
   explorer: string;
 }
@@ -142,6 +144,7 @@ export function StewardClient({
   recentDecisions,
   shadow,
   pendingAnchorCount = 0,
+  runningSince = null,
   signer,
   explorer,
 }: StewardClientProps) {
@@ -463,6 +466,7 @@ export function StewardClient({
         {runMessage ? <p role="status" className="text-sm text-ok">{runMessage}</p> : null}
         {runError ? <InlineError>{runError}</InlineError> : null}
 
+        {runningSince ? <p className="text-sm text-graphite">A run started at {formatDateTime(new Date(runningSince))} is in progress. The last finished run is below.</p> : null}
         {lastRun ? (
           <div className="rounded-doc border border-rule px-5 py-4 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
@@ -564,7 +568,7 @@ export function StewardClient({
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <SectionTitle id="anchoring-heading">Anchoring</SectionTitle>
-            <p className="mt-1 text-sm text-graphite">Decision records are batched into a Merkle tree and anchored in the Vault on Arc.</p>
+            <p className="mt-1 text-sm text-graphite">Decision records are batched into a Merkle tree and anchored in the Vault on Arc. A scheduled run anchors them on its own once five or more are waiting; this button does it sooner.</p>
           </div>
           {canRun ? (
             <Button variant="secondary" busy={anchoring} disabled={(pendingAnchorCount ?? 0) === 0} onClick={() => void handleAnchorNow()}>

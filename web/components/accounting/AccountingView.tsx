@@ -202,6 +202,7 @@ export function AccountingView({
       {data.recentExports.length > 0 ? (
         <section aria-labelledby="exports-heading" className="mt-12">
           <SectionTitle id="exports-heading">Exports</SectionTitle>
+          <p className="mt-1 text-sm text-graphite">Each export is a snapshot of the payments recorded when it was created. Payments settled since are in a new one.</p>
           <p className="mt-1 text-sm text-graphite">Each export is registered as a decision record with the file’s SHA-256 hash.</p>
           <DataTable
             className="mt-4"

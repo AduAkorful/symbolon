@@ -185,7 +185,7 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
       return {
         title: "Invoice cancellation requested",
         body: `${vendorOf(body)} asked to cancel ${typeof body.invoiceNumber === "string" ? `invoice ${body.invoiceNumber}` : "an invoice"}.`,
-        href: "/business/inbox",
+        href: typeof body.fingerprint === "string" ? `/business/inbox/${body.fingerprint}` : "/business/inbox",
       };
     }
 

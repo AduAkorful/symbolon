@@ -148,9 +148,9 @@ export async function loadAccounting(
         ? "Confirmed"
         : delivery.state === "rejected"
           ? "Rejected"
-          : "Pending"
+          : "Not recorded"
       : inv.poRef
-        ? "Pending"
+        ? "Not recorded"
         : "Not required";
 
     const paidBig = BigInt(a.paid ?? 0);

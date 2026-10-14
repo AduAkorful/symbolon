@@ -38,13 +38,15 @@ export function HomeQueues({ needsYou, today, ahead }: Props) {
     needsYou.pendingVerificationsCount +
     needsYou.problems.length;
 
+  const shortCount = ahead?.shortfalls.length ?? 0;
+
   return (
     <div className="mt-12 grid gap-x-12 gap-y-14 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
       {/* Needs you column */}
       <section aria-labelledby="needs-you-title" className="min-w-0 space-y-5">
         <div className="flex items-baseline justify-between gap-4 border-b border-rule pb-3">
           <SectionTitle id="needs-you-title">Needs you</SectionTitle>
-          <span className="text-sm text-graphite">{totalNeedsCount === 0 ? "All clear" : `${totalNeedsCount} waiting`}</span>
+          <span className="text-sm text-graphite">{totalNeedsCount === 0 ? (shortCount > 0 ? "Cash is short, see Ahead" : "All clear") : `${totalNeedsCount} waiting`}</span>
         </div>
 
         {needsYou.problems.length > 0 ? (
@@ -56,7 +58,9 @@ export function HomeQueues({ needsYou, today, ahead }: Props) {
         ) : null}
 
         {totalNeedsCount === 0 ? (
-          <EmptyState title="Nothing needs you right now">Approvals, held invoices and verifications show up here when they do.</EmptyState>
+          <EmptyState title={shortCount > 0 ? "No decisions waiting, but cash is short" : "Nothing needs you right now"}>
+            {shortCount > 0 ? "Upcoming bills are more than the Vault holds in a currency. The shortfall is under Ahead below." : "Approvals, held invoices and verifications show up here when they do."}
+          </EmptyState>
         ) : (
           <div className="space-y-4">
             {needsYou.awaitingApproval.count > 0 ? (

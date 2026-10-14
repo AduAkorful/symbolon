@@ -1,6 +1,7 @@
 import "server-only";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { notifications, type Database } from "@symbolon/db";
+import { decodeSealedInvoice } from "@symbolon/seal";
+import { notifications, seals, vendorRequests, type Database } from "@symbolon/db";
 import { describeNotification, type NotificationViewItem } from "./notification-text";
 
 export interface FormattedNotification extends NotificationViewItem {
@@ -52,11 +53,13 @@ export async function listNotifications(
       .offset(offset),
   ]);
 
+  const extra = await requestFacts(db, rows.filter((r) => r.kind.startsWith("vendor_") && r.subject).map((r) => r.subject as string));
+
   const items: FormattedNotification[] = rows.map((r) => {
     const desc = describeNotification({
       kind: r.kind,
       subject: r.subject,
-      body: (r.body as Record<string, unknown>) ?? {},
+      body: { ...((r.body as Record<string, unknown>) ?? {}), ...(r.subject ? extra.get(r.subject) ?? {} : {}) },
       createdAt: r.createdAt,
     });
     return {
@@ -111,4 +114,37 @@ export async function markNotifications(
       .set({ readAt: null })
       .where(and(eq(notifications.userId, userId), inArray(notifications.id, ids)));
   }
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Vendor-request notices written before they carried a name read "A vendor asked to cancel an invoice". What they are about is on
+ * the request itself (its Seal and, for a cancellation or credit note, the sealed invoice), so it is read here, and stored notices
+ * need no rewrite.
+ */
+async function requestFacts(db: Database, subjects: string[]): Promise<Map<string, Record<string, unknown>>> {
+  const out = new Map<string, Record<string, unknown>>();
+  const ids = [...new Set(subjects.filter((s) => UUID.test(s)))];
+  if (!ids.length) return out;
+  const reqs = await db.select({ id: vendorRequests.id, seal: vendorRequests.seal, message: vendorRequests.message, fingerprint: vendorRequests.fingerprint }).from(vendorRequests).where(inArray(vendorRequests.id, ids));
+  if (!reqs.length) return out;
+  const names = await db.select({ address: seals.address, displayName: seals.displayName, handle: seals.handle }).from(seals).where(inArray(seals.address, [...new Set(reqs.map((r) => r.seal.toLowerCase()))]));
+  const nameOf = new Map(names.map((n) => [n.address.toLowerCase(), n.displayName || n.handle || undefined]));
+  for (const r of reqs) {
+    const facts: Record<string, unknown> = {};
+    const name = nameOf.get(r.seal.toLowerCase());
+    if (name) facts.vendorName = name;
+    const envelope = (r.message as { envelope?: unknown } | null)?.envelope;
+    if (typeof envelope === "string") {
+      try {
+        facts.invoiceNumber = decodeSealedInvoice(envelope).document.invoiceNumber;
+      } catch {
+        /* an envelope that doesn't decode just leaves the invoice unnamed */
+      }
+    }
+    if (r.fingerprint) facts.fingerprint = r.fingerprint;
+    out.set(r.id, facts);
+  }
+  return out;
 }

@@ -464,10 +464,25 @@ export async function loadTreasury(
   }
 
   // 7. Coming obligations: open POs and unreleased series
-  const openPos = await db
-    .select({ amount: purchaseOrders.amount })
+  // an order counts for what is left on it: one whose invoices have drawn it down is fulfilled, not coming (QA retest 6, R6-1)
+  const poRows = await db
+    .select({ poRef: purchaseOrders.poRef, amount: purchaseOrders.amount })
     .from(purchaseOrders)
     .where(and(eq(purchaseOrders.businessId, businessId), isNull(purchaseOrders.closedAt)));
+  const drawn = poRows.length
+    ? await db
+        .select({ poRef: invoices.poRef, total: invoices.total, credited: invoices.credited, status: invoices.status })
+        .from(invoices)
+        .where(and(eq(invoices.businessId, businessId), inArray(invoices.poRef, poRows.map((p) => p.poRef))))
+    : [];
+  const drawnBy = new Map<string, bigint>();
+  for (const i of drawn) {
+    if (!i.poRef || i.status === "cancelled" || i.status === "rejected" || i.status === "declined") continue;
+    drawnBy.set(i.poRef, (drawnBy.get(i.poRef) ?? 0n) + i.total);
+  }
+  const openPos = poRows
+    .map((po) => ({ amount: po.amount > (drawnBy.get(po.poRef) ?? 0n) ? po.amount - (drawnBy.get(po.poRef) ?? 0n) : 0n }))
+    .filter((po) => po.amount > 0n);
 
   const totalOpenPo = openPos.reduce((sum, po) => sum + po.amount, 0n);
 
