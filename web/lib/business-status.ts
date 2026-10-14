@@ -31,6 +31,8 @@ export function businessStatus(status: string, hold?: { source?: string | null; 
       return { label: "Not payable", tone: "red", note: "It failed verification" };
     case "cancelled":
       return { label: "Cancelled", tone: "graphite" };
+    case "declined":
+      return { label: "Declined", tone: "graphite", note: "You decided not to pay it" };
     default:
       return { label: "Status unavailable", tone: "graphite" };
   }

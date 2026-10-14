@@ -1,4 +1,4 @@
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,7 +38,8 @@ export async function migrateDb(url: string): Promise<void> {
 }
 
 const persist = globalThis as typeof globalThis & { __symbolonPgliteSnapshot?: Blob | File };
-const SNAP_DIR = join(tmpdir(), "symbolon-pglite-snap");
+// keyed by the newest migration, so a new migration never meets a snapshot cached from before it
+const SNAP_DIR = join(tmpdir(), `symbolon-pglite-snap-${readdirSync(MIGRATIONS).filter((f) => f.endsWith(".sql")).sort().at(-1)?.replace(/\W/g, "") ?? "none"}`);
 const SNAP_DATA = join(SNAP_DIR, "data");
 const SNAP_READY = join(SNAP_DIR, "ready");
 const SNAP_LOCK = join(SNAP_DIR, "lock");

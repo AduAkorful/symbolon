@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { eq } from "drizzle-orm";
 import { getAddress, type Hex, type PublicClient } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { arcTestnet, getDeployment, symbolonVaultAbi, type Deployment } from "@symbolon/chain";
@@ -26,6 +27,7 @@ import {
   submitApproval,
 } from "@/lib/server/approvals";
 import { AuthError } from "@/lib/server/errors";
+import { declineInvoice, reopenInvoice } from "@/lib/server/invoice-decline";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => {
@@ -324,5 +326,62 @@ describe("Approvals Service", () => {
     expect(released.ok).toBe(true);
     expect(released.status).toBe("verified");
     expect(released.holdSource).toBeNull();
+  });
+
+  describe("declining an invoice (plan 05zn)", () => {
+    async function openInvoice(role: "owner" | "approver" = "owner") {
+      const ctx = await setupBusinessWithUser(role, "auto");
+      const { sealed, envelope, fingerprint } = await createInvoiceEnvelope(ctx.vault, "INV-DEC-" + crypto.randomUUID().slice(0, 6), "150");
+      await db.insert(invoices).values({
+        businessId: ctx.business.id,
+        fingerprint,
+        chainId: cfg.chainId,
+        ledger: cfg.deployment.contracts.invoiceLedger,
+        seal: sealed.document.seal,
+        payerRef: randHash(),
+        source: "link",
+        dueDate: new Date(1_792_592_000 * 1000),
+        token: cfg.deployment.tokens.usdc.toLowerCase(),
+        invoiceNumber: sealed.document.invoiceNumber,
+        envelope,
+        total: 150_000_000n,
+        credited: 0n,
+        receivedAt: new Date(),
+        status: "verified",
+      });
+      return { ...ctx, fingerprint };
+    }
+
+    it("lets only the owner decline, and needs a reason", async () => {
+      const { user, business, fingerprint } = await openInvoice("approver");
+      await expect(declineInvoice(db, user, business.id, { fingerprint, reason: "duplicate" })).rejects.toBeInstanceOf(AuthError);
+
+      const owner = await openInvoice("owner");
+      await expect(declineInvoice(db, owner.user, owner.business.id, { fingerprint: owner.fingerprint, reason: "nonsense" })).rejects.toMatchObject({ status: 400 });
+      await expect(declineInvoice(db, owner.user, owner.business.id, { fingerprint: owner.fingerprint, reason: "other" })).rejects.toMatchObject({ status: 400 });
+      const [row] = await db.select().from(invoices).where(eq(invoices.fingerprint, owner.fingerprint));
+      expect(row!.status).toBe("verified");
+    });
+
+    it("marks it declined with the reason and a decision, refuses Pay now, and reopens it", async () => {
+      const { user, business, fingerprint } = await openInvoice("owner");
+      const done = await declineInvoice(db, user, business.id, { fingerprint, reason: "wrong_amount", note: "We agreed 120" });
+      expect(done).toEqual({ ok: true, status: "declined" });
+
+      const [row] = await db.select().from(invoices).where(eq(invoices.fingerprint, fingerprint));
+      expect(row!.status).toBe("declined");
+      expect(row!.declinedReason).toContain("We agreed 120");
+      const recorded = await db.select().from(decisions).where(eq(decisions.subject, fingerprint));
+      expect(recorded.some((d) => d.kind === "invoice_declined")).toBe(true);
+
+      const client = {} as unknown as PublicClient;
+      const prepared = await preparePayNow(db, client, cfg, user, business.id, fingerprint);
+      expect(prepared).toMatchObject({ ok: false, reason: expect.stringContaining("declined") });
+
+      expect(await reopenInvoice(db, user, business.id, fingerprint)).toEqual({ ok: true, status: "verified" });
+      const [after] = await db.select().from(invoices).where(eq(invoices.fingerprint, fingerprint));
+      expect(after!.status).toBe("verified");
+      expect(after!.declinedReason).toBeNull();
+    });
   });
 });

@@ -3,7 +3,8 @@ import { getAbiItem, type Hex, type PublicClient } from "viem";
 
 import { blockAtOrBefore, invoiceLedgerAbi, invoiceStatus, scanLogs, symbolonVaultAbi, type Deployment, type SymbolonContracts } from "@symbolon/chain";
 import { chainEvents, invoices, syncCursors, type Database } from "@symbolon/db";
-import { notifyVendor } from "./domain-notifications.js";
+import { decodeSealedInvoice, formatAmount } from "@symbolon/seal";
+import { notifyBusiness, notifyVendor } from "./domain-notifications.js";
 
 const LEDGER_EVENTS = [
   getAbiItem({ abi: invoiceLedgerAbi, name: "Settled" }),
@@ -160,6 +161,7 @@ export async function syncLedger(
       if (log.eventName !== "Settled" && log.eventName !== "Cancelled") continue;
       const fp = (log.args as { fingerprint: Hex }).fingerprint.toLowerCase();
       const [invoice] = await tx.select().from(invoices).where(eq(invoices.fingerprint, fp));
+      if (invoice && log.eventName === "Settled") await noticesForSettlement(tx, invoice, log as unknown as SettledLog);
       if (invoice) await notifyVendor(tx, invoice.seal, { kind: log.eventName === "Settled" ? "invoice_paid" : "invoice_cancelled",
         subject: fp, body: { invoiceNumber: invoice.invoiceNumber, txHash: log.transactionHash, partial: invoice.status !== "paid" },
         dedupeKey: `${log.eventName === "Settled" ? "paid" : "cancelled"}:${fp}:${log.transactionHash.toLowerCase()}` });
@@ -204,4 +206,38 @@ export async function syncVault(
       .onConflictDoUpdate({ target: syncCursors.key, set: { block: scannedTo, updatedAt: sql`now()` } });
   });
   return { from, to: scannedTo, head, events: logs.length, invoicesUpdated: 0 };
+}
+
+interface SettledLog {
+  transactionHash: Hex;
+  args: { fingerprint: Hex; credit: bigint; paid: bigint; discountBps: number };
+}
+
+/**
+ * What a settlement tells the people on each side beyond the vendor's "invoice paid" (plan 05zn): the paying business's owners and
+ * approvers hear a payment went out (whoever sent it, the Steward included), and an Early Pay settlement is named as such to both
+ * sides. One notice each per transaction. A notice that can't be built never fails the sync.
+ */
+async function noticesForSettlement(
+  db: Pick<Database, "insert" | "select">,
+  invoice: typeof invoices.$inferSelect,
+  log: SettledLog,
+): Promise<void> {
+  try {
+    const { document } = decodeSealedInvoice(invoice.envelope);
+    const amount = `${formatAmount(log.args.paid, document.currency.decimals)} ${document.currency.symbol}`;
+    const tx = log.transactionHash.toLowerCase();
+    const body = { invoiceNumber: invoice.invoiceNumber, vendorName: document.vendor.name, amount };
+    if (invoice.businessId) {
+      await notifyBusiness(db, invoice.businessId, { kind: "payment_sent", subject: invoice.fingerprint, body, dedupeKey: `paid-biz:${invoice.fingerprint}:${tx}` });
+      if (log.args.discountBps > 0) {
+        await notifyBusiness(db, invoice.businessId, { kind: "early_pay_accepted", subject: invoice.fingerprint, body: { ...body, discountBps: log.args.discountBps }, dedupeKey: `early-biz:${invoice.fingerprint}:${tx}` }, { roles: ["owner"] });
+      }
+    }
+    if (log.args.discountBps > 0) {
+      await notifyVendor(db, invoice.seal, { kind: "early_pay_accepted", subject: invoice.fingerprint, body: { ...body, discountBps: log.args.discountBps }, dedupeKey: `early-vendor:${invoice.fingerprint}:${tx}` });
+    }
+  } catch (e) {
+    console.error("settlement notices failed", e instanceof Error ? e.message : e);
+  }
 }

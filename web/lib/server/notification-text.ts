@@ -1,5 +1,6 @@
 import "server-only";
 import { plainRunError } from "../run-error";
+import { tidyMoney } from "./decision-text";
 
 export interface NotificationDescriberInput {
   kind: string;
@@ -35,7 +36,7 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
     case "approval_needed": {
       const invoiceNumber = typeof body.invoiceNumber === "string" ? body.invoiceNumber : subject;
       const vendorName = typeof body.vendorName === "string" ? body.vendorName : "Vendor";
-      const total = typeof body.total === "string" ? body.total : "";
+      const total = typeof body.total === "string" ? tidyMoney(body.total) : "";
       return {
         title: `Approval needed: ${invoiceNumber ?? "Invoice"}`,
         body: `${vendorName}${total ? ` · ${total}` : ""} is awaiting approval.`,
@@ -72,7 +73,7 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
     case "invoice_received": {
       const invoiceNumber = typeof body.invoiceNumber === "string" ? body.invoiceNumber : "An invoice";
       const vendorName = typeof body.vendorName === "string" ? body.vendorName : "A vendor";
-      const total = typeof body.total === "string" ? body.total : "";
+      const total = typeof body.total === "string" ? tidyMoney(body.total) : "";
       return {
         title: `New invoice: ${invoiceNumber}`,
         body: `${vendorName}${total ? ` sent ${total}` : " sent an invoice"}.`,
@@ -113,6 +114,54 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
         title: "Money moved",
         body: `${by} ${what[String(body.action)] ?? "moved money"}.`,
         href: "/business/activity",
+      };
+    }
+
+    case "payment_sent": {
+      const invoiceNumber = typeof body.invoiceNumber === "string" ? body.invoiceNumber : "an invoice";
+      const vendorName = typeof body.vendorName === "string" ? body.vendorName : "the vendor";
+      const amount = typeof body.amount === "string" ? tidyMoney(body.amount) : "";
+      return {
+        title: `Paid: ${invoiceNumber}`,
+        body: `${amount ? `${amount} ` : "A payment "}${amount ? "was sent" : "went"} to ${vendorName} for invoice ${invoiceNumber}.`,
+        href: subject ? `/business/inbox/${subject}` : "/business/activity",
+      };
+    }
+
+    case "early_pay_accepted": {
+      const invoiceNumber = typeof body.invoiceNumber === "string" ? body.invoiceNumber : "an invoice";
+      const amount = typeof body.amount === "string" ? tidyMoney(body.amount) : "";
+      const percent = typeof body.discountBps === "number" ? `${(body.discountBps / 100).toFixed(2).replace(/\.?0+$/, "")}% ` : "";
+      return {
+        title: `Early Pay taken: ${invoiceNumber}`,
+        body: `Invoice ${invoiceNumber} was paid early with the ${percent}discount${amount ? `, ${amount} sent` : ""}.`,
+        href: subject ? `/business/inbox/${subject}` : "/business/inbox",
+      };
+    }
+
+    case "payee_active_business": {
+      return {
+        title: "A vendor can be paid now",
+        body: "A payee you added has finished the waiting period. Its invoices can be paid.",
+        href: subject ? `/business/vendors/${subject}` : "/business/vendors",
+      };
+    }
+
+    case "change_ready": {
+      return {
+        title: "A queued change is ready to apply",
+        body: "A change to your Vault's rules has finished its waiting period. Apply it, or cancel it, from Policy or Settings.",
+        href: "/business/policy",
+      };
+    }
+
+    case "shortfall": {
+      const short = typeof body.short === "string" ? tidyMoney(body.short) : "";
+      const symbol = typeof body.symbol === "string" ? body.symbol : "Cash";
+      return {
+        title: `${symbol} may run short`,
+        body: `${short ? `The Vault is ${short} short of` : "The Vault holds less than"} what's due in your buffer. Add funds${symbol === "EURC" ? " (convert USDC to EURC first if you need to)" : ""} or move a due date.`,
+        href: "/business/treasury",
       };
     }
 
@@ -178,6 +227,17 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
       return {
         title: `Invoice paid: ${invoiceNumber ?? "Settled"}`,
         body: body.partial === true ? "A partial payment was settled onchain." : "Your invoice was settled and paid onchain.",
+        href: subject ? `/vendor/invoices/${subject}` : "/vendor",
+      };
+    }
+
+    case "invoice_declined": {
+      const business = typeof body.businessName === "string" && body.businessName ? body.businessName : "A business";
+      const invoiceNumber = typeof body.invoiceNumber === "string" ? body.invoiceNumber : "an invoice";
+      const reason = typeof body.reason === "string" && body.reason ? ` Reason: ${truncate(body.reason)}` : "";
+      return {
+        title: `Invoice declined: ${invoiceNumber}`,
+        body: `${business} won't pay invoice ${invoiceNumber}.${reason}`,
         href: subject ? `/vendor/invoices/${subject}` : "/vendor",
       };
     }

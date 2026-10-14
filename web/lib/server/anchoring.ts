@@ -12,8 +12,7 @@ import { requireMember } from "./access";
 import { AuthError } from "./errors";
 import { feeBalance, resolveStewardWallet, type StewardConfig } from "./steward-runtime";
 
-/** Minimum decisions pending to trigger auto-anchoring in scheduled runs (Decision A10 / Q3) */
-export const ANCHOR_BATCH_MIN = 5;
+export { ANCHOR_BATCH_MIN } from "./steward-runtime";
 
 export interface DecisionAnchorInfo {
   status: "anchored" | "pending" | "unconfirmed";

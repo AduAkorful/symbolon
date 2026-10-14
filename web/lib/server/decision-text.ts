@@ -80,6 +80,16 @@ export function humanizeKind(kind: string): string {
  * delivery_confirmed, delivery_rejected).
  */
 export function summarizeDecision(record: Record<string, unknown>): DecisionSummary {
+  const s = summarizeRecord(record);
+  return { ...s, sentence: tidyMoney(s.sentence), ...(s.explanation ? { explanation: tidyMoney(s.explanation) } : {}) };
+}
+
+/** "212.6 USDC" and "212.600000 EURC" in prose (the model's wording included) become "$212.60" and "€212.60", as everywhere else */
+export function tidyMoney(text: string): string {
+  return text.replace(/(?<![\d.,])(\d[\d,]*(?:\.\d+)?)\s?(USDC|EURC)\b/g, (_m, amount: string, symbol: string) => showMoney(amount.replace(/,/g, ""), symbol));
+}
+
+function summarizeRecord(record: Record<string, unknown>): DecisionSummary {
   const kind = String(record.kind ?? "");
   const outcome = String(record.outcome ?? "");
   const rule = String(record.rule ?? "");

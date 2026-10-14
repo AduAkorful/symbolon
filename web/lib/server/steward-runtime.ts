@@ -1,18 +1,20 @@
 import "server-only";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { formatUnits, getAddress, type Address, type PublicClient } from "viem";
 
 import { reserveYield, symbolonContracts } from "@symbolon/chain";
-import { expireOffers, notifyBusiness, releaseDue, runLending, runSteward, runTreasury, syncVault, type StewardEnv } from "@symbolon/core";
-import { businesses, decisions, stewardRuns, type Database } from "@symbolon/db";
+import { anchorDecisions, expireOffers, notifyBusiness, releaseDue, runLending, runSteward, runTreasury, syncVault, type StewardEnv } from "@symbolon/core";
+import { businesses, decisionAnchors, decisions, stewardRuns, type Database } from "@symbolon/db";
 import { CircleStewardWallet, createCircleClient, DEFAULT_EARLY_PAY, provisionStewardWallet, type EarlyPayProgram, type StewardWallet } from "@symbolon/steward";
 
 import { ensureVaultBlock, type ChainSettings } from "./business";
 import { AuthError } from "./errors";
 import { getStewardModel } from "./steward-model";
 import { ensureFresh } from "./sync";
+import { notifyDueNotices } from "./due-notices";
 import { notifyPayeesActive } from "./payee-active";
+import { notPreparedPayment } from "./prepared-payment";
 
 /**
  * 0.01 native USDC (18 decimals on Arc) minimum fee balance.
@@ -26,6 +28,8 @@ export const MIN_STEWARD_FEE_BALANCE = 10_000_000_000_000_000n;
  * old 60 s and then shown as "Failed: previous lease expired" (QA retest 4).
  */
 export const STEWARD_RUN_LEASE_MS = 150 * 1000;
+/** Minimum decisions pending to anchor them in a scheduled run (plan 05p A10 / Q3) */
+export const ANCHOR_BATCH_MIN = 5;
 /** One run reads at most this much of a Vault's history, for at most this long (a few Arc log requests) */
 const RUN_VAULT_WINDOW_BLOCKS = 20_000n;
 const RUN_VAULT_SYNC_DEADLINE_MS = 8_000;
@@ -146,6 +150,7 @@ export async function runForBusiness(
 
   // vendors whose payee waiting period has now passed are told (plan 05zj E, D11 a); one notice each, never fatal to a run
   await notifyPayeesActive(db, { businessId }).catch((e) => console.error("payee-active notices failed", e instanceof Error ? e.message : e));
+  await notifyDueNotices(db, client, cfg, businessId);
 
   // Acquire lease
   let runId: string;
@@ -280,10 +285,21 @@ export async function runForBusiness(
       outcomes[r.outcome] = (outcomes[r.outcome] ?? 0) + 1;
     }
 
+    // decisions are anchored in batches by the scheduled run (QA retest 5, R5-8: the backlog only ever grew because nothing did)
+    let anchored: number | null = null;
+    if (trigger === "schedule") {
+      try {
+        anchored = await anchorWhenDue(db, client, cfg, b);
+      } catch (anchorErr) {
+        console.warn("Scheduled anchoring failed; the pass itself succeeded:", anchorErr);
+      }
+    }
+
     const summary = {
       invoicesConsidered: results.length,
       outcomes,
       treasuryAction,
+      ...(anchored ? { anchored } : {}),
     };
 
     const [done] = await db
@@ -333,5 +349,25 @@ export async function lastScheduledRun(db: Database, businessId: string): Promis
 }
 
 export async function listRunDecisions(db: Database, businessId: string, limit = 20): Promise<(typeof decisions.$inferSelect)[]> {
-  return db.select().from(decisions).where(eq(decisions.businessId, businessId)).orderBy(desc(decisions.createdAt)).limit(limit);
+  return db.select().from(decisions).where(and(eq(decisions.businessId, businessId), notPreparedPayment)).orderBy(desc(decisions.createdAt)).limit(limit);
+}
+
+/** Anchors the pending decisions when there are enough of them and the Steward wallet can pay the fee; the count anchored, or null */
+async function anchorWhenDue(
+  db: Database,
+  client: PublicClient,
+  cfg: StewardConfig,
+  b: typeof businesses.$inferSelect,
+): Promise<number | null> {
+  if (!b.stewardWallet) return null;
+  const done = await db.select({ leaves: decisionAnchors.leaves }).from(decisionAnchors).where(and(eq(decisionAnchors.businessId, b.id), isNotNull(decisionAnchors.txHash)));
+  const anchoredSet = new Set(done.flatMap((a) => a.leaves));
+  const all = await db.select({ hash: decisions.hash }).from(decisions).where(eq(decisions.businessId, b.id));
+  if (all.filter((d) => !anchoredSet.has(d.hash)).length < ANCHOR_BATCH_MIN) return null;
+  const balance = await feeBalance(client, b.stewardWallet);
+  if (balance === null || balance < MIN_STEWARD_FEE_BALANCE) return null;
+  const wallet = await resolveStewardWallet(client, cfg, b);
+  if (!wallet) return null;
+  const result = await anchorDecisions(db, b.id, wallet, { client });
+  return result?.count ?? null;
 }

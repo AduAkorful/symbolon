@@ -47,6 +47,11 @@ export default async function VendorInvoice({ params }: { params: Promise<{ fing
               Replaces invoice {found.sealed.document.replaces.slice(0, 10)}… (original cancels when settled)
             </p>
           ) : null}
+          {found.row.status === "declined" && !isSettled ? (
+            <Callout tone="warn" title={`${found.sealed.document.payer.name} declined this invoice`} className="mt-5">
+              {found.row.declinedReason ?? "No reason was given."} Send a corrected invoice if you need to be paid.
+            </Callout>
+          ) : null}
           <CopyLink link={link} />
           {/* The sealed file itself, to send as an attachment or keep (plan 05zj G, SYM-48): the verify page reads it in the browser */}
           <p className="mt-3 text-sm text-graphite">
@@ -58,7 +63,7 @@ export default async function VendorInvoice({ params }: { params: Promise<{ fing
           </p>
 
           {/* Early pay and cancel actions for unpaid invoices */}
-          {!isSettled && !isCancelled ? (
+          {!isSettled && !isCancelled && found.row.status !== "declined" ? (
             <div className="mt-6 flex flex-wrap items-center gap-3">
               <Link href={`/vendor/invoices/${found.row.fingerprint}/early`} className={buttonClass()}>
                 Get paid early

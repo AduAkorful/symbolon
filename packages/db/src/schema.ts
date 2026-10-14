@@ -324,6 +324,7 @@ export const invoiceStatus = pgEnum("invoice_status", [
   "partially_paid",
   "paid",
   "cancelled",
+  "declined", // the business will not pay it (offchain decision, plan 05zn); the ledger still wins if it is settled anyway
 ]);
 
 export const invoices = pgTable(
@@ -348,6 +349,9 @@ export const invoices = pgTable(
     envelope: text("envelope").notNull(),
     status: invoiceStatus("status").notNull().default("received"),
     issues: jsonb("issues").$type<{ code: string; path: string; message: string }[]>().notNull().default([]),
+    /** Why and when the business declined it (plan 05zn); set only while status is `declined` */
+    declinedReason: text("declined_reason"),
+    declinedAt: timestamp("declined_at", { withTimezone: true }),
     /** Mirrored from the ledger by sync */
     credited: amount("credited").notNull().default(sql`0`),
     syncedBlock: bigint("synced_block", { mode: "bigint" }),
@@ -371,6 +375,7 @@ export const invoices = pgTable(
     check("invoices_source", sql`${t.source} in ('link', 'email', 'upload', 'api', 'recurring')`),
     check("invoices_amounts", sql`${t.total} > 0 and ${t.credited} >= 0 and ${t.credited} <= ${t.total}`),
     check("invoices_hold_kind", sql`${t.holdKind} is null or (${t.holdSource} = 'human' and ${t.status} = 'held' and ${t.holdKind} in ('delivery', 'payment'))`),
+    check("invoices_declined_reason", sql`${t.status}::text <> 'declined' or ${t.declinedReason} is not null`),
     check("invoices_hold_source", sql`${t.holdSource} is null or ${t.holdSource} in ('steward', 'human')`),
     check("invoices_hold_source_with_status", sql`${t.status} = 'held' or ${t.holdSource} is null`),
   ],

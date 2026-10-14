@@ -79,7 +79,7 @@ export function ProfileView({ initialData }: { initialData: ProfileData }) {
               <Field label="Name shown to teammates" hint="Shown beside your verified email or wallet. It never identifies a signer on an onchain document.">
                 {(a) => (
                   <div className="flex max-w-md gap-2">
-                    <input {...a} type="text" value={displayName} maxLength={80} onChange={(e) => { setDisplayName(e.target.value); setSaved(false); }} placeholder="Ana Ferreira" className={controlClass} />
+                    <input {...a} type="text" value={displayName} maxLength={80} onChange={(e) => { setDisplayName(e.target.value); setSaved(false); }} placeholder="Your full name" className={controlClass} />
                     <Button type="submit" busy={saving}>{saving ? "Saving…" : "Save"}</Button>
                   </div>
                 )}

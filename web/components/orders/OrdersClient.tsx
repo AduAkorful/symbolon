@@ -165,7 +165,8 @@ function OrderRow({
   const closed = Boolean(o.closedAt);
   const liveOpen = o.live.ok ? o.live.open : !closed;
   const remaining = o.live.ok && o.live.remaining ? formatRaw(o.live.remaining) : null;
-  const status = closed ? { label: "Closed", tone: "neutral" as const } : liveOpen ? { label: "Open", tone: "ok" as const } : { label: "Can’t confirm", tone: "warn" as const };
+  const fulfilled = !closed && o.live.ok && o.live.open && o.live.remaining !== undefined && o.live.remaining !== null && BigInt(o.live.remaining) === 0n;
+  const status = closed ? { label: "Closed", tone: "neutral" as const } : fulfilled ? { label: "Fulfilled", tone: "neutral" as const } : liveOpen ? { label: "Open", tone: "ok" as const } : { label: "Can’t confirm", tone: "warn" as const };
   const detailId = `po-detail-${o.poRef.slice(2, 10)}`;
 
   return (

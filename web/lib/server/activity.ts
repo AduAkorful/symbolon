@@ -18,6 +18,7 @@ import {
 import { getAddress, type Address, type PublicClient } from "viem";
 import { requireMember } from "./access";
 import { ensureVaultBlock } from "./business";
+import { isPreparedPayment } from "./prepared-payment";
 import { backfillDeposits } from "./deposit-backfill";
 import { summarizeDecision } from "./decision-text";
 import { AuthError } from "./errors";
@@ -367,6 +368,7 @@ export async function loadActivity(
   };
 
   for (const d of decRows) {
+    if (isPreparedPayment(d.record)) continue;
     const desc = describeDecision(d, refFor);
     const actor = resolveActorForDecision(d);
     const rec = d.record as Record<string, unknown> | null;

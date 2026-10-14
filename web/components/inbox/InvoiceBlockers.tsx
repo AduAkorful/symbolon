@@ -18,7 +18,7 @@ export function InvoiceBlockers({ blockers, children }: { blockers: Blocker[]; c
       <SectionTitle id="stopping-title">{inTheWay.length === 0 ? "Nothing is stopping this payment" : "What's stopping this payment"}</SectionTitle>
       {inTheWay.length === 0 ? (
         <p className="mt-2 text-sm text-graphite">
-          Every check the Vault makes passes right now.{later.length > 0 ? " It will still be asked for a sign-off when it is paid." : ""}
+          Every check the Vault makes passes right now.{later.length > 0 ? " The Steward needs a person to sign this off; you can pay it yourself with Pay now." : ""}
         </p>
       ) : (
         <ul className="mt-3 space-y-3">

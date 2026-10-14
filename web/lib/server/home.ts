@@ -1,5 +1,6 @@
 import "server-only";
 
+import { notPreparedPayment } from "./prepared-payment";
 import { and, desc, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { erc20Abi, getAddress, type PublicClient } from "viem";
 
@@ -254,7 +255,7 @@ export async function loadNeedsYou(
     const [latestDec] = await db
       .select({ record: decisions.record })
       .from(decisions)
-      .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, row.fingerprint)))
+      .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, row.fingerprint), notPreparedPayment))
       .orderBy(desc(decisions.createdAt))
       .limit(1);
 
@@ -298,7 +299,7 @@ export async function loadNeedsYou(
     const [latestDec] = await db
       .select({ record: decisions.record })
       .from(decisions)
-      .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, row.fingerprint)))
+      .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, row.fingerprint), notPreparedPayment))
       .orderBy(desc(decisions.createdAt))
       .limit(1);
 
@@ -475,6 +476,7 @@ export async function loadToday(
       and(
         eq(decisions.businessId, businessId),
         gte(decisions.createdAt, startOfToday),
+        notPreparedPayment,
       ),
     );
 

@@ -9,6 +9,8 @@ export function vendorStatus(status: string): { label: string; tone: "ink" | "se
       return { label: "Cancelled", tone: "graphite" };
     case "rejected":
       return { label: "Rejected", tone: "red" };
+    case "declined":
+      return { label: "Declined", tone: "red" };
     default:
       return { label: "Sealed", tone: "ink" };
   }

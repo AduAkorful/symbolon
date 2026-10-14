@@ -1,6 +1,7 @@
 import { livePurchaseOrderEvidence } from "./po-evidence";
 import { CHAIN_READ_DEADLINE_MS, withDeadline } from "./deadline";
 import { ensureFresh } from "./sync";
+import { isPreparedPayment } from "./prepared-payment";
 import "server-only";
 
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
@@ -149,7 +150,7 @@ async function loadNotYetApprovable(db: Database, businessId: string): Promise<N
     .where(and(eq(decisions.businessId, businessId), inArray(decisions.subject, subjects)))
     .orderBy(desc(decisions.createdAt));
   const latest = new Map<string, Record<string, unknown>>();
-  for (const r of rows) if (r.subject && !latest.has(r.subject)) latest.set(r.subject, r.record as Record<string, unknown>);
+  for (const r of rows) if (r.subject && !latest.has(r.subject) && !isPreparedPayment(r.record)) latest.set(r.subject, r.record as Record<string, unknown>);
 
   const counts = new Map<string, number>();
   for (const fp of subjects) {
@@ -695,6 +696,9 @@ export async function preparePayNow(
     .where(and(eq(invoices.businessId, businessId), eq(invoices.fingerprint, fingerprint)))
     .limit(1);
   if (!invRow) throw new AuthError(404, "Invoice not found.");
+  if (invRow.status === "declined") {
+    return { ok: false, reason: "You declined this invoice. Reopen it to pay it." };
+  }
   if (invRow.holdSource === "human") {
     return { ok: false, reason: "The owner must release this human payment hold before paying." };
   }

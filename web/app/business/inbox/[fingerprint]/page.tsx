@@ -15,6 +15,7 @@ import { loadInvoiceDetail } from "@/lib/server/inbox";
 import { summarizeDecision } from "@/lib/server/decision-text";
 import { businessOffers } from "@/lib/server/offers";
 import { BusinessOffers } from "@/components/inbox/BusinessOffers";
+import { DeclineInvoice, ReopenInvoice } from "@/components/inbox/DeclineInvoice";
 import { InvoiceBlockers } from "@/components/inbox/InvoiceBlockers";
 import { PayInvoice } from "@/components/inbox/PayInvoice";
 import { blockersForInvoice } from "@/lib/server/invoice-blockers";
@@ -51,6 +52,7 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
     view.row.status !== "paid" &&
     view.row.status !== "cancelled" &&
     view.row.status !== "rejected" &&
+    view.row.status !== "declined" &&
     view.verification.ok &&
     deliveryMatters;
 
@@ -63,7 +65,9 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
     evidenceRows: view.evidence.rows,
   });
   const inTheWay = blockers.filter((b) => b.kind !== "info" || b.rule === "ChainUnreadable");
-  const closed = settled || view.row.status === "paid" || view.row.status === "cancelled" || view.row.status === "rejected";
+  const declined = view.row.status === "declined" && !settled;
+  const isOwner = where.business.role === "owner";
+  const closed = settled || declined || view.row.status === "paid" || view.row.status === "cancelled" || view.row.status === "rejected";
   const holdSource = "holdSource" in view ? view.holdSource : null;
   const canPay = offers.canAct && !closed && view.verification.ok && holdSource !== "human";
   const unavailable = inTheWay.length > 0 ? "Can't be paid yet. See what's stopping it above." : undefined;
@@ -90,7 +94,7 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
           <Link href="/business/inbox" className="text-sm text-graphite underline decoration-rule underline-offset-4 hover:text-ink">
             ← Inbox
           </Link>
-          <Eyebrow className="mt-6">{view.ledger?.paid ? "Paid" : view.evidence.matched ? "Matched" : "Evidence still open"}</Eyebrow>
+          <Eyebrow className="mt-6">{view.ledger?.paid ? "Paid" : declined ? "Declined" : view.evidence.matched ? "Matched" : "Evidence still open"}</Eyebrow>
           <PageTitle className="mt-2">Invoice {view.row.invoiceNumber}</PageTitle>
           <p className="mt-3 text-graphite">
             The vendor’s sealed invoice is shown beside the checks Symbolon can make for this business right now. Matched does not mean paid.
@@ -105,6 +109,17 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
               actions={<Link href={`/receipt/${fingerprint}`} className={buttonClass({ variant: "secondary", size: "sm" })}>View the public receipt</Link>}
             >
               Settled against the Arc invoice ledger.
+            </Callout>
+          ) : null}
+
+          {declined ? (
+            <Callout
+              tone="warn"
+              title="You declined this invoice"
+              className="mt-5"
+              actions={isOwner ? <ReopenInvoice businessId={where.business.id} fingerprint={fingerprint} /> : undefined}
+            >
+              {view.row.declinedReason ?? "No reason recorded."} The vendor has been told. It won't be paid unless you reopen it.
             </Callout>
           ) : null}
 
@@ -132,6 +147,7 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
                   {!offers.canAct ? "Only an owner or approver can pay an invoice." : holdSource === "human" ? "Release the hold before paying." : null}
                 </p>
               )}
+              {isOwner ? <DeclineInvoice businessId={where.business.id} fingerprint={fingerprint} /> : null}
             </InvoiceBlockers>
           ) : null}
 

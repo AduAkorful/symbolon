@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, desc, eq } from "drizzle-orm";
 
-import { notifyVendor } from "@symbolon/core";
+import { notifyBusiness, notifyVendor } from "@symbolon/core";
 import { businesses, decisions, type Database } from "@symbolon/db";
 
 /**
@@ -35,6 +35,13 @@ export async function notifyPayeesActive(db: Database, scope: { businessId: stri
       body: { businessId: row.businessId, businessName: row.name },
       dedupeKey: `payee_active:${row.businessId}:${key}`,
     });
+    // the business hears too (plan 05zn): the vendor it added can be paid now
+    await notifyBusiness(db, row.businessId, {
+      kind: "payee_active_business",
+      subject: row.subject,
+      body: { seal: row.subject },
+      dedupeKey: `payee_active_biz:${row.businessId}:${key}`,
+    }, { roles: ["owner"] });
     told += result.inserted;
   }
   return told;

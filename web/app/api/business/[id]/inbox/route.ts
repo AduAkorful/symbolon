@@ -6,6 +6,7 @@ import { getDb } from "@/lib/server/db";
 import { AuthError } from "@/lib/server/errors";
 import { readBody, requireSession, routeWith } from "@/lib/server/http";
 import { eq } from "drizzle-orm";
+import { declineInvoice, reopenInvoice } from "@/lib/server/invoice-decline";
 import { invoices } from "@symbolon/db";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -40,5 +41,7 @@ export const POST = routeWith<Ctx>(async (request, ctx) => {
     if (!row) throw new AuthError(404, "That invoice link isn't from this deployment.");
     return NextResponse.json(await addSealedInvoice(db, getClient(), cfg, s.user, id, row.envelope, "link"));
   }
+  if (body.action === "decline") return NextResponse.json(await declineInvoice(db, s.user, id, { fingerprint: body.fingerprint, reason: body.reason, note: body.note }));
+  if (body.action === "reopen") return NextResponse.json(await reopenInvoice(db, s.user, id, body.fingerprint));
   throw new AuthError(400, "Unknown inbox action.");
 });
