@@ -9,6 +9,7 @@ import { SectionTitle } from "@/components/ui/Type";
 import { postJson } from "@/lib/client/api";
 import { formatDateTime } from "@/lib/format";
 import type { FormattedNotification } from "@/lib/server/notifications";
+import { Avatar } from "@/components/Avatar";
 
 /**
  * The bell and its panel. Notices open over whatever page the person is on and close again, so reading them never means
@@ -138,6 +139,7 @@ export function Bell({ unreadCount: initialUnread }: { unreadCount: number }) {
                     <>
                       <span className="flex items-start gap-2.5">
                         <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${isRead ? "bg-transparent" : "bg-seal"}`} aria-hidden />
+                        {n.byAvatar ? <Avatar name="Person at the business" src={n.byAvatar} size={28} /> : null}
                         <span className="min-w-0">
                           <span className={`block text-sm ${isRead ? "text-graphite" : "font-medium text-ink"}`}>{n.title}</span>
                           <span className="mt-0.5 block text-sm text-graphite">{n.body}</span>

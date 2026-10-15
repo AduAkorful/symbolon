@@ -1,7 +1,8 @@
 import "server-only";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { decodeSealedInvoice } from "@symbolon/seal";
-import { notifications, seals, vendorRequests, type Database } from "@symbolon/db";
+import { notifications, seals, userAvatars, vendorRequests, type Database } from "@symbolon/db";
+import { avatarUrl } from "../avatar-url";
 import { describeNotification, type NotificationViewItem } from "./notification-text";
 
 export interface FormattedNotification extends NotificationViewItem {
@@ -10,6 +11,8 @@ export interface FormattedNotification extends NotificationViewItem {
   subject: string | null;
   readAt: string | null;
   createdAt: string;
+  /** The acting person's picture, when their name is shown and they have one (plan 05zt) */
+  byAvatar?: string;
 }
 
 /**
@@ -55,6 +58,14 @@ export async function listNotifications(
 
   const extra = await requestFacts(db, rows.filter((r) => r.kind.startsWith("vendor_") && r.subject).map((r) => r.subject as string));
 
+  const byIds = [...new Set(rows.map((r) => (r.body as Record<string, unknown> | null)?.byUserId).filter((v): v is string => typeof v === "string"))];
+  const avatars = new Map<string, number>();
+  if (byIds.length > 0) {
+    for (const a of await db.select({ userId: userAvatars.userId, updatedAt: userAvatars.updatedAt }).from(userAvatars).where(inArray(userAvatars.userId, byIds))) {
+      avatars.set(a.userId, a.updatedAt.getTime());
+    }
+  }
+
   const items: FormattedNotification[] = rows.map((r) => {
     const desc = describeNotification({
       kind: r.kind,
@@ -71,6 +82,11 @@ export async function listNotifications(
       title: desc.title,
       body: desc.body,
       ...(desc.href ? { href: desc.href } : {}),
+      ...(() => {
+        const id = (r.body as Record<string, unknown> | null)?.byUserId;
+        const url = typeof id === "string" ? avatarUrl(id, avatars.get(id) ?? null) : undefined;
+        return url ? { byAvatar: url } : {};
+      })(),
     };
   });
 

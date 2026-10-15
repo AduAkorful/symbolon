@@ -61,6 +61,8 @@ describe("telegram linking", () => {
     const ok = await handleUpdate(db, { message: { text: `/start ${code}`, chat: { id: 9, type: "private" } } });
     expect(ok?.reply).toMatch(/Linked/);
     expect(await linkedChat(db, a)).toBe("9");
+    const connectedHelp = await handleUpdate(db, { message: { text: "hello", chat: { id: 9, type: "private" } } });
+    expect(connectedHelp?.reply).toMatch(/already connected/);
     const stop = await handleUpdate(db, { message: { text: "/stop", chat: { id: 9, type: "private" } } });
     expect(stop?.reply).toMatch(/Disconnected/);
     expect(await linkedChat(db, a)).toBeNull();

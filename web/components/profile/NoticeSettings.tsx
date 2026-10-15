@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { postJson } from "@/lib/client/api";
+import { useConfirm } from "@/components/useConfirm";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/Callout";
 import { InlineError } from "@/components/ui/States";
@@ -31,6 +32,7 @@ export function NoticeSettings() {
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [waitingForLink, setWaitingForLink] = useState(false);
+  const [ask, confirmDialog] = useConfirm();
 
   async function load() {
     try {
@@ -116,6 +118,18 @@ export function NoticeSettings() {
 
   const groups = view ? [...new Set(view.kinds.map((k) => k.group))] : [];
 
+  async function disconnectTelegram() {
+    const yes = await ask({
+      title: "Disconnect Telegram?",
+      body: "You will stop getting notices in Telegram. The bell still shows every notice, and you can connect again from this page at any time.",
+      confirmLabel: "Disconnect",
+      destructive: true,
+    });
+    if (!yes) return;
+    const out = await act({ action: "telegram-disconnect" });
+    if (out) setView(out as unknown as NoticeSettingsView);
+  }
+
   return (
     <section aria-labelledby="notices-heading" className="space-y-4">
       <div>
@@ -126,6 +140,7 @@ export function NoticeSettings() {
         </p>
       </div>
       {problem ? <InlineError>{problem}</InlineError> : null}
+      {confirmDialog}
       {view === null ? (
         <p className="text-sm text-graphite">Loading…</p>
       ) : !view.telegram.available && !view.push.available ? (
@@ -140,7 +155,7 @@ export function NoticeSettings() {
               <StatusPill tone={view.telegram.linked ? "ok" : "neutral"}>{view.telegram.linked ? "Connected" : waitingForLink ? "Waiting for Telegram…" : "Not connected"}</StatusPill>
             </div>
             {view.telegram.linked ? (
-              <Button variant="secondary" size="sm" busy={busy} onClick={() => void act({ action: "telegram-disconnect" }).then((o) => o && setView(o as unknown as NoticeSettingsView))}>
+              <Button variant="secondary" size="sm" busy={busy} onClick={() => void disconnectTelegram()}>
                 Disconnect
               </Button>
             ) : (

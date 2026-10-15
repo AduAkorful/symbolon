@@ -1,4 +1,5 @@
 import "server-only";
+import { after } from "next/server";
 import { and, eq, gte, inArray, isNotNull } from "drizzle-orm";
 import { cleanPrefs, kindEnabled, setNoticeListener, withinRateGuard } from "@symbolon/core";
 import { notifications, pushSubscriptions, telegramLinks, users, type Database } from "@symbolon/db";
@@ -64,5 +65,22 @@ let registered = false;
 export function registerNoticeDelivery(): void {
   if (registered) return;
   registered = true;
-  setNoticeListener(async (ids) => deliver(await getDb(), ids));
+  // A notice is often created inside a database transaction (a decline, a verification). Delivery has to read the committed row, so
+  // it runs after the response is sent, never inline: inline it would read before the commit (Neon: no row, nothing sent;
+  // PGlite: it waits on the very transaction that is waiting for it).
+  setNoticeListener(async (ids) => {
+    const run = async () => {
+      try {
+        await deliver(await getDb(), ids);
+      } catch (e) {
+        console.error("notice delivery failed", e instanceof Error ? e.message : "unknown");
+      }
+    };
+    try {
+      after(run);
+    } catch {
+      // not inside a request (a script or a scheduled job): a short delay lets the writer commit first
+      setTimeout(() => void run(), 1000);
+    }
+  });
 }

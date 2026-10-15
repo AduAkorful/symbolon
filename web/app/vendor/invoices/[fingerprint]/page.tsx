@@ -7,6 +7,8 @@ import { Shell } from "@/components/shell/Shell";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
 import { cancelCause } from "@/lib/server/cancel-cause";
+import { declinedBy } from "@/lib/server/declined-by";
+import { Avatar } from "@/components/Avatar";
 import { myInvoice } from "@/lib/server/invoice-send";
 import { signerPlanFor } from "@/lib/server/signer-plan";
 import { requireVendorPage } from "@/lib/server/vendor-page";
@@ -32,6 +34,7 @@ export default async function VendorInvoice({ params }: { params: Promise<{ fing
   const link = `${config.appOrigin}/invoice/${found.row.fingerprint}`;
   const isSettled = found.row.status === "paid" || found.row.credited > 0n;
   const isCancelled = found.row.status === "cancelled";
+  const declined = found.row.status === "declined" ? await declinedBy(await getDb(), found.row.fingerprint, found.sealed.document.payer.name) : null;
   const cause = isCancelled ? await cancelCause(await getDb(), found.row.fingerprint) : { cause: "cancelled" as const };
 
   return (
@@ -48,7 +51,7 @@ export default async function VendorInvoice({ params }: { params: Promise<{ fing
             </p>
           ) : null}
           {found.row.status === "declined" && !isSettled ? (
-            <Callout tone="warn" title={`${found.sealed.document.payer.name} declined this invoice`} className="mt-5">
+            <Callout tone="warn" title={`${declined?.phrase ?? found.sealed.document.payer.name} declined this invoice`} className="mt-5">
               {found.row.declinedReason ?? "No reason was given."} Send a corrected invoice if you need to be paid.
             </Callout>
           ) : null}
@@ -132,8 +135,9 @@ export default async function VendorInvoice({ params }: { params: Promise<{ fing
               ) : found.row.status === "declined" ? (
                 <li className="flex items-start gap-3">
                   <span className="mt-1 h-2 w-2 rounded-full bg-red flex-shrink-0" />
+                  {declined?.avatar ? <Avatar name="Person at the business" src={declined.avatar} size={28} /> : null}
                   <div>
-                    <p className="font-medium text-red">Declined by {found.sealed.document.payer.name}</p>
+                    <p className="font-medium text-red">Declined by {declined ? declined.phrase.replace(/^An? /, (m) => m.toLowerCase()) : found.sealed.document.payer.name}</p>
                     <p className="text-graphite">{found.row.declinedReason ?? "No reason was given."}</p>
                   </div>
                 </li>

@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "vendor_visible" boolean DEFAULT true NOT NULL;

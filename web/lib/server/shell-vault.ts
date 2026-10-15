@@ -1,6 +1,6 @@
 import "server-only";
 import { cache } from "react";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { getAddress } from "viem";
 import { chainEvents } from "@symbolon/db";
 import { getClient } from "./chain";
@@ -35,13 +35,15 @@ export const loadShellVault = cache(async (vault: string, stewardWallet: string 
     let pauseTxHash: string | null = null;
     if (paused) {
       try {
+        // the latest pause or resume the mirror knows: if that is a resume, the mirror is behind the chain and the
+        // old pause's hash would point at the wrong transaction, so no link is shown
         const [row] = await (await getDb())
-          .select({ txHash: chainEvents.txHash })
+          .select({ txHash: chainEvents.txHash, eventName: chainEvents.eventName })
           .from(chainEvents)
-          .where(and(eq(chainEvents.address, getAddress(vault).toLowerCase()), eq(chainEvents.eventName, "Paused")))
-          .orderBy(desc(chainEvents.blockNumber))
+          .where(and(eq(chainEvents.address, getAddress(vault).toLowerCase()), inArray(chainEvents.eventName, ["Paused", "Unpaused"])))
+          .orderBy(desc(chainEvents.blockNumber), desc(chainEvents.logIndex))
           .limit(1);
-        pauseTxHash = row?.txHash ?? null;
+        pauseTxHash = row?.eventName === "Paused" ? row.txHash : null;
       } catch (e) {
         console.error("reading the pause transaction failed", e);
       }

@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  boolean,
 
   check,
   index,
@@ -47,6 +48,8 @@ export const users = pgTable(
     displayName: text("display_name"),
     /** Which notice kinds go to which off-app channel (plan 05zr); the shape is cleaned by `cleanPrefs` on every read */
     noticePrefs: jsonb("notice_prefs").$type<Record<string, unknown>>().notNull().default({}),
+    /** Whether vendors a business deals with are shown this person's name and picture when they act (plan 05zt); off shows the role only */
+    vendorVisible: boolean("vendor_visible").notNull().default(true),
     createdAt: createdAt(),
   },
   (t) => [
@@ -823,4 +826,24 @@ export const pushSubscriptions = pgTable(
     lastOkAt: timestamp("last_ok_at", { withTimezone: true }),
   },
   (t) => [uniqueIndex("push_subscriptions_endpoint_key").on(t.endpoint), index("push_subscriptions_user_idx").on(t.userId)],
+);
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Profile pictures (plan 05zs): one small, validated image per person. Base64 text keeps the driver path identical for
+// Neon and PGlite; the validation lives in `@symbolon/core` and runs before anything is written.
+// ---------------------------------------------------------------------------------------------------------------------
+
+export const userAvatars = pgTable(
+  "user_avatars",
+  {
+    userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+    contentType: text("content_type").notNull(),
+    dataBase64: text("data_base64").notNull(),
+    byteSize: integer("byte_size").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("user_avatars_type", sql`${t.contentType} in ('image/jpeg', 'image/png', 'image/webp')`),
+    check("user_avatars_size", sql`${t.byteSize} > 0 and ${t.byteSize} <= 102400`),
+  ],
 );

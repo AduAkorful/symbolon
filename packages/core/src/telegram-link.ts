@@ -57,6 +57,7 @@ export interface TelegramUpdate {
   message?: { text?: string; chat?: { id?: number | string; type?: string } };
 }
 
+const CONNECTED_HELP = "This chat is already connected. You'll get the notices you chose in Profile. Send /stop to disconnect.";
 const HELP = "This bot only sends your Symbolon notices. To connect it, open Profile in Symbolon and choose Connect Telegram. Send /stop to disconnect.";
 
 /** What the bot says back (null: say nothing). Only /start <code> and /stop do anything; other text is never echoed. */
@@ -79,5 +80,6 @@ export async function handleUpdate(db: Database, update: TelegramUpdate): Promis
     const had = await unlinkChat(db, { chatId });
     return { chatId, reply: had ? "Disconnected. You won't get notices here any more." : "Nothing was connected." };
   }
-  return { chatId, reply: HELP };
+  const [already] = await db.select({ userId: telegramLinks.userId }).from(telegramLinks).where(eq(telegramLinks.chatId, chatId)).limit(1);
+  return { chatId, reply: already ? CONNECTED_HELP : HELP };
 }

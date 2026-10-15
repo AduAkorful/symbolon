@@ -3,6 +3,7 @@ import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { isAddress } from "viem";
 import { businesses, members, seals, sessions, users, type Database } from "@symbolon/db";
 import { AuthError } from "./errors";
+import { avatarVersion } from "./avatar";
 import { UNSAFE_TEXT } from "../text-safety";
 
 export interface ProfileData {
@@ -11,6 +12,10 @@ export interface ProfileData {
     email: string | null;
     wallet: string | null;
     displayName: string | null;
+    /** When the picture was last set (a cache-busting version), or null when there is none (plan 05zs) */
+    avatarVersion: number | null;
+    /** Whether vendors you deal with are shown your name and picture when you act (plan 05zt) */
+    vendorVisible: boolean;
     createdAt: string;
   };
   sessions: {
@@ -81,6 +86,8 @@ export async function getProfile(
       email: user.email,
       wallet: user.wallet,
       displayName: user.displayName,
+      avatarVersion: await avatarVersion(db, user.id),
+      vendorVisible: user.vendorVisible,
       createdAt: user.createdAt.toISOString(),
     },
     sessions: activeSessions.map((s) => ({

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { scanLogs, symbolonVaultAbi, symbolonContracts, type Deployment } from "@symbolon/chain";
-import { businesses, members, users, type Database } from "@symbolon/db";
+import { businesses, members, userAvatars, users, type Database } from "@symbolon/db";
 import { and, eq } from "drizzle-orm";
 import { getAddress, type Hex, type PublicClient } from "viem";
 
@@ -18,6 +18,8 @@ export interface TeamMemberView {
   email: string | null;
   /** The name the person gave themselves, when they did (a label only) */
   displayName: string | null;
+  /** When they last set a picture, or null (plan 05zs) */
+  avatarVersion: number | null;
   wallet: string | null;
   appRole: Role;
   budgets: string[];
@@ -78,9 +80,11 @@ export async function listTeamMembers(
       email: users.email,
       displayName: users.displayName,
       wallet: users.wallet,
+      avatarAt: userAvatars.updatedAt,
     })
     .from(members)
     .innerJoin(users, eq(users.id, members.userId))
+    .leftJoin(userAvatars, eq(userAvatars.userId, members.userId))
     .where(eq(members.businessId, businessId))
     .orderBy(members.createdAt);
 
@@ -181,6 +185,7 @@ export async function listTeamMembers(
         userId: m.userId,
         email: m.email,
         displayName: m.displayName,
+        avatarVersion: m.avatarAt ? m.avatarAt.getTime() : null,
         wallet: m.wallet,
         appRole: m.role,
         budgets: m.budgets ?? [],

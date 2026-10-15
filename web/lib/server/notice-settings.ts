@@ -14,7 +14,7 @@ export const KIND_LABELS: Record<string, { label: string; group: string }> = {
   change_ready: { label: "A queued change is ready to apply", group: "Needs you" },
   steward_run_failed: { label: "A Steward run failed", group: "Needs you" },
   payment_sent: { label: "A payment was sent", group: "Payments" },
-  money_moved: { label: "Money moved in or out of the Vault", group: "Payments" },
+  money_moved: { label: "A teammate moved money in or out of the Vault", group: "Payments" },
   invoice_paid: { label: "Your invoice was paid", group: "As a vendor" },
   invoice_declined: { label: "A business declined your invoice", group: "As a vendor" },
   invoice_reopened: { label: "A business reopened your invoice", group: "As a vendor" },

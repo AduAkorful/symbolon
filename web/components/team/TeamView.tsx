@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { Avatar } from "@/components/Avatar";
+import { avatarUrl } from "@/lib/avatar-url";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Overlay } from "@/components/Overlay";
 import { QueuedChangeList } from "@/components/QueuedChange";
@@ -290,6 +292,7 @@ export function TeamView({
                 <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
                   <div className="min-w-0">
                     <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <Avatar name={nameOf(m)} src={avatarUrl(m.userId, m.avatarVersion)} size={32} />
                       <span className="break-all font-medium text-ink">{nameOf(m)}</span>
                       <StatusPill tone="neutral" className="capitalize">{m.appRole}</StatusPill>
                     </p>

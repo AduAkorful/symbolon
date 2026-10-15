@@ -23,3 +23,5 @@ export * from "./notice-delivery.js";
 export * from "./domain-notifications.js";
 export * from "./counter-lifecycle.js";
 export * from "./telegram-link.js";
+export * from "./avatar.js";
+export * from "./actor-by.js";

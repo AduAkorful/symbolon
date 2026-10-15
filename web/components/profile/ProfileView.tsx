@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { useExportWallet, usePrivy, useWallets } from "@privy-io/react-auth";
 import { Avatar } from "@/components/Avatar";
+import { PictureEditor } from "@/components/profile/PictureEditor";
 import { postJson } from "@/lib/client/api";
 import type { ProfileData } from "@/lib/server/profile";
 import { formatDateTime } from "@/lib/format";
@@ -25,10 +26,25 @@ export function ProfileView({ initialData }: { initialData: ProfileData }) {
   const embedded = primary ? wallets.find((w) => w.address.toLowerCase() === primary && w.walletClientType === "privy") : undefined;
   const [exportProblem, setExportProblem] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState(initialData.user.displayName ?? "");
+  const [vendorVisible, setVendorVisible] = useState(initialData.user.vendorVisible);
+  const [visibilityBusy, setVisibilityBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [signingOut, startSignOut] = useTransition();
+
+  async function toggleVendorVisible(next: boolean) {
+    setVisibilityBusy(true);
+    setProblem(null);
+    try {
+      await postJson("/api/profile", { vendorVisible: next });
+      setVendorVisible(next);
+    } catch (err) {
+      setProblem(err instanceof Error ? err.message : "Couldn't update that setting.");
+    } finally {
+      setVisibilityBusy(false);
+    }
+  }
 
   async function handleSaveName(e: React.FormEvent) {
     e.preventDefault();
@@ -76,7 +92,7 @@ export function ProfileView({ initialData }: { initialData: ProfileData }) {
       <section aria-labelledby="identity-heading" className="space-y-4">
         <SectionTitle id="identity-heading">Identity</SectionTitle>
         <div className="flex flex-col gap-6 rounded-doc border border-rule px-6 py-6 sm:flex-row sm:items-start">
-          <Avatar name={userIdentifier} size={56} />
+          <PictureEditor userId={initialData.user.id} name={userIdentifier} initialVersion={initialData.user.avatarVersion} />
           <div className="min-w-0 flex-1 space-y-6">
             <form onSubmit={handleSaveName} className="space-y-3">
               <Field label="Name shown to teammates" hint="Shown beside your verified email or wallet. It never identifies a signer on an onchain document.">
@@ -89,6 +105,17 @@ export function ProfileView({ initialData }: { initialData: ProfileData }) {
               </Field>
               {saved ? <p role="status" className="text-sm text-ok">Name updated.</p> : null}
             </form>
+
+            <label className="flex max-w-[60ch] items-start gap-3 text-sm">
+              <input type="checkbox" className="mt-1" checked={vendorVisible} disabled={visibilityBusy} onChange={(e) => void toggleVendorVisible(e.target.checked)} />
+              <span>
+                <span className="font-medium text-ink">Show my name and picture to vendors I deal with</span>
+                <span className="mt-0.5 block text-graphite">
+                  When you decline an invoice, verify a vendor or answer an Early Pay offer, the vendor is told who did it. Turned off, they see only your role
+                  (for example, “an owner of Acme”). Earlier notices keep what they said.
+                </span>
+              </span>
+            </label>
 
             <dl className="divide-y divide-rule-soft border-t border-rule text-sm">
               <div className="grid gap-1 py-3.5 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4">
@@ -176,7 +203,7 @@ export function ProfileView({ initialData }: { initialData: ProfileData }) {
       <section aria-labelledby="notify-heading" className="space-y-4">
         <SectionTitle id="notify-heading">Notifications</SectionTitle>
         <div className="rounded-doc border border-rule px-6 py-5">
-          <p className="max-w-[60ch] text-sm text-ink">Notices appear under the bell at the top of every page. Email, Slack, Telegram and push delivery aren’t available yet.</p>
+          <p className="max-w-[60ch] text-sm text-ink">Notices appear under the bell at the top of every page. Choose which ones also reach you on Telegram or your devices under “Notifications outside the app” above.</p>
         </div>
       </section>
 

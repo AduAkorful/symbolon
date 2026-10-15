@@ -2,6 +2,7 @@ import "server-only";
 import { plainRunError } from "../run-error";
 import { tidyMoney } from "./decision-text";
 import { formatDateTime } from "../format";
+import { byPhrase } from "@symbolon/core";
 
 export interface NotificationDescriberInput {
   kind: string;
@@ -220,7 +221,7 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
 
     // ─── Vendor-side notifications ────────────────────────────────────────────
     case "verification_requested": {
-      const name = typeof body.businessName === "string" ? body.businessName : "A business";
+      const name = byPhrase(body, "A business");
       return {
         title: "A business asked to verify you",
         body: `${name} requested a verification code for your Seal. They will contact you over a channel they already trust.`,
@@ -229,12 +230,12 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
     }
 
     case "verified_by_business": {
-      const name = typeof body.businessName === "string" ? body.businessName : "A business";
+      const name = byPhrase(body, "A business");
       return { title: "You're verified", body: `${name} verified you as a vendor.`, href: "/vendor" };
     }
 
     case "added_as_payee": {
-      const name = typeof body.businessName === "string" ? body.businessName : "A business";
+      const name = byPhrase(body, "A business");
       return { title: "You were added as a payee", body: `${name} added you as a payee. Their invoices to you can be paid once the waiting period passes.`, href: "/vendor" };
     }
 
@@ -253,7 +254,7 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
     }
 
     case "invoice_declined": {
-      const business = typeof body.businessName === "string" && body.businessName ? body.businessName : "A business";
+      const business = byPhrase(body, "A business");
       const invoiceNumber = typeof body.invoiceNumber === "string" ? body.invoiceNumber : "an invoice";
       const reason = typeof body.reason === "string" && body.reason ? ` Reason: ${truncate(body.reason)}` : "";
       return {
@@ -264,7 +265,7 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
     }
 
     case "invoice_reopened": {
-      const business = typeof body.businessName === "string" && body.businessName ? body.businessName : "A business";
+      const business = byPhrase(body, "A business");
       const invoiceNumber = typeof body.invoiceNumber === "string" ? body.invoiceNumber : "an invoice";
       return {
         title: `Invoice reopened: ${invoiceNumber}`,
@@ -296,7 +297,7 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
     case "offer_countered": {
       return {
         title: "Early Pay counter-offer",
-        body: "The business made a counter-offer on your Early Pay discount request.",
+        body: `${byPhrase(body, "The business")} made a counter-offer on your Early Pay discount request.`,
         href: subject ? `/vendor/invoices/${subject}/early` : "/vendor",
       };
     }
@@ -304,7 +305,7 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
     case "offer_declined": {
       return {
         title: "Early Pay offer declined",
-        body: "Your Early Pay discount offer was declined.",
+        body: `${byPhrase(body, "The business")} declined your Early Pay discount offer.`,
         href: subject ? `/vendor/invoices/${subject}/early` : "/vendor",
       };
     }

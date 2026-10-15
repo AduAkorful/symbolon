@@ -2,8 +2,12 @@ import "server-only";
 
 import { businesses, decisions, invoices, users, type Database } from "@symbolon/db";
 import { eq } from "drizzle-orm";
-import { notifyBusiness, notifyVendor } from "@symbolon/core";
+import { notifyBusiness, notifyVendor, type ByFields } from "@symbolon/core";
 import { hashRecord, type DecisionRecord } from "@symbolon/steward";
+import { byFor } from "./actor-by";
+
+/** The person-actions a vendor is told about, with the person shown as the plan 05zt describes */
+const VENDOR_VISIBLE_ACTIONS = new Set(["vendor_code_requested", "vendor_verified_invitation", "vendor_verified_code", "vendor_verification_second_confirmed", "payee_added", "invoice_declined", "invoice_reopened", "offer_declined", "counter_sent"]);
 
 /** App actions are decisions too: the record is append-only and uses the same canonical hash as Steward decisions. */
 export async function appendAppDecision(
@@ -41,7 +45,8 @@ export async function appendAppDecision(
     hash,
     txHash: txHash ?? input.txHash ?? null,
   }).onConflictDoNothing();
-  await notifyForDecision(db, businessId, input, txHash ?? input.txHash, hash);
+  const by: ByFields = VENDOR_VISIBLE_ACTIONS.has(input.kind) ? await byFor(db, businessId, input.actor) : {};
+  await notifyForDecision(db, businessId, input, txHash ?? input.txHash, hash, by);
   if (input.kind === "vendor_verification_awaiting_second" || input.kind === "vendor_invitation_awaiting_second") {
     const eventId = String(input.inputs.verificationId ?? input.inputs.invitationId ?? input.subject);
     const raiser = String(input.inputs.invitedBy ?? input.actor);
@@ -56,7 +61,7 @@ export async function appendAppDecision(
     const [invoice] = await db.select({ seal: invoices.seal, invoiceNumber: invoices.invoiceNumber }).from(invoices).where(eq(invoices.fingerprint, input.subject));
     const [biz] = await db.select({ name: businesses.name }).from(businesses).where(eq(businesses.id, businessId)).limit(1);
     if (invoice) await notifyVendor(db, invoice.seal, { kind: "invoice_declined", subject: input.subject,
-      body: { businessName: biz?.name ?? null, invoiceNumber: invoice.invoiceNumber, reason: input.inputs.reason ?? null }, dedupeKey: `declined:${input.subject}:${hash}` });
+      body: { businessName: biz?.name ?? null, invoiceNumber: invoice.invoiceNumber, reason: input.inputs.reason ?? null, ...by }, dedupeKey: `declined:${input.subject}:${hash}` });
   }
   // the owners are told when a rule change is waiting and when an upgrade landed, including the person who did it (QA REL4-6)
   if (input.kind === "change_queued" || input.kind === "upgrade_applied") {
@@ -74,12 +79,13 @@ export async function appendAppDecision(
     const [invoice] = await db.select({ seal: invoices.seal, invoiceNumber: invoices.invoiceNumber }).from(invoices).where(eq(invoices.fingerprint, input.subject));
     const [biz] = await db.select({ name: businesses.name }).from(businesses).where(eq(businesses.id, businessId)).limit(1);
     if (invoice) await notifyVendor(db, invoice.seal, { kind: "invoice_reopened", subject: input.subject,
-      body: { businessName: biz?.name ?? null, invoiceNumber: invoice.invoiceNumber }, dedupeKey: `reopened:${input.subject}:${hash}` });
+      body: { businessName: biz?.name ?? null, invoiceNumber: invoice.invoiceNumber, ...by }, dedupeKey: `reopened:${input.subject}:${hash}` });
   }
   if ((input.kind === "offer_declined" || input.kind === "counter_sent") && input.subject) {
     const [invoice] = await db.select({ seal: invoices.seal }).from(invoices).where(eq(invoices.fingerprint, input.subject));
+    const [biz] = await db.select({ name: businesses.name }).from(businesses).where(eq(businesses.id, businessId)).limit(1);
     if (invoice) await notifyVendor(db, invoice.seal, { kind: input.kind === "counter_sent" ? "offer_countered" : "offer_declined", subject: input.subject,
-      body: { businessId }, dedupeKey: input.kind === "counter_sent" ? `counter:${input.subject}` : `${input.kind}:${String(input.inputs.offerId)}` });
+      body: { businessId, businessName: biz?.name ?? null, ...by }, dedupeKey: input.kind === "counter_sent" ? `counter:${input.subject}` : `${input.kind}:${String(input.inputs.offerId)}` });
   }
 }
 
@@ -101,26 +107,27 @@ async function notifyForDecision(
   input: { kind: string; subject?: string; actor: string; inputs: Record<string, unknown> },
   txHash: string | undefined,
   decisionHash: string,
+  by: ByFields,
 ): Promise<void> {
   const needsBusiness = input.subject && (input.kind === "vendor_code_requested" || input.kind === "payee_added" || VENDOR_VERIFIED_KINDS.has(input.kind));
   const [biz] = needsBusiness ? await db.select({ name: businesses.name }).from(businesses).where(eq(businesses.id, businessId)).limit(1) : [];
 
   if (input.kind === "vendor_code_requested" && input.subject) {
     await notifyVendor(db, input.subject, {
-      kind: "verification_requested", subject: input.subject, body: { businessId, businessName: biz?.name ?? null },
+      kind: "verification_requested", subject: input.subject, body: { businessId, businessName: biz?.name ?? null, ...by },
       dedupeKey: `code:${String(input.inputs.verificationId ?? decisionHash)}`,
     });
   }
   if (VENDOR_VERIFIED_KINDS.has(input.kind) && input.subject) {
     await notifyVendor(db, input.subject, {
-      kind: "verified_by_business", subject: input.subject, body: { businessId, businessName: biz?.name ?? null },
+      kind: "verified_by_business", subject: input.subject, body: { businessId, businessName: biz?.name ?? null, ...by },
       dedupeKey: `verified:${businessId}:${input.subject.toLowerCase()}`,
     });
   }
   if (input.kind === "payee_added" && input.subject) {
     await notifyVendor(db, input.subject, {
       kind: "added_as_payee", subject: input.subject,
-      body: { businessId, businessName: biz?.name ?? null, activeAt: input.inputs.activeAt ?? null },
+      body: { businessId, businessName: biz?.name ?? null, activeAt: input.inputs.activeAt ?? null, ...by },
       dedupeKey: `payee:${businessId}:${txHash ?? decisionHash}`,
     });
   }
