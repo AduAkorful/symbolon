@@ -281,6 +281,13 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
       </section>
 
       {/* Invoices that only need a sign-off and aren't due yet (plan 05zp) */}
+      {data.notYetApprovable.signoffAhead.length === 0 && data.notYetApprovable.count > 0 ? (
+        <p className="max-w-[64ch] text-sm text-graphite">
+          {data.mode === "auto"
+            ? "Invoices that only need a sign-off before their due date are listed here once the Steward has looked at them. The ones below are held back by something else."
+            : "In Assisted mode the Steward asks for each sign-off on the invoice’s due date. Switch to Autonomous to sign ahead of time, or use Pay now on the invoice."}
+        </p>
+      ) : null}
       {data.notYetApprovable.signoffAhead.length > 0 ? (
         <section aria-labelledby="ahead-title" className="space-y-4 border-t border-rule pt-8">
           <div>

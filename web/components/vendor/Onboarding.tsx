@@ -139,9 +139,11 @@ export function Onboarding({ wallet, signer, next = "/vendor" }: { wallet: strin
               </p>
               {wallet ? (
                 <>
-                  <p className="mt-4 text-sm text-graphite">
-                    Your Seal is the wallet you signed in with: <Address value={wallet} full />. Registering asks that wallet to sign your handle and name, so they are yours and not just a record on our server.
-                  </p>
+                  <div className="mt-4 text-sm text-graphite">
+                    <p>Your Seal is the wallet you signed in with:</p>
+                    <p className="mt-1 text-ink"><Address value={wallet} full /></p>
+                    <p className="mt-2">Registering asks that wallet to sign your handle and name, so they are yours and not just a record on our server.</p>
+                  </div>
                   <p className="mt-2 text-sm text-graphite">
                     The name and handle below are what businesses see. They don’t prove who you are: a business checks that for itself before it adds you as a payee.
                   </p>

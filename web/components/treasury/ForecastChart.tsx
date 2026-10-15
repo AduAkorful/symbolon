@@ -23,7 +23,7 @@ const PAD_B = 44;
 const plotH = H - PAD_T - PAD_B;
 
 /** A balance in thousands as "$20.0k" or "−$23.0k" */
-const k = (v: number) => `${v < 0 ? "−" : ""}$${Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}k`;
+const k = (v: number, sym = "$") => `${v < 0 ? "−" : ""}${sym}${Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}k`;
 
 /** A label cut to `max` characters with an ellipsis, so it can't run out of the plot */
 const clip = (text: string, max: number) => {
@@ -46,6 +46,8 @@ export function ForecastChart({
   events = [],
   dates = [],
   tableRows = [],
+  symbol = "$",
+  name = "Operating balance",
 }: {
   start: number;
   days?: number;
@@ -53,6 +55,9 @@ export function ForecastChart({
   buffer?: number;
   events?: ForecastEvent[];
   dates?: ForecastDate[];
+  /** The currency sign the amounts carry; EURC has its own chart because it is held and paid apart from USDC (QA UI-5) */
+  symbol?: string;
+  name?: string;
   tableRows?: {
     day: number;
     date: string;
@@ -89,7 +94,8 @@ export function ForecastChart({
     low = Math.min(low, running);
     high = Math.max(high, running);
   }
-  const span = Math.max(high - low, 10);
+  // the scale follows the data: a fixed minimum span left small balances squashed at the bottom under a dead band (QA UI-5)
+  const span = Math.max(high - low, Math.max(Math.abs(high), Math.abs(low)) * 0.25, 0.05);
   const yMin = low - span * 0.08;
   const yMax = high + span * 0.12;
 
@@ -112,10 +118,17 @@ export function ForecastChart({
   const redeem = points.find((p) => p.e.kind === "redeem");
   const biggestBill = points.filter((p) => p.e.kind === "bill").sort((a, b) => a.e.delta - b.e.delta)[0];
   const axisY = H - PAD_B + 6;
+  // "Today" and "Buffer" both sit at the left edge: when their lines are close, the one lower down is written under its line
+  // so the two never print on top of each other (QA UI-5)
+  const hasBuffer = buffer !== undefined && buffer > yMin;
+  const close = hasBuffer && Math.abs(y(start) - y(buffer!)) < 20;
+  const todayY = close && start < buffer! ? y(start) + 18 : Math.max(PAD_T - 8, y(start) - 10);
+  const bufferY = hasBuffer ? (close && start >= buffer! ? y(buffer!) + 16 : y(buffer!) - 6) : 0;
   const zeroVisible = yMin < 0;
 
   return (
-    <div className="mt-6">
+    <div className="mt-3">
+      {tableRows.length > 0 ? (
       <div className="mb-3 flex justify-end">
         <Segmented
           label="Show the forecast as"
@@ -129,17 +142,18 @@ export function ForecastChart({
           className="w-48"
         />
       </div>
+      ) : null}
 
       {viewMode === "chart" ? (
         <figure ref={box} className="relative">
-          <svg width={width} height={H} viewBox={`0 0 ${width} ${H}`} className="block max-w-full" role="img" aria-label="Operating balance over the forecast period">
+          <svg width={width} height={H} viewBox={`0 0 ${width} ${H}`} className="block max-w-full" role="img" aria-label={`${name} over the forecast period`}>
             {/* below the buffer */}
             {buffer !== undefined && buffer > yMin ? (
               <>
                 <rect x={padL} y={y(buffer)} width={plotW} height={Math.max(0, y(yMin) - y(buffer))} fill="var(--red)" opacity="0.07" />
                 <line x1={padL} x2={padL + plotW} y1={y(buffer)} y2={y(buffer)} stroke="var(--red)" strokeWidth="1" strokeDasharray="4 4" opacity="0.8" />
-                <text x={padL + 6} y={y(buffer) - 6} fontSize="12" fill="var(--graphite)">
-                  Buffer {k(buffer)}
+                <text x={padL + 6} y={bufferY} fontSize="12" fill="var(--graphite)">
+                  Buffer {k(buffer, symbol)}
                 </text>
               </>
             ) : null}
@@ -149,7 +163,7 @@ export function ForecastChart({
               <>
                 <line x1={padL} x2={padL + plotW} y1={y(0)} y2={y(0)} stroke="var(--graphite)" strokeWidth="1" opacity="0.6" />
                 <text x={padL + plotW - 4} y={y(0) - 6} fontSize="12" textAnchor="end" fill="var(--graphite)">
-                  $0
+                  {symbol}0
                 </text>
               </>
             ) : null}
@@ -173,7 +187,7 @@ export function ForecastChart({
               <g>
                 <line x1={x(redeem.e.day)} x2={x(redeem.e.day)} y1={y(redeem.before)} y2={y(redeem.after)} stroke="var(--seal)" strokeWidth="3" />
                 <text x={x(redeem.e.day) - 10} y={y(redeem.after) - 10} fontSize="12" textAnchor="end" fill="var(--ink)" fontWeight="600">
-                  +{k(redeem.e.delta)} from reserve
+                  +{k(redeem.e.delta, symbol)} from reserve
                 </text>
               </g>
             ) : null}
@@ -181,26 +195,26 @@ export function ForecastChart({
             {biggestBill && !narrow ? (
               <text x={x(biggestBill.e.day) + 8} y={(y(biggestBill.before) + y(biggestBill.after)) / 2} fontSize="12" fill="var(--ink)">
                 <tspan fontWeight="600">{clip(biggestBill.e.label, Math.max(12, Math.floor((padL + plotW - x(biggestBill.e.day) - 90) / 7)))}</tspan>
-                <tspan dx="6" fill="var(--graphite)">{k(biggestBill.e.delta)}</tspan>
+                <tspan dx="6" fill="var(--graphite)">{k(biggestBill.e.delta, symbol)}</tspan>
               </text>
             ) : null}
 
             <circle cx={x(days)} cy={y(end)} r="4" fill="var(--ink)" />
             <text x={padL + plotW + 10} y={y(end) + 4} fontSize="13" fontWeight="600" fill="var(--ink)">
-              {k(end)}
+              {k(end, symbol)}
             </text>
-            <text x={x(0) + 2} y={Math.max(PAD_T - 8, y(start) - 10)} fontSize="12" fill="var(--graphite)">
-              Today {k(start)}
+            <text x={x(0) + 2} y={todayY} fontSize="12" fill="var(--graphite)">
+              Today {k(start, symbol)}
             </text>
 
             {points.map((p) => (
               <rect key={p.e.day + p.e.label} x={x(p.e.day) - 12} y={Math.min(y(p.before), y(p.after)) - 8} width="24" height={Math.abs(y(p.before) - y(p.after)) + 16} fill="transparent">
-                <title>{`${p.e.label}: ${p.e.delta > 0 ? "+" : "−"}${k(Math.abs(p.e.delta)).replace("$", "$")} → ${k(p.after)}`}</title>
+                <title>{`${p.e.label}: ${p.e.delta > 0 ? "+" : "−"}${k(Math.abs(p.e.delta), symbol)} → ${k(p.after, symbol)}`}</title>
               </rect>
             ))}
           </svg>
           <figcaption className="sr-only">
-            Operating balance starts at {k(start)} and ends at {k(end)} over {days} days.
+            {name} starts at {k(start, symbol)} and ends at {k(end, symbol)} over {days} days.
           </figcaption>
         </figure>
       ) : (

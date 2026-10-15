@@ -255,6 +255,19 @@ export function TreasuryView({
           <SectionTitle id="ahead">The next five weeks</SectionTitle>
           <p className="mt-1 text-sm text-graphite">Based on invoices you’ve received. It doesn’t include money you expect to receive.{eurcShortfall ? ` The line is the USDC balance; EURC is held and paid separately, so its ${eur(eurcShortfall.due)} of bills are not drawn on it.` : ""}</p>
           <ForecastChart start={operatingUsdc / 1000} days={35} {...(bufferLine !== null ? { buffer: bufferLine } : {})} events={chartEvents} dates={chartDates} tableRows={state.forecast.days} />
+          {state.forecast.eurc ? (
+            <div className="mt-8">
+              <SmallTitle>EURC, held and paid separately</SmallTitle>
+              <ForecastChart
+                symbol="€"
+                name="EURC balance"
+                start={parseFloat(state.forecast.eurc.start) / 1000}
+                days={35}
+                events={state.forecast.eurc.events.map((e) => ({ day: e.day, delta: e.delta / 1000, label: `${e.vendor} (${e.invoiceNumber})`, kind: "bill" as const }))}
+                dates={chartDates}
+              />
+            </div>
+          ) : null}
         </section>
 
         <section aria-labelledby="budgets" className="min-w-0 space-y-8">

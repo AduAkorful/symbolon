@@ -79,6 +79,26 @@ export function humanizeKind(kind: string): string {
  * and app-level actions (steward_mode_changed, steward_fees_funded, payee_added, po_opened, po_closed,
  * delivery_confirmed, delivery_rejected).
  */
+/** The vendor's signed offer the Steward looked at and why it wasn't taken, said first (plan 05zu 3.1, 3.2) */
+function considered(record: Record<string, unknown>): string {
+  const options = Array.isArray(record.options) ? (record.options as { kind?: unknown; discountBps?: unknown; reasons?: unknown }[]) : [];
+  const offers = options.filter((o) => o.kind === "offer" && typeof o.discountBps === "number");
+  if (offers.length === 0) return "";
+  const best = offers.sort((a, b) => Number(b.discountBps) - Number(a.discountBps))[0]!;
+  const reasons = Array.isArray(best.reasons) ? (best.reasons as string[]) : [];
+  const plain = (r: string) =>
+    /annualized/.test(r) ? "its return is below your minimum spread over the reserve yield"
+    : /forecast buffer/.test(r) ? "paying early would take cash below your buffer"
+    : /cap on cash/.test(r) ? "it would go over your cap on early payments"
+    : /expired/.test(r) ? "the offer has expired"
+    : /off for this business/.test(r) ? "Early Pay is off for this business"
+    : /already due/.test(r) ? "it is already due"
+    : r;
+  const pct = (Number(best.discountBps) / 100).toFixed(2).replace(/\.?0+$/, "");
+  if (reasons.length === 0) return `Considered the ${pct}% offer. `;
+  return `Considered the ${pct}% offer, not taken: ${plain(reasons[0]!)}. `;
+}
+
 export function summarizeDecision(record: Record<string, unknown>): DecisionSummary {
   const s = summarizeRecord(record);
   return { ...s, sentence: tidyMoney(s.sentence), ...(s.explanation ? { explanation: tidyMoney(s.explanation) } : {}) };
@@ -126,12 +146,10 @@ function summarizeRecord(record: Record<string, unknown>): DecisionSummary {
       // since plan 05zj C a scheduled decision records the Vault rules that would stop a payment today
       const blockers = Array.isArray(inputs.blockers) ? (inputs.blockers as { rule: string; detail: string }[]) : [];
       const inTheWay = blockers.filter((b) => b.rule !== "ApprovalRequired").map((b) => describeRule(b, { seal: "" }).title);
-      return {
-        sentence: inTheWay.length > 0
-          ? `Scheduled for the due date. In the way today: ${inTheWay.join("; ")}`
-          : "Scheduled for payment on the due date",
-        explanation,
-      };
+      const base = inTheWay.length > 0
+        ? `Scheduled for the due date. In the way today: ${inTheWay.join("; ")}`
+        : "Scheduled for payment on the due date";
+      return { sentence: `${considered(record)}${base}`, explanation };
     }
 
     case "reject": {

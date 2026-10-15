@@ -99,8 +99,8 @@ export function describeRule(failure: { rule: string; detail: string }, ctx: Blo
         rule,
         kind: "info",
         title: "The Steward can't pay this on its own",
-        detail: `${sentence(detail)} The owner or an approver can pay it now with Pay now, or the Steward asks in Approvals when it comes due.`,
-        action: { label: "Open approvals", href: "/business/approvals" },
+        // Approvals lists it only once it is due (or ahead of time in Autonomous mode), so no link here: it would open an empty list (QA STW-2)
+        detail: `${sentence(detail)} The owner or an approver can pay it now with Pay now. Otherwise it appears in Approvals when it comes due; in Autonomous mode it is listed there ahead of time under "Coming up that need your sign-off".`,
       };
     case "CrossChainPayout":
     case "CrossChainTokenUnsupported":

@@ -116,6 +116,8 @@ export interface TreasuryState {
     }[];
     runwayDays: number | null;
     runwayStatement: string;
+    /** EURC is held and paid apart from USDC, so its bills get their own line (QA UI-5); null when no EURC bill is due in the horizon */
+    eurc: { start: string; events: { day: number; delta: number; vendor: string; invoiceNumber: string }[] } | null;
     events: {
       day: number;
       date: string;
@@ -402,6 +404,20 @@ export async function loadTreasury(
       };
     });
 
+  const eurcFlows = flowsWithToken.filter((f) => f.token === eurcAddress && f.at <= nowSec + BigInt(FORECAST_HORIZON_DAYS) * 86_400n);
+  const eurcForecast =
+    eurcBal !== null && eurcFlows.length > 0
+      ? {
+          start: formatUnits(eurcBal, eurcDecimals),
+          events: eurcFlows.map((f) => ({
+            day: Math.max(0, Number((f.at - nowSec) / 86_400n)),
+            delta: -Number(formatUnits(f.amount, eurcDecimals)),
+            vendor: f.vendor,
+            invoiceNumber: f.invoiceNumber,
+          })),
+        }
+      : null;
+
   // Shortfalls per token (buffer horizon: 30 days)
   const balancesMap = new Map<string, bigint>();
   if (usdcBal !== null) balancesMap.set(usdcAddress, usdcBal);
@@ -538,6 +554,7 @@ export async function loadTreasury(
       days: chartDays,
       runwayDays: runway ?? null,
       runwayStatement,
+      eurc: eurcForecast,
       events: chartEvents,
     },
     shortfalls: shortfallsList,

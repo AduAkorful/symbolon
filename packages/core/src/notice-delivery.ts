@@ -8,7 +8,7 @@ export type DeliveryChannel = "telegram" | "push";
 
 /** The only kinds a person can choose to receive off-app. Anything else stays in the bell. */
 export const DELIVERABLE_KINDS = {
-  business: ["approval_needed", "invoice_held", "shortfall", "change_ready", "steward_run_failed", "payment_sent", "money_moved"],
+  business: ["approval_needed", "invoice_held", "invoice_blocked", "shortfall", "change_ready", "steward_run_failed", "payment_sent", "money_moved"],
   vendor: [
     "invoice_paid",
     "invoice_declined",

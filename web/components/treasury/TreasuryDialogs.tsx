@@ -593,7 +593,7 @@ export function EarlyPayModal({
           {(a) => <input {...a} type="number" inputMode="decimal" step="0.1" min="0" max="100" value={minSpreadPercent} onChange={(e) => setMinSpreadPercent(e.target.value)} className={controlClass} />}
         </Field>
 
-        <Field label="Most operating cash to commit (%)" hint="The share of operating cash that Early Pay may tie up at one time.">
+        <Field label="Most committed at once (%)" hint="The share of operating cash that Early Pay may tie up at one time.">
           {(a) => <input {...a} type="number" inputMode="decimal" step="1" min="0" max="100" value={cashCapPercent} onChange={(e) => setCashCapPercent(e.target.value)} className={controlClass} />}
         </Field>
 

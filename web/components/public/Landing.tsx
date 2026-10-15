@@ -44,7 +44,8 @@ export function Landing() {
   const hero = useRef<HTMLElement>(null);
 
   useLayoutEffect(() => {
-    if (!hero.current || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    // on a phone the first screen is the content, not a performance: it shows at once (QA UI-22)
+    if (!hero.current || window.matchMedia("(prefers-reduced-motion: reduce)").matches || window.matchMedia("(max-width: 767px)").matches) return;
     registerMotion();
     const ctx = gsap.context(() => {
       const tl = gsap.timeline({ delay: 0.15 });

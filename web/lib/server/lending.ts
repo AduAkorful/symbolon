@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, lte } from "drizzle-orm";
 import { formatUnits, getAddress, parseUnits, type Address, type Hex, type PublicClient } from "viem";
 
 import {
@@ -13,7 +13,7 @@ import {
   type Deployment,
 } from "@symbolon/chain";
 import { lendingYield } from "@symbolon/core";
-import { businesses, decisions, queuedChanges, type Database } from "@symbolon/db";
+import { businesses, decisions, invoices, queuedChanges, type Database } from "@symbolon/db";
 import { hashRecord, type DecisionRecord } from "@symbolon/steward";
 
 import { requireMember } from "./access";
@@ -83,6 +83,8 @@ export interface LendingView {
   /** Realised from stored share-price samples; null until there is a week of them */
   yield: { bps: number; days: number } | null;
   minOperating: string;
+  /** USDC still owed on open invoices due within the buffer (raw units); null when it can't be worked out (plan 05zu 3.4) */
+  billsDue: string | null;
   paused: boolean;
   /** A lending-policy change that is queued and not yet applied: the card says so, with the time the queue itself shows (QA REL4-2, REL4-3) */
   /** What is queued, from its own summary: whether lending ends up on, the most of the cash, and the vault's name */
@@ -124,6 +126,7 @@ export async function loadLending(
     exit: null,
     yield: null,
     minOperating: "0",
+    billsDue: null,
     paused: false,
   };
   const contracts = symbolonContracts(client, deployment);
@@ -162,6 +165,7 @@ export async function loadLending(
       exit: exit ? (exit.ok ? { ok: true, assets: exit.assets.toString() } : { ok: false, reason: exit.reason }) : null,
       yield: yieldNow,
       minOperating: reserve.minOperating.toString(),
+      billsDue: await usdcBillsDue(db, businessId, deployment).catch(() => null),
       paused: state.paused,
       ...(queued ? { pendingChange: pendingFrom(queued, venues) } : {}),
     };
@@ -359,4 +363,20 @@ export async function prepareLendingRedeem(
   );
   const call = vaultCall(vault, "redeemLending", [shares, minAssets, decisionHash]);
   return { ...toTransaction(call), chainId, shares: shares.toString(), minAssets: minAssets.toString(), expected: sim.assets.toString(), decisionHash };
+}
+
+/** What this business still owes in USDC on open invoices due within its buffer, from our own records (nothing is read from the chain) */
+async function usdcBillsDue(db: Database, businessId: string, deployment: Deployment): Promise<string> {
+  const [biz] = await db.select({ days: businesses.bufferDays }).from(businesses).where(eq(businesses.id, businessId)).limit(1);
+  const horizon = new Date(Date.now() + (biz?.days ?? 30) * 86_400_000);
+  const rows = await db
+    .select({ total: invoices.total, credited: invoices.credited })
+    .from(invoices)
+    .where(and(
+      eq(invoices.businessId, businessId),
+      eq(invoices.token, deployment.tokens.usdc.toLowerCase()),
+      inArray(invoices.status, ["verified", "scheduled", "awaiting_approval", "partially_paid"]),
+      lte(invoices.dueDate, horizon),
+    ));
+  return rows.reduce((sum, r) => sum + (r.total > r.credited ? r.total - r.credited : 0n), 0n).toString();
 }

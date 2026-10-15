@@ -8,6 +8,8 @@ import { getDb } from "./db";
 import type { CurrentSession } from "./http";
 import { checkReleaseNudge } from "./release";
 import { readVaultState } from "./vault-read";
+import { avatarUrl } from "../avatar-url";
+import { avatarVersion } from "./avatar";
 
 /** Which business a person last opened. A convenience only: the server checks membership again on every use (plan 05g, S7). */
 export const BUSINESS_COOKIE = "symbolon_business";
@@ -20,6 +22,8 @@ export interface Where {
   business: Spaces["businesses"][number] | null;
   /** The person's own wallet, shown under their email so they can see which address is their Seal and receives payouts */
   wallet: string | null;
+  /** The person's own picture, when they set one (plan 05zs): drawn in the account menu only */
+  picture: string | null;
 }
 
 export async function loadSpaces(session: CurrentSession): Promise<Where> {
@@ -38,5 +42,6 @@ export async function loadSpaces(session: CurrentSession): Promise<Where> {
     void readVaultState(client, config.deployment, business.vault);
     void checkReleaseNudge(client, config.deployment, getAddress(business.vault));
   }
-  return { who, spaces, business, wallet: shown ?? null };
+  const picture = avatarUrl(session.user.id, await avatarVersion(await getDb(), session.user.id).catch(() => null)) ?? null;
+  return { who, spaces, business, wallet: shown ?? null, picture };
 }

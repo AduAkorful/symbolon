@@ -23,6 +23,7 @@ export function useSentTransaction() {
   const [phase, setPhase] = useState<SentPhase>("idle");
   const [error, setError] = useState<string | null>(null);
   const pending = useRef<{ record: (hash: string) => Promise<unknown>; onDone?: (result: unknown, hash: string) => void } | null>(null);
+  const inFlight = useRef(false);
 
   const settle = useCallback(async (sent: string) => {
     const job = pending.current;
@@ -50,24 +51,31 @@ export function useSentTransaction() {
    */
   const run = useCallback(
     async <T,>(job: { send: () => Promise<string>; record: (hash: string) => Promise<T>; onDone?: (result: T, hash: string) => void }) => {
+      // a second activation before the screen has re-rendered (a double click, Enter plus click) must not open a second
+      // wallet request: the guard is synchronous, state is not (plan 05zu 3.7, QA PAY-dup)
+      if (inFlight.current) return;
+      inFlight.current = true;
       setError(null);
       setPhase("sending");
       let sent: string;
       try {
         sent = await job.send();
       } catch (e) {
+        inFlight.current = false;
         setPhase("idle");
         throw e;
       }
       pending.current = { record: job.record, onDone: job.onDone as ((result: unknown, hash: string) => void) | undefined };
       setHash(sent);
       await settle(sent);
+      inFlight.current = false;
     },
     [settle],
   );
 
   const check = useCallback(() => (hash ? settle(hash) : Promise.resolve()), [hash, settle]);
   const reset = useCallback(() => {
+    inFlight.current = false;
     pending.current = null;
     setHash(null);
     setPhase("idle");

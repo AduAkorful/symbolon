@@ -258,6 +258,8 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
       const sent_fp = saved.fingerprint;
       setSent(saved);
       setStep("sent");
+      // the address says where the invoice lives, so a reload or a shared tab shows it, not a blank form (QA NEW-6)
+      try { window.history.replaceState(window.history.state, "", `/vendor/invoices/${saved.fingerprint}`); } catch { /* the page still shows the result */ }
       // the address bar names the invoice, so the result survives a reload and the link can be shared (QA NEW-6)
       try { window.history.replaceState(null, "", `/vendor/invoices/${sent_fp}`); } catch { /* the page still shows the result */ }
       try { sessionStorage.removeItem(DRAFT_KEY(handle)); } catch { /* nothing to clear */ }

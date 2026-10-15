@@ -88,7 +88,7 @@ async function Frame({
                 </Link>
               ) : null}
               <Bell unreadCount={unreadCount ?? 0} />
-              <SpaceSwitcher spaces={where.spaces} current={current} who={where.who} wallet={where.wallet} compact />
+              <SpaceSwitcher spaces={where.spaces} current={current} who={where.who} wallet={where.wallet} picture={where.picture} compact />
             </div>
           </div>
         </header>
@@ -124,7 +124,7 @@ async function Frame({
             <Wordmark />
           </Link>
           <div className="lg:mt-7">
-            <SpaceSwitcher spaces={where.spaces} current={current} who={where.who} wallet={where.wallet} />
+            <SpaceSwitcher spaces={where.spaces} current={current} who={where.who} wallet={where.wallet} picture={where.picture} />
           </div>
         </div>
         <BusinessNav inboxCount={navCounts?.inbox} approvalsCount={navCounts?.approvals} settingsDot={<ReleaseDotSlot biz={biz} />} />

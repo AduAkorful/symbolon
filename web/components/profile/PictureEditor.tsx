@@ -47,7 +47,8 @@ export function PictureEditor({ userId, name, initialVersion }: { userId: string
       const res = await fetch("/api/profile/avatar", { method: "POST", headers: { "Content-Type": blob.type }, body: blob });
       const out = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
       if (!res.ok) throw new Error(out.error ?? "That didn't work. Try again.");
-      setVersion(Date.now());
+      const stored = out.url ? Number(new URL(out.url, window.location.origin).searchParams.get("v")) : NaN;
+      setVersion(Number.isFinite(stored) && stored > 0 ? stored : Date.now());
       setDone("Picture updated.");
     } catch (e) {
       setProblem(e instanceof Error ? e.message : "That didn't work. Try again.");
@@ -77,7 +78,7 @@ export function PictureEditor({ userId, name, initialVersion }: { userId: string
     <div className="space-y-2">
       <p className="text-sm font-medium text-ink">Your picture</p>
       <div className="flex items-center gap-4">
-        <Avatar name={name} src={avatarUrl(userId, version)} size={56} />
+        <Avatar key={version ?? "none"} name={name} src={avatarUrl(userId, version)} size={56} />
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="secondary" size="sm" disabled={busy} onClick={() => input.current?.click()}>
             {version === null ? "Choose a picture" : "Change picture"}

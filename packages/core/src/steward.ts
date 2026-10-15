@@ -117,6 +117,15 @@ export async function runSteward(env: StewardEnv, businessId: string): Promise<S
     }
     if (status === "awaiting_approval") await notifyBusiness(db, businessId, { kind: "approval_needed", subject: fp,
       body: { invoiceNumber: row.invoiceNumber }, dedupeKey: `approval:${fp}` });
+    // a scheduled invoice with a rule in its way that no approval can fix: the owner hears now, not on the due date (plan 05zu 3.3)
+    if (result.record.kind === "schedule") {
+      const blockers = ((result.record.inputs as { blockers?: { rule: string; detail: string }[] }).blockers ?? []).filter((b) => b.rule !== "ApprovalRequired");
+      if (blockers.length > 0) {
+        const key = [...new Set(blockers.map((b) => b.rule))].sort().join(",");
+        await notifyBusiness(db, businessId, { kind: "invoice_blocked", subject: fp,
+          body: { invoiceNumber: row.invoiceNumber, rules: blockers }, dedupeKey: `blocked:${fp}:${key}` });
+      }
+    }
     // an invoice the Steward newly holds is a thing a person has to look at (plan 05zj E, D11 a); one notice per reason
     if (status === "held" && row.status !== "held") {
       const reason = String(result.record.rule ?? "");
@@ -148,6 +157,12 @@ function statusFor(r: StewardResult, mode: string, currentStatus?: string): (typ
   }
 }
 
+/** The signed offers a decision looked at: a new or changed offer is a new fact, even when the outcome is the same (plan 05zu) */
+export function offersOf(record: { options?: unknown } | undefined): string {
+  const list = Array.isArray(record?.options) ? (record!.options as { kind?: unknown; discountBps?: unknown; payBy?: unknown }[]) : [];
+  return JSON.stringify(list.filter((o) => o?.kind === "offer").map((o) => `${String(o.discountBps)}:${String(o.payBy)}`).sort());
+}
+
 /** Appends the decision unless the last one for this invoice says the same thing; a sent tx gets its own row */
 /** The same test `storeDecision` applies before it stores, asked early so an unchanged decision costs no model request */
 async function repeatsLastDecision(db: Database, businessId: string, record: StewardResult["record"]): Promise<boolean> {
@@ -159,12 +174,13 @@ async function repeatsLastDecision(db: Database, businessId: string, record: Ste
     .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, subject)))
     .orderBy(desc(decisions.createdAt))
     .limit(1);
-  const lastRecord = last?.record as { kind?: string; outcome?: string; rule?: string; inputs?: { blockers?: unknown } } | undefined;
+  const lastRecord = last?.record as { kind?: string; outcome?: string; rule?: string; inputs?: { blockers?: unknown }; options?: unknown } | undefined;
   if (!lastRecord) return false;
   const blockersOf = (inputs: { blockers?: unknown } | undefined) => JSON.stringify(inputs?.blockers ?? null);
   return (
     lastRecord.kind === record.kind && lastRecord.outcome === record.outcome && lastRecord.rule === record.rule &&
-    blockersOf(lastRecord.inputs) === blockersOf(record.inputs as { blockers?: unknown })
+    blockersOf(lastRecord.inputs) === blockersOf(record.inputs as { blockers?: unknown }) &&
+    offersOf(lastRecord) === offersOf(record as { options?: unknown })
   );
 }
 
@@ -177,12 +193,13 @@ async function storeDecision(db: Database, businessId: string, r: StewardResult)
       .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, subject)))
       .orderBy(desc(decisions.createdAt))
       .limit(1);
-    const lastRecord = last?.record as { kind?: string; outcome?: string; rule?: string; inputs?: { blockers?: unknown } } | undefined;
+    const lastRecord = last?.record as { kind?: string; outcome?: string; rule?: string; inputs?: { blockers?: unknown }; options?: unknown } | undefined;
     // a scheduled invoice's blockers change over time (a screening lapses, the Vault is paused); that is a new fact to keep
     const blockersOf = (inputs: { blockers?: unknown } | undefined) => JSON.stringify(inputs?.blockers ?? null);
     if (
       !r.txHash && lastRecord && lastRecord.kind === r.record.kind && lastRecord.outcome === r.record.outcome && lastRecord.rule === r.record.rule &&
-      blockersOf(lastRecord.inputs) === blockersOf(r.record.inputs as { blockers?: unknown })
+      blockersOf(lastRecord.inputs) === blockersOf(r.record.inputs as { blockers?: unknown }) &&
+      offersOf(lastRecord) === offersOf(r.record as { options?: unknown })
     ) return;
   }
   await db

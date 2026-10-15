@@ -36,7 +36,7 @@ function BusinessOption({ name, role, here, itemClass }: { name: string; role: s
   );
 }
 
-export function SpaceSwitcher({ spaces, current, who, wallet = null, compact = false }: { spaces: SwitcherSpaces; current: Current; who: string; wallet?: string | null; compact?: boolean }) {
+export function SpaceSwitcher({ spaces, current, who, wallet = null, picture = null, compact = false }: { spaces: SwitcherSpaces; current: Current; who: string; wallet?: string | null; picture?: string | null; compact?: boolean }) {
   const { logout } = usePrivy();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -131,8 +131,9 @@ export function SpaceSwitcher({ spaces, current, who, wallet = null, compact = f
             // hangs from the button's right edge so it can't run off a phone screen; in the wide sidebar it matches the button's width
             compact ? "min-w-[15rem] max-w-[min(22rem,calc(100vw-2rem))]" : "min-w-[17rem] lg:left-0 lg:min-w-0"
           }`}>
-          <p className="truncate px-2.5 pb-1.5 pt-1 text-xs text-graphite">
-            Signed in as <span className="text-ink">{who}</span>
+          <p className="flex items-center gap-2 truncate px-2.5 pb-1.5 pt-1 text-xs text-graphite">
+            {picture ? <Avatar name={who} src={picture} size={24} /> : null}
+            <span className="truncate">Signed in as <span className="text-ink">{who}</span></span>
           </p>
           {wallet && who.toLowerCase() !== wallet.toLowerCase() && !who.startsWith("0x") ? (
             <p className="break-all px-2.5 pb-1.5 font-mono text-[11px] text-graphite" title="Your wallet: your Seal, and where payouts go">{wallet}</p>

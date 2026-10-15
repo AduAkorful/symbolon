@@ -3,6 +3,7 @@ import { plainRunError } from "../run-error";
 import { tidyMoney } from "./decision-text";
 import { formatDateTime } from "../format";
 import { byPhrase } from "@symbolon/core";
+import { describeRule } from "../blockers";
 
 export interface NotificationDescriberInput {
   kind: string;
@@ -89,6 +90,18 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
       return {
         title: `Held: ${invoiceNumber}`,
         body: reason.charAt(0).toUpperCase() + reason.slice(1),
+        href: subject ? `/business/inbox/${subject}` : "/business/inbox",
+      };
+    }
+
+    // plan 05zu: raised early, while the invoice is still only scheduled, for things an approval can't fix
+    case "invoice_blocked": {
+      const invoiceNumber = typeof body.invoiceNumber === "string" ? body.invoiceNumber : "An invoice";
+      const rules = Array.isArray(body.rules) ? (body.rules as { rule?: unknown; detail?: unknown }[]) : [];
+      const titles = [...new Set(rules.filter((r) => typeof r.rule === "string").map((r) => describeRule({ rule: String(r.rule), detail: String(r.detail ?? "") }, { seal: "" }).title))];
+      return {
+        title: `Can't be paid on its due date: ${invoiceNumber}`,
+        body: titles.length > 0 ? `${titles.join("; ")}. Open the invoice to see what can be done.` : "Something stands in the way. Open the invoice to see what.",
         href: subject ? `/business/inbox/${subject}` : "/business/inbox",
       };
     }

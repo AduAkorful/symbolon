@@ -149,13 +149,23 @@ function formatAmount(raw: bigint, decimals: number): string {
   return decimals === 0 ? s : `${s.slice(0, -decimals)}.${s.slice(-decimals)}`;
 }
 
+/**
+ * The rules that stood in a payment's way, from a stored decision's inputs. A scheduled decision keeps them under `blockers`
+ * (plan 05zj C); a decision that went on to be checked against the Vault keeps them under `policy.failures`.
+ */
+export function findingFailures(inputs: unknown): { rule: string; detail: string }[] {
+  const i = (inputs ?? {}) as { blockers?: unknown; policy?: { failures?: unknown } };
+  const list = Array.isArray(i.blockers) ? i.blockers : Array.isArray(i.policy?.failures) ? i.policy!.failures : [];
+  return (list as { rule?: unknown; detail?: unknown }[]).filter((f) => typeof f?.rule === "string").map((f) => ({ rule: String(f.rule), detail: String(f.detail ?? "") }));
+}
+
 const NOT_YET_STATUSES = ["verified", "held", "scheduled", "partially_paid"] as const;
 
 /**
  * Open invoices that can't reach this list yet, and why, from the Steward's latest recorded finding for each (the rules it
  * mirrored from the Vault). Reads only the database; an invoice with no finding is counted with "no recommendation yet".
  */
-async function loadNotYetApprovable(db: Database, businessId: string, ctx: { autoMode: boolean; canApprove: boolean }): Promise<NotYetApprovable> {
+export async function loadNotYetApprovable(db: Database, businessId: string, ctx: { autoMode: boolean; canApprove: boolean }): Promise<NotYetApprovable> {
   const open = await db
     .select({ fingerprint: invoices.fingerprint, status: invoices.status, envelope: invoices.envelope, invoiceNumber: invoices.invoiceNumber, dueDate: invoices.dueDate, total: invoices.total, seal: invoices.seal })
     .from(invoices)
@@ -176,7 +186,7 @@ async function loadNotYetApprovable(db: Database, businessId: string, ctx: { aut
     for (const o of open) {
       if (o.status !== "scheduled") continue;
       const record = latest.get(o.fingerprint.toLowerCase());
-      const failures = (record?.inputs as { policy?: { failures?: { rule: string; detail: string }[] } } | undefined)?.policy?.failures ?? [];
+      const failures = findingFailures(record?.inputs);
       if (failures.length === 0 || !failures.every((f) => f.rule === "ApprovalRequired")) continue;
       let vendor = o.seal;
       let token = "";
@@ -196,7 +206,7 @@ async function loadNotYetApprovable(db: Database, businessId: string, ctx: { aut
         amountFormatted: formatAmount(o.total, decimals),
         token,
         dueDate: o.dueDate,
-        needs: failures.some((f) => /owner/i.test(f.detail)) ? "owner" : "approver",
+        needs: failures.some((f) => /needs the owner's sign-off/i.test(f.detail)) ? "owner" : "approver",
         canSign: ctx.canApprove,
       });
     }
@@ -205,7 +215,7 @@ async function loadNotYetApprovable(db: Database, businessId: string, ctx: { aut
 
   const counts = new Map<string, number>();
   for (const fp of subjects) {
-    const failures = (latest.get(fp)?.inputs as { policy?: { failures?: { rule: string; detail: string }[] } } | undefined)?.policy?.failures ?? [];
+    const failures = findingFailures(latest.get(fp)?.inputs);
     const named = failures.filter((f) => f.rule !== "ApprovalRequired").map((f) => describeRule(f, { seal: "" }).title);
     const record = latest.get(fp);
     const outcome = String(record?.outcome ?? "");
@@ -471,7 +481,7 @@ export async function prepareApproval(
       .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, fingerprint)))
       .orderBy(desc(decisions.createdAt))
       .limit(1);
-    const failures = (finding?.record as { inputs?: { policy?: { failures?: { rule: string }[] } } } | undefined)?.inputs?.policy?.failures ?? [];
+    const failures = findingFailures((finding?.record as { inputs?: unknown } | undefined)?.inputs);
     signingAhead = failures.length > 0 && failures.every((f) => f.rule === "ApprovalRequired");
   }
   if (invRow.status !== "awaiting_approval" && !signingAhead) {

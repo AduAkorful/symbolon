@@ -113,7 +113,7 @@ export function checkPayment(facts: VaultFacts, intent: PaymentIntent): PolicyCh
     }
 
     approval = requiredApproval(facts, p, outflow);
-    if (intent.approvalHeld < approval) fail("ApprovalRequired", approval === ApprovalLevel.Owner ? "needs the owner's sign-off" : "needs an approver's sign-off");
+    if (intent.approvalHeld < approval) fail("ApprovalRequired", approval === ApprovalLevel.Owner ? "needs the owner's sign-off" : "needs a sign-off from an approver or the owner");
   }
 
   return { ok: failures.length === 0, failures, requiredApproval: approval, budgetId, outflow };

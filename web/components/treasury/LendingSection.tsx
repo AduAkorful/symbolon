@@ -18,6 +18,7 @@ import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { postJson, postRecord } from "@/lib/client/api";
 import { recordQueuedChange } from "@/lib/client/queued-actions";
 import { formatDateTime, showMoney } from "@/lib/format";
+import { lendingShortfall } from "@/lib/lending-math";
 import type { LendingView } from "@/lib/server/lending";
 
 // The lending reserve (plan 05zk): one lending vault the owner chose, opt-in and capped. It is a lending-risk tier, never
@@ -178,6 +179,17 @@ export function LendingSection({ businessId, signer, explorer, isOwner }: { busi
             </div>
           ) : null}
           {view.paused ? <p className="text-sm text-graphite">Payments are paused: moving cash in is blocked; taking it out still works for the owner.</p> : null}
+          {view.policy.enabled && !view.paused && view.billsDue !== null && BigInt(view.cash) <= BigInt(view.billsDue) + BigInt(view.minOperating) ? (
+            <p className="text-sm text-graphite">
+              Nothing is moved into lending while USDC bills due within your buffer ({money(view.billsDue)}) are at least the cash ({money(view.cash)}).
+              The Steward moves only what is left after bills and the operating floor.
+            </p>
+          ) : null}
+          {view.policy.enabled && view.minOperating === "0" ? (
+            <p className="text-sm text-graphite">
+              The operating floor is {money("0")}, so nothing keeps cash back for bills except the Steward’s own check. You can raise it under Change policy.
+            </p>
+          ) : null}
         </div>
       )}
 
@@ -392,6 +404,9 @@ function LendingMoveDialog({
   const tx = useSentTransaction();
   const deposit = kind === "deposit";
 
+  // plan 05zu 3.4: said before signing, from numbers already on the page; the Vault's own limits stay the final word
+  const shortfallAfter = deposit ? lendingShortfall({ cash: view.cash, billsDue: view.billsDue, minOperating: view.minOperating, amount }) : null;
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (signer.kind !== "wallet") {
@@ -429,6 +444,14 @@ function LendingMoveDialog({
         <p className="text-sm text-graphite">
           {deposit ? `The Vault holds ${money(view.cash)} in cash.` : view.lendingValue !== null ? `The lending vault holds ${money(view.lendingValue)} for this Vault.` : ""}
         </p>
+        {deposit && shortfallAfter ? (
+          <Callout tone="warn" title="This would leave less cash than your bills need">
+            <p>
+              USDC bills due within your buffer are {money(view.billsDue!)} and the Vault holds {money(view.cash)}. After this move it would hold {money(shortfallAfter.left.toString())}.
+              {shortfallAfter.most !== null ? ` The most that keeps bills covered is ${money(shortfallAfter.most.toString())}.` : " Nothing can be moved in without leaving bills short."} You can still go ahead; the Vault enforces its own limits.
+            </p>
+          </Callout>
+        ) : null}
         {!deposit ? (
           <label className="flex min-h-11 items-center gap-3 rounded-doc border border-rule px-4">
             <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} className="h-4 w-4 accent-[var(--seal)]" />

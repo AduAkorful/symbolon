@@ -36,6 +36,8 @@ interface PolicyViewProps extends PolicyViewData {
 function fieldDelta(current: bigint | number, draft: bigint | number, looserWhen: "higher" | "lower") {
   const c = BigInt(current);
   const d = BigInt(draft);
+  // a negative value is not a setting at all; it is not "looser" (QA SYM-28)
+  if (d < 0n) return { label: "not valid", color: "text-red font-medium" };
   if (c === d) return { label: "unchanged", color: "text-graphite" };
   const looser = looserWhen === "higher" ? d > c : d < c;
   return looser

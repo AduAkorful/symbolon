@@ -157,7 +157,7 @@ export function EarlyPayClient({ invoice, offers: initialOffers, suggested, sign
 
       <PageTitle className="mt-3">Get paid early</PageTitle>
       <Lead className="mt-3">
-        {invoice.clientName} owes {money(remainingRaw)}, due {invoice.dueDate} ({invoice.dueDays} days from now). Offer a discount signed by your Seal; their Steward or team reviews it and can pay you early.
+        {invoice.clientName} owes {money(remainingRaw)}, due {formatDay(invoice.dueDate, { year: "always" })} ({invoice.dueDays} days from now). Offer a discount signed by your Seal; their Steward or team reviews it and can pay you early.
       </Lead>
 
       {error ? <InlineError className="mt-6">{error}</InlineError> : null}
