@@ -1,4 +1,5 @@
 import { notifications, type Database } from "@symbolon/db";
+import { emitInserted } from "./notice-delivery.js";
 
 export interface NotifyInput {
   userId: string;
@@ -29,6 +30,8 @@ export async function notify(
     .returning({ id: notifications.id });
 
   if (row) {
+    // mirrored off-app after the row exists; a failure there never fails the notice (plan 05zr)
+    await emitInserted([row.id]);
     return { id: row.id, duplicate: false };
   }
   return { duplicate: true };
@@ -56,5 +59,6 @@ export async function notifyMany(
     .onConflictDoNothing()
     .returning({ id: notifications.id });
 
+  await emitInserted(rows.map((r) => r.id));
   return { inserted: rows.length, duplicates: inputs.length - rows.length };
 }

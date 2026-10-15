@@ -13,6 +13,7 @@ import { controlClass, Field } from "@/components/ui/Field";
 import { InlineError } from "@/components/ui/States";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { Lead, PageTitle, SectionTitle } from "@/components/ui/Type";
+import { NoticeSettings } from "@/components/profile/NoticeSettings";
 
 export function ProfileView({ initialData }: { initialData: ProfileData }) {
   const router = useRouter();
@@ -69,6 +70,8 @@ export function ProfileView({ initialData }: { initialData: ProfileData }) {
       </div>
 
       {problem ? <InlineError>{problem}</InlineError> : null}
+
+      <NoticeSettings />
 
       <section aria-labelledby="identity-heading" className="space-y-4">
         <SectionTitle id="identity-heading">Identity</SectionTitle>

@@ -45,6 +45,8 @@ export const users = pgTable(
     privyUserId: text("privy_user_id"),
     /** Optional display name (1..80 chars, only a label; plan 05u N7) */
     displayName: text("display_name"),
+    /** Which notice kinds go to which off-app channel (plan 05zr); the shape is cleaned by `cleanPrefs` on every read */
+    noticePrefs: jsonb("notice_prefs").$type<Record<string, unknown>>().notNull().default({}),
     createdAt: createdAt(),
   },
   (t) => [
@@ -784,3 +786,41 @@ export const budgets = pgTable(
 );
 
 
+
+/** A person's linked Telegram chat (plan 05zr). One chat per account and one account per chat. */
+export const telegramLinks = pgTable(
+  "telegram_links",
+  {
+    userId: uuid("user_id").primaryKey().references(() => users.id),
+    chatId: text("chat_id").notNull(),
+    linkedAt: timestamp("linked_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("telegram_links_chat_key").on(t.chatId)],
+);
+
+/** One-time codes for linking: only the SHA-256 is stored, the code lives in the link the signed-in person opens (plan 05zr 4.1) */
+export const telegramLinkCodes = pgTable(
+  "telegram_link_codes",
+  {
+    codeHash: text("code_hash").primaryKey(),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("telegram_link_codes_user_idx").on(t.userId)],
+);
+
+/** A browser or installed app that agreed to receive push (plan 05zr 4a). Several per person. */
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    label: text("label"),
+    createdAt: createdAt(),
+    lastOkAt: timestamp("last_ok_at", { withTimezone: true }),
+  },
+  (t) => [uniqueIndex("push_subscriptions_endpoint_key").on(t.endpoint), index("push_subscriptions_user_idx").on(t.userId)],
+);
