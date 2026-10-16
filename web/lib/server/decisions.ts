@@ -9,7 +9,7 @@ import { hashRecord, type DecisionRecord } from "@symbolon/steward";
 import { requireMember, type Role } from "./access";
 import { anchorState, type DecisionAnchorInfo } from "./anchoring";
 import type { ChainSettings } from "./business";
-import { summarizeDecision } from "./decision-text";
+import { humanizeKind, summarizeDecision } from "./decision-text";
 import { AuthError } from "./errors";
 import type { SessionUser } from "./session";
 
@@ -30,7 +30,11 @@ export interface DecisionDetailView {
   id: string;
   businessId: string;
   kind: string;
+  /** What the record is called to a person (never the stored code word) */
+  kindLabel: string;
   subject: string | null;
+  /** What the record is about, in words: the invoice's own number, or the setting; null if nothing readable */
+  subjectLabel: string | null;
   hash: string;
   hashMatches: boolean;
   canonicalJson: string;
@@ -166,7 +170,9 @@ export async function loadDecision(
     id: row.id,
     businessId: row.businessId,
     kind: row.kind,
+    kindLabel: humanizeKind(row.kind),
     subject: row.subject,
+    subjectLabel: await subjectLabelFor(db, businessId, row.subject),
     hash: row.hash,
     hashMatches,
     canonicalJson,
@@ -183,6 +189,22 @@ export async function loadDecision(
     anchor,
     since,
   };
+}
+
+/** "settings:early_pay" → "Early pay"; an invoice fingerprint → "Invoice <number>"; a hash with no invoice row → null */
+async function subjectLabelFor(db: Database, businessId: string, subject: string | null): Promise<string | null> {
+  if (!subject) return null;
+  if (/^0x[0-9a-fA-F]{64}$/.test(subject)) {
+    const [inv] = await db
+      .select({ number: invoices.invoiceNumber })
+      .from(invoices)
+      .where(and(eq(invoices.businessId, businessId), eq(invoices.fingerprint, subject.toLowerCase() as Hex)))
+      .limit(1);
+    return inv?.number ? `Invoice ${inv.number}` : null;
+  }
+  const parts = subject.split(":");
+  if (parts[0] === "vault" && parts.length > 1) return `Vault ${parts[parts.length - 1]!.replace(/[_-]+/g, " ")}`;
+  return humanizeKind(parts.length > 1 ? parts.slice(1).join(" ") : subject);
 }
 
 /**

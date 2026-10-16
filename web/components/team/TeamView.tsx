@@ -187,7 +187,14 @@ export function TeamView({
     }
   }
 
-  const nameOf = (m: TeamMemberView) => m.displayName || m.email || (m.wallet ? checksum(m.wallet) : "Member");
+  // the same label Activity uses: a person with no name or email is their role and shortened checksummed wallet (QA VIS-6)
+  const nameOf = (m: TeamMemberView) => {
+    if (m.displayName || m.email) return (m.displayName || m.email) as string;
+    const role = m.appRole.charAt(0).toUpperCase() + m.appRole.slice(1);
+    if (!m.wallet) return role;
+    const c = checksum(m.wallet);
+    return `${role} ${c.slice(0, 6)}…${c.slice(-4)}`;
+  };
   const onchainLabel = (m: TeamMemberView) =>
     m.onchainRole === "owner" ? { text: "Vault owner", tone: "neutral" as const }
     : m.onchainRole === "approver_all" ? { text: "Approver, all budgets", tone: "ok" as const }
@@ -298,8 +305,8 @@ export function TeamView({
                     </p>
                     {m.displayName && m.email ? <p className="mt-0.5 text-sm text-graphite">{m.email}</p> : null}
                     {!m.displayName && !m.email ? <p className="mt-0.5 text-sm text-graphite">No name yet. A name can be added on the Profile page.</p> : null}
-                    {/* a person with no name or email is already shown by their wallet: the address is not printed twice (plan 05zj G, SYM-50) */}
-                    {m.wallet && (m.displayName || m.email) ? <div className="mt-1 text-sm text-graphite"><Address value={m.wallet} full /></div> : null}
+                    {/* the title shortens a nameless person's wallet, so the full address always stands here once (plan 05zj G, SYM-50; QA VIS-6) */}
+                    {m.wallet ? <div className="mt-1 text-sm text-graphite"><Address value={m.wallet} full /></div> : null}
                     <p className="mt-2 flex flex-wrap items-center gap-2 text-sm">
                       <span className="text-graphite">In the Vault:</span>
                       <StatusPill tone={onchain.tone}>{onchain.text}</StatusPill>

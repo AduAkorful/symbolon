@@ -22,7 +22,9 @@ export function BusinessOffers({ businessId, fingerprint, view, symbol, pay }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const open = view.offers.filter((o) => o.status === "open" && o.signature);
-  if (!open.length && !view.counter) return null;
+  // offers that are no longer open stay on the page, so "no offer" is never said while one was made (QA STW-6)
+  const earlier = view.offers.filter((o) => o.signature && !(o.status === "open"));
+  if (!open.length && !view.counter && !earlier.length) return null;
   async function act(action: "decline" | "counter", offerId?: string) {
     setBusy(true); setError(null);
     try {
@@ -49,6 +51,15 @@ export function BusinessOffers({ businessId, fingerprint, view, symbol, pay }: {
       ) : null}
       {view.canAct && pay?.unavailable ? <p className="mt-1 text-xs text-graphite">{pay.unavailable}</p> : null}
     </div>)}
+    {!open.length && earlier.length ? <p className="mt-3 text-sm text-graphite">No offer is open right now.</p> : null}
+    {earlier.length ? (
+      <div className="mt-3 text-sm">
+        <p className="text-xs uppercase tracking-wide text-graphite">Earlier offers</p>
+        <ul className="mt-1 space-y-1 text-graphite">
+          {earlier.map((o) => <li key={o.id}>{o.discountPercent}% · {formatDateTime(new Date(o.createdAt))} · <span className="capitalize">{o.status}</span></li>)}
+        </ul>
+      </div>
+    ) : null}
     {view.counter ? <div className="mt-3 text-sm"><p>Steward recommends requesting {(view.counter.discountBps / 100).toFixed(2)}%. The vendor must sign fresh terms before payment.</p>
       {view.canAct ? <button disabled={busy} className="mt-2 underline" onClick={() => act("counter")}>Send this counter</button> : null}</div> : null}
     {error ? <p role="alert" className="mt-3 text-sm text-red">{error}</p> : null}

@@ -1,5 +1,6 @@
 import { and, asc, desc, eq } from "drizzle-orm";
-import { getAddress, type Address, type Hex } from "viem";
+import { getAddress, keccak256, stringToBytes, type Address, type Hex } from "viem";
+import { canonicalJson } from "@symbolon/seal";
 
 import {
   lendingSharePrice,
@@ -125,6 +126,7 @@ export async function runLending(env: StewardEnv, businessId: string, opts: Trea
   const base = { version: 1 as const, business: businessId, at: new Date(Number(now) * 1000).toISOString(), mode };
   let record: DecisionRecord;
   let build: (hash: Hex) => ContractCall;
+  let moved = 0n;
 
   if (plan.action === "deposit") {
     const quoted = await previewLendingDeposit(env.client, venue, plan.assets);
@@ -137,6 +139,7 @@ export async function runLending(env: StewardEnv, businessId: string, opts: Trea
       rule: "keep the buffer in cash; the excess goes to the owner's lending vault within the owner's cap",
       outcome: mode === "auto" ? "depositing" : "proposed",
     }) as DecisionRecord;
+    moved = plan.assets;
     build = (hash) => vaultCall(vault, "depositLending", [plan.assets, minShares, hash]);
   } else {
     const sim = await simulateLendingExit(env.client, venue, vault, plan.shares);
@@ -150,6 +153,7 @@ export async function runLending(env: StewardEnv, businessId: string, opts: Trea
       rule: "redeem from the lending vault ahead of bills so the operating buffer holds",
       outcome: mode === "auto" ? "redeeming" : "proposed",
     }) as DecisionRecord;
+    moved = sim.assets;
     build = (hash) => vaultCall(vault, "redeemLending", [plan.shares, minAssets, hash]);
   }
 
@@ -179,5 +183,32 @@ export async function runLending(env: StewardEnv, businessId: string, opts: Trea
   if (mode !== "auto" || !wallet) return { action: plan.action, reason: plan.reason, unavailable: plan.unavailable, record, hash, call };
   await simulateCall(env.client, call, wallet.address);
   const txHash = await wallet.send(call);
+  // The sent transaction is its own row that supersedes the decision (as an invoice payment's is), and the owners hear about it:
+  // a move the Steward makes with the Vault's money must never be visible only on the chain (QA LEND-3)
+  const [prev] = await env.db.select({ id: decisions.id }).from(decisions).where(eq(decisions.hash, hash));
+  const txRecord = { version: 1, kind: "tx", decision: hash, txHash };
+  await env.db
+    .insert(decisions)
+    .values({
+      businessId,
+      kind: "tx",
+      subject,
+      record: txRecord,
+      hash: keccak256(stringToBytes(canonicalJson(txRecord))),
+      txHash: txHash.toLowerCase(),
+      ...(prev ? { supersedes: prev.id } : {}),
+    })
+    .onConflictDoNothing();
+  await notifyBusiness(
+    env.db,
+    businessId,
+    {
+      kind: "lending_moved",
+      subject: null,
+      body: { direction: plan.action === "deposit" ? "in" : "out", amount: moved.toString(), reason: plan.reason },
+      dedupeKey: `lending_moved:${txHash.toLowerCase()}`,
+    },
+    { roles: ["owner"] },
+  ).catch(() => undefined);
   return { action: plan.action, reason: plan.reason, unavailable: plan.unavailable, record, hash, call, txHash };
 }

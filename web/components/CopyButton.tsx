@@ -16,7 +16,7 @@ export function CopyButton({ value, label }: { value: string; label: string }) {
         );
         setTimeout(() => setState("idle"), 1800);
       }}
-      className="ml-2 shrink-0 whitespace-nowrap rounded-doc px-2 py-1 text-xs text-graphite hover:text-ink"
+      className="ml-2 inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-doc px-2 py-1 text-xs text-graphite hover:text-ink pointer-coarse:min-h-11 pointer-coarse:min-w-11"
     >
       {state === "copied" ? "Copied" : state === "failed" ? "Couldn't copy" : "Copy"}
     </button>

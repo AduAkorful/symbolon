@@ -223,7 +223,9 @@ export function EarlyPayClient({ invoice, offers: initialOffers, suggested, sign
               <p className="mt-1 text-graphite">Expires {formatDateTime(new Date(openOffer.validUntil))}. Waiting for {invoice.clientName}’s Steward or team. If they decline or it expires, you are still paid in full on the due date.</p>
             </Callout>
           ) : (
-            <EmptyState title="No offer yet">Use the form to propose a discount for being paid early.</EmptyState>
+            offers.length > 0
+              ? <EmptyState title="No open offer">Your last offer was {offers[0]!.discountPercent}% and is {offers[0]!.status}. It is listed under History below. Use the form to make another.</EmptyState>
+              : <EmptyState title="No offer yet">Use the form to propose a discount for being paid early.</EmptyState>
           )}
 
           {offers.length > 0 ? (

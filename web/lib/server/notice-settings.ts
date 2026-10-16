@@ -10,6 +10,7 @@ import { createLinkCode, linkedChat, telegramConfig, unlinkChat } from "./telegr
 export const KIND_LABELS: Record<string, { label: string; group: string }> = {
   approval_needed: { label: "An invoice needs your approval", group: "Needs you" },
   invoice_held: { label: "An invoice was held", group: "Needs you" },
+  lending_moved: { label: "The Steward moved cash into or out of lending", group: "Payments" },
   invoice_blocked: { label: "An invoice can't be paid on its due date", group: "Needs you" },
   shortfall: { label: "A currency may run short", group: "Needs you" },
   change_ready: { label: "A queued change is ready to apply", group: "Needs you" },

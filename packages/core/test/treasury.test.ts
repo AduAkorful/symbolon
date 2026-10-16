@@ -254,7 +254,9 @@ describe("lending run (plan 05zk)", () => {
     expect(minShares).toBe((199_000n * 10n ** 12n * 9_950n) / 10_000n);
     expect(decisionHash).toBe(r.hash);
     expect(send).toHaveBeenCalledOnce();
-    expect(await db.select().from(decisions)).toHaveLength(1);
+    // the decision, then the row that says what was sent (QA LEND-3)
+    const rows = await db.select().from(decisions);
+    expect(rows.map((d) => d.kind).sort()).toEqual(["sweep", "tx"]);
     expect(await lendingYield(db, 5_042_002, VENUE)).toBeNull(); // one sample is a price, not a rate
   });
 

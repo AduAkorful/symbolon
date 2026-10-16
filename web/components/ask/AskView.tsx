@@ -218,7 +218,7 @@ export function AskView({
         </ol>
 
         {confirmDialog}
-        <div className="mt-8 space-y-3">
+        <div className="sticky bottom-0 z-10 mt-8 space-y-3 bg-paper pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 max-sm:border-t max-sm:border-rule-soft sm:static sm:bg-transparent sm:p-0">
           {problem ? <p className="text-sm text-red" role="alert">{problem}</p> : null}
           {!viewing && log.length > 0 ? (
             <div className="flex justify-end">
@@ -226,7 +226,7 @@ export function AskView({
             </div>
           ) : null}
           {viewing ? null : typingAvailable ? (
-            <form onSubmit={handleFormSubmit} className="sticky bottom-0 z-10 -mx-1 flex gap-2 bg-paper px-1 py-3 sm:static sm:bg-transparent sm:p-0">
+            <form onSubmit={handleFormSubmit} className="flex gap-2">
               <input
                 type="text"
                 value={input}

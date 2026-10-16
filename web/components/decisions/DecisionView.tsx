@@ -87,12 +87,11 @@ export function DecisionView({ decision: d, explorerUrl }: Props) {
             </Eyebrow>
             <div className="mt-3 rounded-doc border border-rule-soft bg-paper-raised p-4 text-sm">
               <p className="text-ink">
-                Triggered by <span className="font-mono text-xs uppercase font-medium">{d.kind}</span>
-                {d.subject ? (
+                Triggered by <span className="font-medium">{d.kindLabel}</span>
+                {d.subjectLabel && !d.kindLabel.toLowerCase().includes(d.subjectLabel.toLowerCase()) ? (
                   <>
                     {" "}
-                    for subject{" "}
-                    <span className="font-mono text-xs break-all">{d.subject}</span>
+                    for <span>{d.subjectLabel}</span>
                   </>
                 ) : null}
               </p>

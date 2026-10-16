@@ -156,7 +156,7 @@ export function LendingSection({ businessId, signer, explorer, isOwner }: { busi
           <DetailList
             items={[
               { label: "Lending vault", value: <span>{view.venue?.name ?? "Not on our list"} <Address value={view.policy.venue!} explorer={explorer} /></span> },
-              { label: "Held", value: view.lendingValue === null ? "Can’t read its value right now" : `${money(view.lendingValue)} (${hasShares ? "shares held by the Vault" : "nothing yet"})` },
+              { label: "Held", value: view.lendingValue === null ? "Can’t read its value right now" : `${money(view.lendingValue)} (${hasShares ? "shares held by the Vault" : view.lastMove ? `nothing held now; last ${view.lastMove.direction === "in" ? "moved in" : "taken out"} ${formatDateTime(view.lastMove.at)}` : "nothing yet"})` },
               { label: "Most allowed", value: `${view.policy.maxLendingBps / 100}% of the Vault’s cash` },
               { label: "Operating floor", value: `Never below ${money(view.minOperating)}` },
             ]}
@@ -448,7 +448,7 @@ function LendingMoveDialog({
           <Callout tone="warn" title="This would leave less cash than your bills need">
             <p>
               USDC bills due within your buffer are {money(view.billsDue!)} and the Vault holds {money(view.cash)}. After this move it would hold {money(shortfallAfter.left.toString())}.
-              {shortfallAfter.most !== null ? ` The most that keeps bills covered is ${money(shortfallAfter.most.toString())}.` : " Nothing can be moved in without leaving bills short."} You can still go ahead; the Vault enforces its own limits.
+              {shortfallAfter.most !== null ? ` The most that keeps bills covered is ${money(shortfallAfter.most.toString())}.` : " Nothing can be moved in without leaving bills short."} While bills are short the Steward takes cash back out of the lending vault, so money moved in now would not stay there. You can still go ahead; the Vault enforces its own limits.
             </p>
           </Callout>
         ) : null}

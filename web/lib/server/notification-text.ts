@@ -1,7 +1,8 @@
 import "server-only";
 import { plainRunError } from "../run-error";
 import { tidyMoney } from "./decision-text";
-import { formatDateTime } from "../format";
+import { formatUnits } from "viem";
+import { formatDateTime, showMoney } from "../format";
 import { byPhrase } from "@symbolon/core";
 import { describeRule } from "../blockers";
 
@@ -129,6 +130,18 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
         title: "Money moved",
         body: `${by} ${what[String(body.action)] ?? "moved money"}.`,
         href: "/business/activity",
+      };
+    }
+
+    // the Steward moved the Vault's cash to or from the lending vault (QA LEND-3)
+    case "lending_moved": {
+      const inward = body.direction === "in";
+      const amount = typeof body.amount === "string" && /^\d+$/.test(body.amount) ? showMoney(formatUnits(BigInt(body.amount), 6), "USDC") : "Cash";
+      const reason = typeof body.reason === "string" && body.reason.trim() ? ` ${body.reason.trim().charAt(0).toUpperCase()}${body.reason.trim().slice(1)}${/[.!?]$/.test(body.reason.trim()) ? "" : "."}` : "";
+      return {
+        title: inward ? "Cash moved into lending" : "Cash taken back from lending",
+        body: `${inward ? `The Steward moved ${amount} into the lending vault.` : `The Steward took ${amount} back from the lending vault.`}${reason}`,
+        href: "/business/treasury",
       };
     }
 

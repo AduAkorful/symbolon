@@ -25,6 +25,8 @@ const RECORDED_ACTIONS: Record<string, string> = {
   offer_countered: "Countered an Early Pay offer",
   offer_declined: "Declined an Early Pay offer",
   early_pay_changed: "Changed Early Pay settings",
+  "settings:early_pay": "Changed Early Pay settings",
+  "settings:buffer": "Changed the cash buffer",
   credit_note: "Applied a credit note",
   invoice_cancelled: "Cancelled an invoice",
   deposit_confirmed: "Added funds to the Vault",
@@ -69,7 +71,7 @@ const RECORDED_ACTIONS: Record<string, string> = {
 
 /** "vendor_code_requested" → "Vendor code requested": the fallback for a kind the table doesn't know, so no code word reaches a screen */
 export function humanizeKind(kind: string): string {
-  const words = kind.replace(/[_-]+/g, " ").trim();
+  const words = kind.replace(/[_:-]+/g, " ").trim();
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : "A change was recorded";
 }
 

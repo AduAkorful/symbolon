@@ -85,6 +85,8 @@ export interface LendingView {
   minOperating: string;
   /** USDC still owed on open invoices due within the buffer (raw units); null when it can't be worked out (plan 05zu 3.4) */
   billsDue: string | null;
+  /** The latest move into or out of lending, by the owner or the Steward, so a position of nothing is not shown as "never" (QA LEND-3) */
+  lastMove: { direction: "in" | "out"; at: string } | null;
   paused: boolean;
   /** A lending-policy change that is queued and not yet applied: the card says so, with the time the queue itself shows (QA REL4-2, REL4-3) */
   /** What is queued, from its own summary: whether lending ends up on, the most of the cash, and the vault's name */
@@ -127,6 +129,7 @@ export async function loadLending(
     yield: null,
     minOperating: "0",
     billsDue: null,
+    lastMove: null,
     paused: false,
   };
   const contracts = symbolonContracts(client, deployment);
@@ -166,6 +169,7 @@ export async function loadLending(
       yield: yieldNow,
       minOperating: reserve.minOperating.toString(),
       billsDue: await usdcBillsDue(db, businessId, deployment).catch(() => null),
+      lastMove: await lastLendingMove(db, businessId).catch(() => null),
       paused: state.paused,
       ...(queued ? { pendingChange: pendingFrom(queued, venues) } : {}),
     };
@@ -379,4 +383,14 @@ async function usdcBillsDue(db: Database, businessId: string, deployment: Deploy
       lte(invoices.dueDate, horizon),
     ));
   return rows.reduce((sum, r) => sum + (r.total > r.credited ? r.total - r.credited : 0n), 0n).toString();
+}
+
+async function lastLendingMove(db: Database, businessId: string): Promise<{ direction: "in" | "out"; at: string } | null> {
+  const [row] = await db
+    .select({ kind: decisions.kind, createdAt: decisions.createdAt })
+    .from(decisions)
+    .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, "treasury:lending"), inArray(decisions.kind, ["sweep", "redeem"])))
+    .orderBy(desc(decisions.createdAt))
+    .limit(1);
+  return row ? { direction: row.kind === "sweep" ? "in" : "out", at: row.createdAt.toISOString() } : null;
 }
