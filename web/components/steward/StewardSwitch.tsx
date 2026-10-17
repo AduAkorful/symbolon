@@ -24,7 +24,7 @@ export function StewardSwitch(props: {
         </span>
       </p>
       <div className="mt-2">
-        <Address value={props.steward} full explorer={props.explorer} copy />
+        <Address value={props.steward} explorer={props.explorer} copy />
       </div>
       <PauseControl
         businessId={props.businessId}

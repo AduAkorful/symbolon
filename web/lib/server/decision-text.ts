@@ -194,7 +194,7 @@ function summarizeRecord(record: Record<string, unknown>): DecisionSummary {
     case "sweep": {
       if (outcome === "depositing" || inputs.venue !== undefined) {
         // QA ACT-1: a suggestion or a prepared move sits next to the "Moved …" row from the chain; say plainly which is which
-        if (inputs.actor !== undefined) return { sentence: "Prepared a move of cash into the lending vault (the move itself is listed as “Moved …”)", explanation };
+        if (inputs.actor !== undefined) return { sentence: "Prepared the lending move", explanation };
         if (outcome === "depositing") return { sentence: "Moving excess cash into the lending vault", explanation };
         return { sentence: "The Steward suggested moving cash into the lending vault (a suggestion only; no money moved)", explanation };
       }
@@ -203,7 +203,7 @@ function summarizeRecord(record: Record<string, unknown>): DecisionSummary {
 
     case "redeem": {
       if (inputs.venue !== undefined) {
-        if (inputs.actor !== undefined) return { sentence: "Prepared a withdrawal from the lending vault (the move itself is listed as “Took …”)", explanation };
+        if (inputs.actor !== undefined) return { sentence: "Prepared the lending withdrawal", explanation };
         if (outcome === "redeeming") return { sentence: "Taking cash out of the lending vault ahead of upcoming bills", explanation };
         return { sentence: "The Steward suggested taking cash out of the lending vault (a suggestion only; no money moved)", explanation };
       }

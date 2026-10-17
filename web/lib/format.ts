@@ -132,3 +132,18 @@ export function shortAddress(value: string): string {
 export function shortenAddressesIn(text: string): string {
   return text.replace(/0x[0-9a-fA-F]{40}\b/g, (a) => shortAddress(a));
 }
+
+const MONEY_IN_TEXT = /([$€])((?:\d{1,3}(?:,\d{3})+|\d+)\.\d{3,})(?![\d.,]*\d)/g;
+const TOKEN_IN_TEXT = /(?<![\d.,$€])((?:\d{1,3}(?:,\d{3})+|\d+)\.\d{3,})(\s?(?:USDC|EURC))\b/g;
+
+/**
+ * Amounts inside sentences written before money went to two decimals (QA retest 17: an old Ask answer read "operating cash of
+ * $510.386"). Only a figure marked as money, with "$"/"€" in front or "USDC"/"EURC" after, and more than two decimals is rounded,
+ * half up like `showAmount`; percentages, dates, addresses and plain numbers are left alone. For display only; the stored text,
+ * and the facts behind "Show the numbers", keep every digit.
+ */
+export function tidyMoneyInText(text: string): string {
+  return text
+    .replace(MONEY_IN_TEXT, (_m, sign: string, n: string) => `${sign}${showAmount(n.replace(/,/g, ""))}`)
+    .replace(TOKEN_IN_TEXT, (_m, n: string, unit: string) => `${showAmount(n.replace(/,/g, ""))}${unit}`);
+}

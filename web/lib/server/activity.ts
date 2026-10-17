@@ -214,6 +214,46 @@ export function describeDecision(
   }
 }
 
+export interface PreparedLendingMove {
+  itemId: string;
+  hash: string;
+  kind: "sweep" | "redeem";
+  assets: string;
+  at: number;
+}
+
+const RETRY_WINDOW_MS = 30 * 60 * 1000;
+
+/**
+ * An owner's "Move cash in" / "Take cash out" writes a decision when it is prepared, and the Vault's event carries that decision's
+ * hash once it is sent. Both rows used to be listed (QA ACT-1, retest 17), and a retried prepare added a third. The chain row is
+ * the record of the move: a prepared row it carries is dropped and the chain row links to the decision; a prepared row for the same
+ * move and amount within half an hour of one that was sent is a retry and is dropped; of unsent retries only the newest is kept.
+ * Mutates `items` in place.
+ */
+export function foldLendingMoves(items: ActivityItem[], prepared: PreparedLendingMove[], movedByDecision: Map<string, string>): void {
+  const drop = new Set<string>();
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const sent = prepared.filter((p) => movedByDecision.has(p.hash));
+  for (const p of sent) {
+    const chainRow = byId.get(movedByDecision.get(p.hash)!);
+    const decisionRow = byId.get(p.itemId);
+    if (chainRow && decisionRow && !chainRow.href) chainRow.href = decisionRow.href;
+    if (chainRow) drop.add(p.itemId);
+  }
+  const unsent = prepared.filter((p) => !movedByDecision.has(p.hash)).sort((a, b) => b.at - a.at);
+  const keptUnsent: PreparedLendingMove[] = [];
+  for (const p of unsent) {
+    const near = (q: PreparedLendingMove) => q.kind === p.kind && q.assets === p.assets && Math.abs(q.at - p.at) <= RETRY_WINDOW_MS;
+    if (sent.some(near) || keptUnsent.some(near)) drop.add(p.itemId);
+    else keptUnsent.push(p);
+  }
+  if (drop.size === 0) return;
+  const kept = items.filter((i) => !drop.has(i.id));
+  items.length = 0;
+  items.push(...kept);
+}
+
 const VIEW_SYNC_WINDOW_BLOCKS = 20_000n;
 const VIEW_SYNC_DEADLINE_MS = 4_000;
 
@@ -392,8 +432,18 @@ export async function loadActivity(
     return undefined;
   };
 
+  // an owner's prepared lending move, folded into the chain row it became (QA retest 17: it was listed twice, once with no link)
+  const preparedMoves: PreparedLendingMove[] = [];
+  const movedByDecision = new Map<string, string>();
+
   for (const d of decRows) {
     if (isPreparedPayment(d.record)) continue;
+    {
+      const inp = ((d.record as { inputs?: Record<string, unknown> } | null)?.inputs ?? {}) as Record<string, unknown>;
+      if ((d.kind === "sweep" || d.kind === "redeem") && inp.venue !== undefined && inp.actor !== undefined) {
+        preparedMoves.push({ itemId: `dec-${d.id}`, hash: d.hash.toLowerCase(), kind: d.kind, assets: String(inp.assets ?? inp.all ?? ""), at: d.createdAt.getTime() });
+      }
+    }
     let desc = describeDecision(d, refFor);
     // a reopen recorded before the reason was stored with it: take it from the decline it undid (QA R7-2)
     if (d.kind === "invoice_reopened" && d.subject && !String((d.record as { inputs?: { previousReason?: unknown } } | null)?.inputs?.previousReason ?? "")) {
@@ -442,6 +492,9 @@ export async function loadActivity(
       const sealAddr = args.seal ? String(args.seal).toLowerCase() : undefined;
       const vendor = inv ? (sealMap.get(inv.seal.toLowerCase()) || inv.seal) : sealAddr ? sealMap.get(sealAddr) : undefined;
 
+      if ((e.eventName === "LendingDeposited" || e.eventName === "LendingRedeemed") && typeof args.decisionHash === "string") {
+        movedByDecision.set(args.decisionHash.toLowerCase(), `vev-${e.txHash}-${e.logIndex}`);
+      }
       items.push({
         id: `vev-${e.txHash}-${e.logIndex}`,
         at: e.blockTime ? e.blockTime.toISOString() : e.createdAt.toISOString(),
@@ -486,6 +539,8 @@ export async function loadActivity(
       }
     }
   }
+
+  foldLendingMoves(items, preparedMoves, movedByDecision);
 
   // 4. Invoices received
   for (const inv of bizInvoices.slice(0, 50)) {

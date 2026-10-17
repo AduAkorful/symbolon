@@ -12,7 +12,7 @@ import {
 
 import { symbolonContracts, symbolonVaultAbi, vaultCall, type Deployment } from "@symbolon/chain";
 import { CircleScreening, CircleScreeningError, type ScreeningProvider } from "@symbolon/core";
-import { businesses, decisions, payees, screenings, seals, type Database } from "@symbolon/db";
+import { businesses, chainEvents, decisions, payees, screenings, seals, type Database } from "@symbolon/db";
 import { Risk } from "@symbolon/steward";
 
 import { requireMember } from "./access";
@@ -40,6 +40,42 @@ export interface CounterpartyScreeningRow {
   latestScreeningId: string | null;
   /** The Vault already holds a screening made at or after this one, so there is nothing left to save (plan 05zl 5) */
   latestWritten: boolean;
+  /** The transaction that wrote the Vault's current screening, when it is on record (QA SYM-03); null when it can't be found */
+  savedTx: Hex | null;
+}
+
+/**
+ * The transaction that wrote a payee's screening into the Vault (QA SYM-03, retest 17: "Saved in the Vault" never linked one, because
+ * only a save made in the open page knew its hash). First the app's own `screening_recorded` record for that screening, then the
+ * Vault's `ScreeningSet` event from the mirrored chain history: the one with the Vault's current `screenedAt`, else the newest for
+ * that Seal. Reads only the database; null when neither has it, and the page then says only "Saved in the Vault".
+ */
+export async function screeningSavedTx(
+  db: Database,
+  businessId: string,
+  vault: string,
+  seal: string,
+  screeningId: string | null,
+  screenedAtSec: bigint,
+): Promise<Hex | null> {
+  if (screeningId) {
+    const [rec] = await db
+      .select({ txHash: decisions.txHash })
+      .from(decisions)
+      .where(and(eq(decisions.businessId, businessId), eq(decisions.kind, "screening_recorded"), sql`${decisions.record}->'inputs'->>'screeningId' = ${screeningId}`, sql`${decisions.txHash} is not null`))
+      .orderBy(desc(decisions.createdAt))
+      .limit(1);
+    if (rec?.txHash && HASH.test(rec.txHash)) return rec.txHash as Hex;
+  }
+  const events = await db
+    .select({ txHash: chainEvents.txHash, args: chainEvents.args })
+    .from(chainEvents)
+    .where(and(sql`lower(${chainEvents.address}) = ${vault.toLowerCase()}`, eq(chainEvents.eventName, "ScreeningSet"), sql`lower(${chainEvents.args}->>'seal') = ${seal.toLowerCase()}`))
+    .orderBy(desc(chainEvents.blockNumber), desc(chainEvents.logIndex))
+    .limit(20);
+  const exact = events.find((e) => String((e.args as { screenedAt?: unknown }).screenedAt ?? "") === screenedAtSec.toString());
+  const pick = exact ?? events[0];
+  return pick && HASH.test(pick.txHash) ? (pick.txHash as Hex) : null;
 }
 
 export interface TierDescription {
@@ -605,6 +641,7 @@ export async function loadComplianceView(
         hasAddressMismatch,
         latestScreeningId: latest?.id ?? null,
         latestWritten: Boolean(latest && screenedAtSec > 0n && BigInt(Math.floor(latest.screenedAt.getTime() / 1000)) <= screenedAtSec),
+        savedTx: screenedAtSec > 0n ? await screeningSavedTx(db, businessId, vault, seal, latest?.id ?? null, screenedAtSec).catch(() => null) : null,
       };
     }),
   );

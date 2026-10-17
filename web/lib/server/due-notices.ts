@@ -16,8 +16,8 @@ const DEFAULT_BUFFER_DAYS = 30;
 
 /**
  * Notices that are about time passing or a figure crossing a line, so no transaction rings them: noticed where time is already
- * looked at, a Steward run (plan 05zn). Each has a key that makes it once-only (a queued change) or once a day (a shortfall, per
- * currency), so calling this on every run is harmless. A failure here is logged and never fails the run.
+ * looked at, a Steward run (plan 05zn). Each has a key that makes it once-only (a queued change, or a shortfall per
+ * currency until its amount or first due date changes), so calling this on every run is harmless. A failure here is logged and never fails the run.
  */
 export async function notifyDueNotices(db: Database, client: PublicClient, cfg: ChainSettings, businessId: string, now: Date = new Date()): Promise<void> {
   await queuedChangesReady(db, businessId, now).catch((e) => console.error("queued-change notices failed", e instanceof Error ? e.message : e));
@@ -66,15 +66,29 @@ async function shortfalls(db: Database, client: PublicClient, cfg: ChainSettings
   const flows = open
     .filter((i) => i.total > i.credited && balances.has(i.token.toLowerCase()))
     .map((i) => ({ at: BigInt(Math.floor(i.dueDate.getTime() / 1000)), amount: i.total - i.credited, direction: "out" as const, ref: i.fingerprint, token: i.token.toLowerCase() }));
-  const day = new Date(Number(nowSec / DAY) * 86_400_000).toISOString().slice(0, 10);
+  const dueAt = new Map(flows.map((f) => [f.ref, f.at]));
   for (const s of tokenShortfalls(balances, flows, nowSec, biz.bufferDays ?? DEFAULT_BUFFER_DAYS)) {
     const symbol = tokens.find((t) => t.address === s.token)?.symbol;
     if (!symbol) continue;
+    const firstDue = s.refs.reduce<bigint | null>((m, r) => {
+      const at = dueAt.get(r);
+      return at === undefined ? m : m === null || at < m ? at : m;
+    }, null);
     await notifyBusiness(db, businessId, {
       kind: "shortfall",
       subject: null,
       body: { symbol, short: `${formatAmount(s.short, 6)} ${symbol}`, due: `${formatAmount(s.due, 6)} ${symbol}` },
-      dedupeKey: `shortfall:${businessId}:${symbol}:${day}`,
+      dedupeKey: shortfallDedupeKey(businessId, symbol, s.short, firstDue),
     }, { roles: ["owner"] });
   }
+}
+
+/**
+ * The once-only key for a shortfall notice (QA retest 17: the same "USDC may run short" rang every day while nothing changed). It
+ * holds the amount short and the day the first bill in the window falls due, so the bell and Telegram ring again only when the
+ * shortfall itself changes: a new bill, a payment, funds added, or a due date moved.
+ */
+export function shortfallDedupeKey(businessId: string, symbol: string, short: bigint, firstDueSec: bigint | null): string {
+  const day = firstDueSec === null ? "none" : new Date(Number((firstDueSec / DAY) * DAY) * 1000).toISOString().slice(0, 10);
+  return `shortfall:${businessId}:${symbol}:${short.toString()}:${day}`;
 }

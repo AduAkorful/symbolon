@@ -130,6 +130,13 @@ export interface SignoffAhead {
 export interface NotYetApprovable {
   count: number;
   signoffAhead: SignoffAhead[];
+  /**
+   * Scheduled invoices the Steward found nothing in the way of, not even a sign-off: within the auto-pay rules, so in Autonomous
+   * mode they are paid on their due date without anyone (QA STW-2, retest 17: this is why the sign-off list can be empty)
+   */
+  autoPayOnDue: number;
+  /** Open invoices that need a sign-off and are also held back by another rule: listed once that rule is cleared */
+  signoffAndMore: number;
   /** Why, by the Steward's latest recorded finding for each: one line per reason with how many invoices it holds back */
   reasons: { title: string; count: number }[];
 }
@@ -181,7 +188,7 @@ export async function loadNotYetApprovable(db: Database, businessId: string, ctx
     .select({ fingerprint: invoices.fingerprint, status: invoices.status, envelope: invoices.envelope, invoiceNumber: invoices.invoiceNumber, dueDate: invoices.dueDate, total: invoices.total, seal: invoices.seal })
     .from(invoices)
     .where(and(eq(invoices.businessId, businessId), inArray(invoices.status, [...NOT_YET_STATUSES])));
-  if (open.length === 0) return { count: 0, signoffAhead: [], reasons: [] };
+  if (open.length === 0) return { count: 0, signoffAhead: [], autoPayOnDue: 0, signoffAndMore: 0, reasons: [] };
   const subjects = open.map((o) => o.fingerprint.toLowerCase());
   const rows = await db
     .select({ subject: decisions.subject, kind: decisions.kind, record: decisions.record })
@@ -226,24 +233,33 @@ export async function loadNotYetApprovable(db: Database, businessId: string, ctx
   }
 
   const counts = new Map<string, number>();
+  let autoPayOnDue = 0;
+  let signoffAndMore = 0;
   for (const fp of subjects) {
     const failures = findingFailures(latest.get(fp)?.inputs);
+    if (failures.some((f) => f.rule === "ApprovalRequired") && failures.some((f) => f.rule !== "ApprovalRequired")) signoffAndMore++;
     const named = failures.filter((f) => f.rule !== "ApprovalRequired").map((f) => describeRule(f, { seal: "" }).title);
     const record = latest.get(fp);
     const outcome = String(record?.outcome ?? "");
     const rule = String(record?.rule ?? "").trim();
     // a finding with no rule failing says what it did instead: waiting for the due date, or the reason it recorded
+    const onlySignoff = failures.length > 0 && failures.every((f) => f.rule === "ApprovalRequired");
     const own = !record
       ? "The Steward hasn’t looked at it yet"
-      : outcome.startsWith("scheduled")
-        ? "Waiting for its due date"
+      : onlySignoff
+        ? "Needs only a sign-off before its due date"
+        : outcome.startsWith("scheduled")
+        ? ctx.autoMode
+          ? "Within the auto-pay rules: the Steward pays it on its due date"
+          : "Waiting for its due date"
         : rule
           ? rule.charAt(0).toUpperCase() + rule.slice(1)
           : "The Steward is holding it, with no reason recorded";
     const reasons = named.length > 0 ? [...new Set(named)] : [own];
+    if (record && failures.length === 0 && outcome.startsWith("scheduled")) autoPayOnDue++;
     for (const title of reasons) counts.set(title, (counts.get(title) ?? 0) + 1);
   }
-  return { count: open.length, signoffAhead, reasons: [...counts].map(([title, count]) => ({ title, count })).sort((a, b) => b.count - a.count) };
+  return { count: open.length, signoffAhead, autoPayOnDue, signoffAndMore, reasons: [...counts].map(([title, count]) => ({ title, count })).sort((a, b) => b.count - a.count) };
 }
 
 /**

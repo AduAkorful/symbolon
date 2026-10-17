@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { postJson } from "@/lib/client/api";
 import { useConfirm } from "@/components/useConfirm";
-import { formatDateTime, formatDay } from "@/lib/format";
+import { formatDateTime, formatDay, tidyMoneyInText } from "@/lib/format";
 import { Button, buttonClass } from "@/components/ui/button";
 import { InlineLoading } from "@/components/ui/States";
 import { Lead, PageTitle, SmallTitle } from "@/components/ui/Type";
@@ -52,7 +52,7 @@ function Exchange({ m }: { m: Message }) {
         <p className="ml-auto w-fit max-w-[85%] rounded-doc bg-ink px-4 py-2.5 text-paper">{m.q}</p>
         {m.a ? (
           <div className="max-w-[90%] space-y-2 border-l-2 border-seal pl-4">
-            <p className="whitespace-pre-line leading-relaxed text-ink">{m.a.text}</p>
+            <p className="whitespace-pre-line leading-relaxed text-ink">{tidyMoneyInText(m.a.text)}</p>
             {m.a.facts && m.a.facts.length > 0 ? (
               <details className="text-sm text-graphite">
                 <summary className="cursor-pointer select-none hover:text-ink">Show the numbers</summary>

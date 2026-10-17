@@ -152,7 +152,11 @@ export function ComplianceView({
                           <StatusPill tone={isHighOrBlocked ? "danger" : row.onchainRisk === 1 ? "warn" : row.onchainRisk === 0 ? "ok" : "neutral"}>{row.riskLabel}</StatusPill>
                           <StatusPill tone={row.status === "due" ? "danger" : "neutral"}>{row.statusLabel}</StatusPill>
                         </p>
-                        <p className="mt-2 text-sm text-graphite">Screened {row.screenedAt ? formatDay(new Date(row.screenedAt)) : "never"}</p>
+                        <p className="mt-2 text-sm text-graphite">
+                          Screened {row.screenedAt ? formatDay(new Date(row.screenedAt)) : "never"}
+                          {/* the owner sees the link beside "Saved in the Vault"; everyone else sees it here (QA SYM-03) */}
+                          {row.savedTx && !(canWrite && row.latestScreeningId && row.latestWritten) ? <>{" · "}<TxLink href={`${explorer}/tx/${row.savedTx}`} label="View the screening's transaction on the Arc explorer">View transaction</TxLink></> : null}
+                        </p>
                         {row.status === "not_payee" ? <p className="mt-1 text-sm text-graphite">Add this vendor as a payee first, then screen it here.</p> : null}
                         {canScreen || (canWrite && row.latestScreeningId) ? (
                           <div className="mt-3 flex flex-wrap gap-2 md:justify-end">
@@ -162,7 +166,10 @@ export function ComplianceView({
                               </Button>
                             ) : null}
                             {canWrite && row.latestScreeningId && row.latestWritten ? (
-                              <span className="self-center text-sm text-graphite">Saved in the Vault</span>
+                              <span className="self-center text-sm text-graphite">
+                                Saved in the Vault
+                                {row.savedTx ? <>{" · "}<TxLink href={`${explorer}/tx/${row.savedTx}`} label="View the screening's transaction on the Arc explorer">View transaction</TxLink></> : null}
+                              </span>
                             ) : null}
                             {canWrite && row.latestScreeningId && !row.latestWritten ? (
                               <Button size="sm" disabled={isScreening || isRecording || signer.kind === "none"} busy={isRecording} title="Write the latest screening result to the Vault" onClick={() => handleRecordWrite(row.latestScreeningId!)}>

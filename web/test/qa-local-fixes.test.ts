@@ -28,7 +28,7 @@ describe("STW-4: a scheduled record names the discount it considered", () => {
 describe("ACT-1: lending rows say which one moved money", () => {
   it("labels a Steward suggestion and an owner's prepared move", () => {
     expect(summarizeDecision({ kind: "sweep", inputs: { venue: "0x1" }, outcome: "proposed" }).sentence).toBe("The Steward suggested moving cash into the lending vault (a suggestion only; no money moved)");
-    expect(summarizeDecision({ kind: "sweep", inputs: { venue: "0x1", actor: "u1" }, outcome: "depositing" }).sentence).toBe("Prepared a move of cash into the lending vault (the move itself is listed as “Moved …”)");
+    expect(summarizeDecision({ kind: "sweep", inputs: { venue: "0x1", actor: "u1" }, outcome: "depositing" }).sentence).toBe("Prepared the lending move");
   });
 });
 

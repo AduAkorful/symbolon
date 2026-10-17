@@ -398,7 +398,7 @@ export function StewardClient({
             <dt className="text-graphite">Wallet</dt>
             <dd className="min-w-0">
               {business.stewardWallet ? (
-                <Address value={business.stewardWallet} full explorer={explorer} copy />
+                <Address value={business.stewardWallet} explorer={explorer} copy />
               ) : (
                 <span className="text-warn">Not provisioned</span>
               )}

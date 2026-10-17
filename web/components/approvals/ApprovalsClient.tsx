@@ -1,5 +1,7 @@
 "use client";
 
+import { emptySignoffNote } from "@/lib/approvals-text";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -200,7 +202,7 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
             Payments that need a person show up here.{" "}
             {data.notYetApprovable.count === 0
               ? "Everything else is processed or up to date."
-              : `${data.notYetApprovable.count} open invoice${data.notYetApprovable.count === 1 ? " isn’t" : "s aren’t"} here yet because something stops ${data.notYetApprovable.count === 1 ? "it" : "them"} first:`}
+              : `None of your ${data.notYetApprovable.count} open invoice${data.notYetApprovable.count === 1 ? "" : "s"} needs a decision from you right now:`}
             {data.notYetApprovable.count > 0 ? (
               <ul className="mt-2 list-disc space-y-1 pl-5 text-left">
                 {data.notYetApprovable.reasons.map((r) => (
@@ -210,7 +212,7 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
                 ))}
               </ul>
             ) : null}
-            {data.notYetApprovable.count > 0 ? <span className="mt-2 block">They appear here when the Steward can propose paying them. <a href="/business/inbox" className="underline decoration-rule underline-offset-4 hover:text-ink">Open the inbox</a>.</span> : null}
+            {data.notYetApprovable.count > 0 ? <span className="mt-2 block">One appears here when the Steward finds it needs a person. <a href="/business/inbox" className="underline decoration-rule underline-offset-4 hover:text-ink">Open the inbox</a>.</span> : null}
           </EmptyState>
         ) : (
           <div className="grid gap-5 xl:grid-cols-2">
@@ -284,7 +286,7 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
       {data.notYetApprovable.signoffAhead.length === 0 && data.notYetApprovable.count > 0 ? (
         <p className="max-w-[64ch] text-sm text-graphite">
           {data.mode === "auto"
-            ? "Invoices that only need a sign-off before their due date are listed here once the Steward has looked at them. The ones below are held back by something else."
+            ? emptySignoffNote(data.notYetApprovable)
             : data.mode === "assist"
               ? "In Assisted mode the Steward asks for each sign-off on the invoice’s due date. Switch to Autonomous to sign ahead of time, or use Pay now on the invoice."
               : "In Shadow mode the Steward only records what it would do and never pays. Use Pay now on the invoice, or switch to Autonomous to sign ahead of time."}

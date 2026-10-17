@@ -146,7 +146,7 @@ export function TreasuryView({
           <PageTitle>Treasury</PageTitle>
           <div className="mt-3 text-sm text-graphite">
             <p>Vault · live from Arc</p>
-            <Address value={state.vault} full explorer={explorer} copy className="text-ink" />
+            <Address value={state.vault} explorer={explorer} copy className="text-ink" />
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -330,8 +330,8 @@ export function TreasuryView({
             <EmptyState title="No reserve support" className="mt-4">This Vault’s release doesn’t support the USYC reserve. Upgrading it adds the option.</EmptyState>
           ) : !state.reserve.entitled ? (
             <Callout tone="neutral" className="mt-4" title="Circle hasn’t allowlisted this Vault for USYC yet">
-              <p>USYC is for businesses that aren’t U.S. Persons under Regulation S and have onboarded with Circle. Circle allowlists the Vault’s address:</p>
-              <div className="mt-3"><Address value={state.vault} full copy /></div>
+              <p>USYC is for businesses that aren’t U.S. Persons under Regulation S and have onboarded with Circle. Circle allowlists the Vault’s address (use Copy to send it the full address):</p>
+              <div className="mt-3"><Address value={state.vault} explorer={explorer} copy /></div>
             </Callout>
           ) : (
             <div className="mt-4 space-y-5">

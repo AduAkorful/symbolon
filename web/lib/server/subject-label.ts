@@ -66,9 +66,26 @@ export async function subjectRefs(db: Database, businessId: string, subjects: (s
       out.set(subject, subject === businessId ? { label: "This business", href: null } : { label: "A record", href: null });
     } else if (subject.startsWith("treasury")) {
       out.set(subject, { label: "Treasury", href: "/business/treasury" });
+    } else if (subject.startsWith("settings:")) {
+      // a settings change is fully named by its kind ("Changed Early Pay settings"); the internal key is never shown (QA UI-16)
+      continue;
+    } else if (/^[a-z0-9_]+(:[a-z0-9_.-]+)+$/i.test(subject)) {
+      // any other internal key ("vault:0x…:upgrade", "lending:…") is said in words, never as the key
+      out.set(subject, { label: internalKeyLabel(subject), href: null });
     } else {
       out.set(subject, { label: subject.length <= 40 ? subject : `${subject.slice(0, 40)}…`, href: null });
     }
   }
   return out;
+}
+
+/** "vault:0x…:upgrade" → "Vault upgrade"; "lending:policy" → "Lending policy": the words of an internal key, without addresses */
+export function internalKeyLabel(key: string): string {
+  const words = key
+    .split(":")
+    .filter((p) => !/^0x[0-9a-f]+$/i.test(p) && !UUID.test(p))
+    .join(" ")
+    .replace(/[_-]+/g, " ")
+    .trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1).toLowerCase() : "A record";
 }

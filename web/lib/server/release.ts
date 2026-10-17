@@ -11,14 +11,14 @@ import {
 } from "viem";
 import { cache } from "react";
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   symbolonVaultAbi,
   symbolonContracts,
   getReleaseNotes,
   type Deployment,
 } from "@symbolon/chain";
-import { businesses, decisions, type Database } from "@symbolon/db";
+import { businesses, chainEvents, decisions, type Database } from "@symbolon/db";
 import { hashRecord, type DecisionRecord } from "@symbolon/steward";
 import { displayReleaseNotes } from "../release-notes";
 import { captureUpgradeSnapshot, compareUpgradeSnapshots, upgradeScope, type UpgradeSnapshot } from "./upgrade-snapshot";
@@ -79,6 +79,54 @@ export interface ReleaseViewInfo {
   };
   looseningDelay: number;
   currentBlockTimestamp: number;
+  /** How the Vault came to run its current implementation, with the transaction (QA SYM-03); null when not on record */
+  installedBy?: ReleaseTx | null;
+  /** The transaction that scheduled the pending upgrade, while one is scheduled; null when not on record */
+  scheduledTx?: ReleaseTx | null;
+}
+
+export interface ReleaseTx {
+  kind: "upgraded" | "created" | "scheduled";
+  txHash: `0x${string}`;
+  at: string | null;
+}
+
+/**
+ * The transactions behind the release card (QA SYM-03, retest 17: the card linked a transaction only right after a schedule or apply
+ * made in the open page). Read from the mirrored Vault history: the newest `Upgraded` to the implementation the Vault runs now
+ * ("created" when it is the Vault's own creation, which also emits `Initialized`), and while an upgrade is scheduled, the newest
+ * `UpgradeScheduled`. Database only; anything not found stays null and the card shows no link rather than a wrong one.
+ */
+export async function releaseTransactions(
+  db: Database,
+  vault: Address,
+  current: Address | null,
+  pendingScheduled: boolean,
+): Promise<{ installedBy: ReleaseTx | null; scheduledTx: ReleaseTx | null }> {
+  const rows = await db
+    .select({ txHash: chainEvents.txHash, eventName: chainEvents.eventName, args: chainEvents.args, blockTime: chainEvents.blockTime })
+    .from(chainEvents)
+    .where(and(sql`lower(${chainEvents.address}) = ${vault.toLowerCase()}`, inArray(chainEvents.eventName, ["Upgraded", "UpgradeScheduled", "Initialized"])))
+    .orderBy(desc(chainEvents.blockNumber), desc(chainEvents.logIndex))
+    .limit(50);
+  const creationTxs = new Set(rows.filter((r) => r.eventName === "Initialized").map((r) => r.txHash.toLowerCase()));
+  const upgraded = rows.find(
+    (r) => r.eventName === "Upgraded" && (!current || String((r.args as { implementation?: unknown }).implementation ?? "").toLowerCase() === current.toLowerCase()),
+  );
+  const scheduled = pendingScheduled ? rows.find((r) => r.eventName === "UpgradeScheduled") : undefined;
+  const tx = (r: (typeof rows)[number] | undefined, kind: ReleaseTx["kind"]): ReleaseTx | null =>
+    r && /^0x[0-9a-fA-F]{64}$/.test(r.txHash) ? { kind, txHash: r.txHash as `0x${string}`, at: r.blockTime ? r.blockTime.toISOString() : null } : null;
+  return {
+    installedBy: tx(upgraded, upgraded && creationTxs.has(upgraded.txHash.toLowerCase()) ? "created" : "upgraded"),
+    scheduledTx: tx(scheduled, "scheduled"),
+  };
+}
+
+/** `loadReleaseInfo` plus the transactions behind it; a failed database read leaves them out, never the card */
+export async function loadReleaseInfoWithTx(db: Database, client: PublicClient, deployment: Deployment, vault: Address): Promise<ReleaseViewInfo> {
+  const info = await loadReleaseInfo(client, deployment, vault);
+  const txs = await releaseTransactions(db, vault, info.current.implementation, info.state === "scheduled" || info.state === "ready").catch(() => ({ installedBy: null, scheduledTx: null }));
+  return { ...info, ...txs };
 }
 
 export async function loadReleaseInfo(

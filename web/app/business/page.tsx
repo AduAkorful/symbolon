@@ -81,7 +81,7 @@ export default async function BusinessHome() {
               <dt className="text-graphite">Vault</dt>
               <dd className="min-w-0">
                 {b.vault ? (
-                  <Address value={b.vault} full explorer={explorer} copy />
+                  <Address value={b.vault} explorer={explorer} copy />
                 ) : b.role === "owner" ? (
                   <span>
                     Not created yet.{" "}

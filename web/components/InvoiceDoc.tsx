@@ -1,7 +1,8 @@
 import type { InvoiceDocument } from "@symbolon/seal";
 import { Half } from "@/components/Chirograph";
 import { SealStamp } from "@/components/Marks";
-import { checksum, discounted, showAmount, showBps, showDate } from "@/lib/format";
+import { Address } from "@/components/Address";
+import { discounted, showAmount, showBps, showDate } from "@/lib/format";
 
 /**
  * An invoice, drawn from the canonical document and nothing else (plan 05i, V2): what a person confirms before signing, and
@@ -94,8 +95,8 @@ export function InvoiceDoc({ document: d, fingerprint, handle, sealed = false }:
             </div>
           ) : null}
 
-          <p className="mt-3 break-all text-xs text-graphite">
-            Pays in {sym} on Arc to <span data-wrap-ok className="font-mono">{checksum(d.payout.address)}</span>
+          <p className="mt-3 text-xs text-graphite">
+            Pays in {sym} on Arc to {d.vendor.name ? <>{d.vendor.name} at </> : null}<Address value={d.payout.address} copy />
           </p>
           {d.terms ? <p className="mt-3 whitespace-pre-line text-xs text-graphite">{d.terms}</p> : null}
           {d.notes ? <p className="mt-3 whitespace-pre-line text-xs text-graphite">{d.notes}</p> : null}

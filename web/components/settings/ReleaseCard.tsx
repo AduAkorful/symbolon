@@ -10,6 +10,7 @@ import { useSentHashes } from "@/components/wallet/useSentTransaction";
 import type { ReleaseViewInfo } from "@/lib/server/release";
 import { buttonClass } from "@/components/ui/button";
 import { ReleaseNotesBody } from "./ReleaseNotesBody";
+import { formatDateTime } from "@/lib/format";
 
 interface ReleaseCardProps {
   businessId: string;
@@ -253,6 +254,13 @@ export function ReleaseCard({
           <p className="text-graphite">
             Your Vault is running the latest published release. No upgrades are pending.
           </p>
+          {release.installedBy && explorer && !successTx ? (
+            <p className="mt-2 text-graphite">
+              {release.installedBy.kind === "created" ? "Running this release since the Vault was created" : `Upgraded to release ${current.version ?? latest.version}`}
+              {release.installedBy.at ? ` on ${formatDateTime(release.installedBy.at)}` : ""}.{" "}
+              <TxLink href={`${explorer}/tx/${release.installedBy.txHash}`} label="View the upgrade transaction on the Arc explorer">View transaction</TxLink>
+            </p>
+          ) : null}
           {latest.notes && (
             <div className="mt-4 rounded border border-rule/50 bg-paper p-3 text-sm leading-relaxed text-graphite">
               <p className="mb-2 font-medium text-ink">What this release does</p>
@@ -300,6 +308,7 @@ export function ReleaseCard({
         <div className="mt-4 space-y-3">
           <p className="text-graphite">
             Upgrade scheduled. You can apply it once the loosening delay passes:
+            {release.scheduledTx && explorer && !successTx ? <>{" "}<TxLink href={`${explorer}/tx/${release.scheduledTx.txHash}`} label="View the schedule transaction on the Arc explorer">View transaction</TxLink></> : null}
           </p>
           <div className="flex items-center gap-3">
             <span className="font-mono text-lg font-medium">{countdownStr}</span>
@@ -344,6 +353,12 @@ export function ReleaseCard({
           <p className="text-graphite font-medium text-seal">
             The loosening delay has passed. Release {latest.version} is ready to apply.
           </p>
+          {release.scheduledTx && explorer && !successTx ? (
+            <p className="text-sm text-graphite">
+              Scheduled{release.scheduledTx.at ? ` on ${formatDateTime(release.scheduledTx.at)}` : ""}.{" "}
+              <TxLink href={`${explorer}/tx/${release.scheduledTx.txHash}`} label="View the schedule transaction on the Arc explorer">View transaction</TxLink>
+            </p>
+          ) : null}
           <p className="text-xs text-graphite">
             Symbolon compares server-recorded snapshots of known payees, budgets, policy, roles and token balances.
             Missing reads or differences are reported; this check cannot enumerate unknown onchain records.

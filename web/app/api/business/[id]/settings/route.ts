@@ -11,7 +11,7 @@ import {
   setBufferDays,
 } from "@/lib/server/settings";
 import {
-  loadReleaseInfo,
+  loadReleaseInfoWithTx,
   checkReleaseNudge,
   prepareScheduleUpgrade,
   recordScheduleUpgrade,
@@ -46,7 +46,7 @@ export const GET = routeWith<Ctx>(async (_request, ctx) => {
   if (settingsData.business.vault) {
     const vault = getAddress(settingsData.business.vault);
     const [relInfo, nudgeInfo, changes] = await Promise.all([
-      loadReleaseInfo(client, config.deployment, vault).catch(() => null),
+      loadReleaseInfoWithTx(db, client, config.deployment, vault).catch(() => null),
       checkReleaseNudge(client, config.deployment, vault).catch(() => ({ hasNudge: false })),
       listQueuedChanges(db, businessId, session.user).catch(() => []),
     ]);

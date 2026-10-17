@@ -10,7 +10,7 @@ import { requirePageSession } from "@/lib/server/http";
 import { signerPlanFor } from "@/lib/server/signer-plan";
 import { loadSpaces } from "@/lib/server/space";
 import { loadSettings } from "@/lib/server/settings";
-import { loadReleaseInfo, checkReleaseNudge } from "@/lib/server/release";
+import { loadReleaseInfoWithTx, checkReleaseNudge } from "@/lib/server/release";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +37,7 @@ export default async function BusinessSettingsPage() {
   if (settingsData.business.vault) {
     const vault = getAddress(settingsData.business.vault);
     const [relInfo, nudgeInfo] = await Promise.all([
-      loadReleaseInfo(client, config.deployment, vault).catch(() => null),
+      loadReleaseInfoWithTx(db, client, config.deployment, vault).catch(() => null),
       checkReleaseNudge(client, config.deployment, vault).catch(() => ({ hasNudge: false })),
     ]);
     release = relInfo;

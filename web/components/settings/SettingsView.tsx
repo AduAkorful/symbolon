@@ -160,11 +160,11 @@ export function SettingsView({
 
           <dl className="mt-4 divide-y divide-rule-soft rounded-doc border border-rule px-5 text-sm">
             {[
-              ["Vault contract", <Address key="a" value={vaultDetails.address} full />],
-              ["Implementation", vaultDetails.currentImplementation ? <Address key="i" value={vaultDetails.currentImplementation} full /> : "Can’t read it right now"],
-              ["Owner", <Address key="o" value={vaultDetails.owner} full />],
-              ["Steward wallet", vaultDetails.steward === zero ? "No Steward is set in this Vault" : <Address key="s" value={vaultDetails.steward} full />],
-              ["Others who can record screenings", vaultDetails.screener === zero ? "Only you, the owner. Screenings come from Circle through the Compliance page." : <Address key="c" value={vaultDetails.screener} full />],
+              ["Vault contract", <Address key="a" value={vaultDetails.address} explorer={explorer} copy />],
+              ["Implementation", vaultDetails.currentImplementation ? <Address key="i" value={vaultDetails.currentImplementation} explorer={explorer} copy /> : "Can’t read it right now"],
+              ["Owner", <Address key="o" value={vaultDetails.owner} explorer={explorer} copy />],
+              ["Steward wallet", vaultDetails.steward === zero ? "No Steward is set in this Vault" : <Address key="s" value={vaultDetails.steward} explorer={explorer} copy />],
+              ["Others who can record screenings", vaultDetails.screener === zero ? "Only you, the owner. Screenings come from Circle through the Compliance page." : <Address key="c" value={vaultDetails.screener} explorer={explorer} copy />],
               ["Accounting decimals", vaultDetails.accountingDecimals],
             ].map(([label, value]) => (
               <div key={String(label)} className="grid gap-1 py-3.5 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4">

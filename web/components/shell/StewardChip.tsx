@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import type { stewardStanding } from "@/lib/server/vault-read";
 
-const MODE_NAMES: Record<string, string> = { shadow: "Shadow", assist: "Assisted", auto: "Auto" };
+const MODE_NAMES: Record<string, string> = { shadow: "Shadow", assist: "Assisted", auto: "Autonomous" };
 
 /** What the header says about the Steward: its mode, and whether the Vault shows it paused, active, or something to look at */
 export function StewardChip({ standing, mode }: { standing: ReturnType<typeof stewardStanding> | null; mode: string | null | undefined }) {
