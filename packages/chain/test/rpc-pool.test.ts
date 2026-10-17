@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createRpcPool, judge, type RpcEndpoint } from "../src/rpc-pool.js";
+import { createRpcPool, judge, logSpan, type RpcEndpoint } from "../src/rpc-pool.js";
 
 class RpcError extends Error {
   constructor(message: string, public code?: number, public status?: number) {
@@ -181,5 +181,39 @@ describe("the RPC pool", () => {
     const pool = createRpcPool([down], { ...c, minGapMs: 0, cooldownMs: 20_000 });
     await expect(pool.send({ method: "eth_call" })).rejects.toThrow(/fetch failed/); // asked, failed, now resting 20 s
     await expect(pool.send({ method: "eth_call" })).rejects.toThrow(/rate limit: every RPC endpoint/);
+  });
+
+  it("after refusing one over-wide log query, still answers narrow ones instead of starving every log read (17 Oct)", async () => {
+    const c = clock();
+    const hex = (n: number) => `0x${n.toString(16)}`;
+    const capped = (name: string) => {
+      let asked = 0;
+      const e: RpcEndpoint & { calls: () => number } = {
+        url: name,
+        send: async ({ params }) => {
+          asked++;
+          if (logSpan(params) > 10_000) throw new RpcError("requested range too large", -32012);
+          return [];
+        },
+        calls: () => asked,
+      };
+      return e;
+    };
+    const [a, b] = [capped("a"), capped("b")];
+    const pool = createRpcPool([a, b], { ...c, minGapMs: 0 });
+    // one query from the deployment block to "latest": every endpoint refuses it
+    await expect(pool.send({ method: "eth_getLogs", params: [{ fromBlock: hex(64_060_463), toBlock: "latest" }] })).rejects.toThrow(/range too large/);
+    // a second one is not sent again, and the error reads as "ask for less", not "slow down"
+    const before = a.calls() + b.calls();
+    await expect(pool.send({ method: "eth_getLogs", params: [{ fromBlock: hex(64_060_463), toBlock: "latest" }] })).rejects.toThrow(/range too large/);
+    expect(a.calls() + b.calls()).toBe(before);
+    // a 5,000-block query right after is answered
+    expect(await pool.send({ method: "eth_getLogs", params: [{ fromBlock: hex(67_654_362), toBlock: hex(67_659_361) }] })).toEqual([]);
+  });
+
+  it("measures a log query's span", () => {
+    expect(logSpan([{ fromBlock: "0x1", toBlock: "0x1388" }])).toBe(5_000);
+    expect(logSpan([{ fromBlock: "0x1", toBlock: "latest" }])).toBe(Infinity);
+    expect(logSpan(undefined)).toBe(Infinity);
   });
 });

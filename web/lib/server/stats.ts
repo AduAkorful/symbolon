@@ -11,6 +11,13 @@ import { chainEvents, syncCursors, type Database } from "@symbolon/db";
 /** How far behind the chain's head the mirror may be and still be called collected: about three hours of Arc blocks */
 export const COLLECTED_WITHIN_BLOCKS = 20_000n;
 
+/**
+ * Once the whole history has been read through, a mirror that has since fallen behind (a missed scheduled sync, an RPC outage) still
+ * holds exact counts up to `readThrough`: they are shown, labelled with that block, while the latest blocks are read, instead of
+ * blanking the section. About three days of Arc blocks; further behind than that, it waits for the catch-up as before.
+ */
+export const SHOW_BEHIND_WITHIN_BLOCKS = 500_000n;
+
 /** What the Vaults hold, token by token (never added together) */
 export interface ValueLocked {
   tokens: { token: "USDC" | "EURC"; amount: string }[];
@@ -43,7 +50,10 @@ export interface ProtocolStats {
   head: string | null;
   /** How much of the history has been read, 0–100, while it is being collected; null when unknown */
   progressPercent: number | null;
-  /** Null until the mirror has caught up with the chain, so no partial number is ever shown */
+  /**
+   * Null until the mirror has caught up with the chain, so no partial number is ever shown. While a caught-up mirror is reading the
+   * latest blocks again (state "collecting", within SHOW_BEHIND_WITHIN_BLOCKS) these are the exact counts through `readThrough`.
+   */
   numbers: ProtocolNumbers | null;
   state: "ready" | "collecting" | "unconfirmed";
 }
@@ -81,7 +91,8 @@ export async function loadProtocolStats(db: Database, client: PublicClient | und
   })();
   if (readThrough === null) return { ...base, progressPercent, numbers: null, state: "collecting" };
   if (head === null) return { ...base, progressPercent, numbers: null, state: "unconfirmed" };
-  if (head - readThrough > COLLECTED_WITHIN_BLOCKS) return { ...base, progressPercent, numbers: null, state: "collecting" };
+  const behind = head - readThrough > COLLECTED_WITHIN_BLOCKS;
+  if (behind && head - readThrough > SHOW_BEHIND_WITHIN_BLOCKS) return { ...base, progressPercent, numbers: null, state: "collecting" };
 
   const ledger = deployment.contracts.invoiceLedger.toLowerCase();
   const factories = streams.filter((s) => s.kind === "factory").map((s) => s.address.toLowerCase());
@@ -131,8 +142,8 @@ export async function loadProtocolStats(db: Database, client: PublicClient | und
 
   return {
     ...base,
-    progressPercent: 100,
-    state: "ready",
+    progressPercent: behind ? progressPercent : 100,
+    state: behind ? "collecting" : "ready",
     numbers: {
       vaultsCreated: vaults?.n ?? 0,
       invoicesSettled: perToken.reduce((sum, r) => sum + r.n, 0),

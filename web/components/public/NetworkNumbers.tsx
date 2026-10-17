@@ -40,10 +40,11 @@ export function NetworkNumbers() {
     <section aria-labelledby="network-numbers" className="border-y border-rule">
       <div className={`${CONTAINER} py-14`}>
         <h2 id="network-numbers" className="font-display text-3xl leading-snug">What the contracts have done so far</h2>
-        {stats.state === "ready" ? (
+        {stats.numbers ? (
           <>
             <p className="mt-2 max-w-[62ch] text-sm text-graphite">
               Counted from Arc’s own events, nothing from our accounts. Network: {where}.
+              {stats.state === "collecting" && stats.readThrough ? ` Counted through block ${Number(stats.readThrough).toLocaleString("en-US")}; the newest blocks are being read now.` : ""}
             </p>
             <ProtocolNumbers stats={stats} />
           </>

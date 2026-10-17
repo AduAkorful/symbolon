@@ -61,6 +61,21 @@ const text = (error: unknown): string => {
 };
 
 const CAPABILITY_TTL_MS = 5 * 60_000;
+
+/** A refusal about the size of a log query (too many blocks or results), as opposed to history the node no longer has */
+const RANGE_REFUSAL = /requested range too large|ranges? over|range (?:is )?too (?:large|wide)|exceeds? .*(?:block )?range|block range|too many results|max results|response size|query returned more than/i;
+
+/**
+ * How many blocks an `eth_getLogs` call spans; Infinity when it can't be told (a tag such as "latest", a block hash). A range refusal
+ * is remembered against this span, so one over-wide query does not stop an endpoint from answering the narrow ones for five minutes.
+ */
+export function logSpan(params: unknown): number {
+  const filter = Array.isArray(params) ? (params[0] as { fromBlock?: unknown; toBlock?: unknown } | undefined) : undefined;
+  const block = (v: unknown) => (typeof v === "string" && /^0x[0-9a-f]+$/i.test(v) ? Number(BigInt(v)) : null);
+  const from = block(filter?.fromBlock);
+  const to = block(filter?.toBlock);
+  return from === null || to === null ? Infinity : Math.max(1, to - from + 1);
+}
 const LAG_TTL_MS = 1_500;
 
 /** What a failure means for this endpoint and for the call */
@@ -93,6 +108,8 @@ interface State {
   failures: number;
   /** Methods this endpoint cannot answer for now, and until when */
   skip: Map<string, number>;
+  /** The smallest `eth_getLogs` span this endpoint has refused as too large, and until when that holds: only spans this wide are skipped */
+  logRefused: { span: number; until: number } | null;
   /** Smoothed answer time in ms; starts at a guess so every endpoint gets tried */
   latency: number;
 }
@@ -108,15 +125,19 @@ export function createRpcPool(endpoints: RpcEndpoint[], opts: RpcPoolOptions = {
   const maxRateRest = opts.maxRateRestMs ?? 5_000;
   const now = opts.now ?? Date.now;
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-  const states: State[] = endpoints.map((endpoint) => ({ endpoint, inFlight: 0, nextStartAt: 0, gap: baseGap, coolUntil: 0, failures: 0, skip: new Map<string, number>(), latency: 300 }));
+  const states: State[] = endpoints.map((endpoint) => ({ endpoint, inFlight: 0, nextStartAt: 0, gap: baseGap, coolUntil: 0, failures: 0, skip: new Map<string, number>(), logRefused: null, latency: 300 }));
+
+  /** This endpoint is not to be asked this call for now (it said it cannot answer it), as opposed to being busy or resting */
+  const skips = (s: State, method: string, span: number, t: number) =>
+    (s.skip.get(method) ?? 0) > t || (method === "eth_getLogs" && s.logRefused !== null && s.logRefused.until > t && span >= s.logRefused.span);
 
   /** The endpoint a call should go to now: not resting, not already tried for this call, least waiting in line */
-  const pick = (tried: Set<State>, method: string): State | null => {
+  const pick = (tried: Set<State>, method: string, span: number): State | null => {
     const t = now();
     let best: State | null = null;
     let bestScore = Infinity;
     for (const s of states) {
-      if (tried.has(s) || s.coolUntil > t || s.inFlight >= maxInFlight || (s.skip.get(method) ?? 0) > t) continue;
+      if (tried.has(s) || s.coolUntil > t || s.inFlight >= maxInFlight || skips(s, method, span, t)) continue;
       // an endpoint that must still wait out its gap is worse than an idle one that can start now, so a chain of dependent calls
       // rotates across the endpoints instead of queueing on the fastest one
       const score = (s.inFlight + 1) * s.latency + Math.max(0, s.nextStartAt - t);
@@ -133,12 +154,19 @@ export function createRpcPool(endpoints: RpcEndpoint[], opts: RpcPoolOptions = {
     let lastError: unknown;
     // every endpoint at most once per call; a pool of one endpoint tries it twice (a single failure is often a blip)
     const maxSends = Math.max(states.length, 2);
+    const span = args.method === "eth_getLogs" ? logSpan(args.params) : Infinity;
     let sends = 0;
     let waited = 0;
     while (sends < maxSends) {
-      const state = pick(tried, args.method);
+      const state = pick(tried, args.method, span);
       if (!state) {
-        const left = states.filter((s) => !tried.has(s));
+        const t0 = now();
+        // every endpoint not yet tried has said it cannot answer this (too wide, or pruned): waiting won't change that, so say so now,
+        // in words the log scanner reads as "ask for a smaller range" rather than "slow down" (it would otherwise retry the same range)
+        const left = states.filter((s) => !tried.has(s) && !skips(s, args.method, span, t0));
+        if (left.length === 0 && lastError === undefined && states.some((s) => !tried.has(s))) {
+          throw new Error(`requested range too large: no RPC endpoint can answer this ${args.method} right now`);
+        }
         if (left.length === 0) {
           if (states.length === 1 && sends < maxSends) {
             tried.clear();
@@ -174,7 +202,11 @@ export function createRpcPool(endpoints: RpcEndpoint[], opts: RpcPoolOptions = {
         const verdict = judge(error);
         if (verdict.kind === "fail") throw error;
         tried.add(state);
-        if (verdict.kind === "unsupported") {
+        if (verdict.kind === "unsupported" && args.method === "eth_getLogs" && RANGE_REFUSAL.test(text(error))) {
+          // too wide for this endpoint: skip calls at least this wide, keep asking it the narrower ones
+          const known = state.logRefused && state.logRefused.until > now() ? state.logRefused.span : Infinity;
+          state.logRefused = { span: Math.min(known, span), until: now() + verdict.ttlMs };
+        } else if (verdict.kind === "unsupported") {
           state.skip.set(args.method, now() + verdict.ttlMs);
         } else {
           state.failures++;

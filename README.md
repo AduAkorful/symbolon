@@ -38,11 +38,14 @@ Registry: [`contracts/deployments/5042002.json`](contracts/deployments/5042002.j
 | Contract | Address |
 |---|---|
 | InvoiceLedger | [`0x7EFf84D0715284FA3d793525151b30a05Af45aCE`](https://explorer.testnet.arc.io/address/0x7EFf84D0715284FA3d793525151b30a05Af45aCE) |
-| SymbolonVault (release 2 implementation) | [`0xA6aA3c4DB43f36b061939feF1f822E14bF06BcF8`](https://explorer.testnet.arc.io/address/0xA6aA3c4DB43f36b061939feF1f822E14bF06BcF8) |
-| ReserveLogic | [`0x2bdd166cEef9FDb534d88070503f632b1Ab67B03`](https://explorer.testnet.arc.io/address/0x2bdd166cEef9FDb534d88070503f632b1Ab67B03) |
-| VaultFactory | [`0x62b80C53058704c5429bFcF7A89991C689c8D0a6`](https://explorer.testnet.arc.io/address/0x62b80C53058704c5429bFcF7A89991C689c8D0a6) |
+| VaultFactory (release 4) | [`0xceB5bb746cDAB3d143C8c5E1A91772509b0Cf1Cf`](https://explorer.testnet.arc.io/address/0xceB5bb746cDAB3d143C8c5E1A91772509b0Cf1Cf) |
+| SymbolonVault (release 4 implementation) | [`0xd910EF738d0770774a7d875cD9Ee4fC494C746A1`](https://explorer.testnet.arc.io/address/0xd910EF738d0770774a7d875cD9Ee4fC494C746A1) |
+| ReserveLogic | [`0x08F5824164227E0bd07921F026037E4431f32712`](https://explorer.testnet.arc.io/address/0x08F5824164227E0bd07921F026037E4431f32712) |
+| LendingLogic | [`0xf844c18b24e8605efE3Df91D50271dEf493CDa96`](https://explorer.testnet.arc.io/address/0xf844c18b24e8605efE3Df91D50271dEf493CDa96) |
+| VaultLens | [`0xa964506ecF909F278f266Efd8f24AbaC9447F1CD`](https://explorer.testnet.arc.io/address/0xa964506ecF909F278f266Efd8f24AbaC9447F1CD) |
 | ReleaseRegistry | [`0x0C0EF87c88108bd9d306E0C9F48AE733C7AED29e`](https://explorer.testnet.arc.io/address/0x0C0EF87c88108bd9d306E0C9F48AE733C7AED29e) |
-| VaultLens | [`0x740e6155bbAd8A5baab56341b5366E8De195Da31`](https://explorer.testnet.arc.io/address/0x740e6155bbAd8A5baab56341b5366E8De195Da31) |
+
+Earlier releases (1–3) and their factories are listed in [`contracts/deployments/releases/`](contracts/deployments/releases/); Vaults made by them still work.
 
 ## Develop
 
