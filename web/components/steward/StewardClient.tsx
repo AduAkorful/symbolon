@@ -16,6 +16,7 @@ import { postJson, postRecord } from "@/lib/client/api";
 import { SentTransactionNotice, useSentTransaction } from "@/components/wallet/useSentTransaction";
 import { formatDateTime } from "@/lib/format";
 import { Address } from "@/components/Address";
+import { CopyButton } from "@/components/CopyButton";
 import { Money } from "@/components/ui/Money";
 import { EmptyState } from "@/components/ui/States";
 import { StatusPill, type Tone } from "@/components/ui/StatusPill";
@@ -74,6 +75,8 @@ export interface DecisionView {
   /** What the subject is called to a person, and where it lives, when it has a page (plan 05zj E, SYM-29) */
   subjectLabel?: string | null;
   subjectHref?: string | null;
+  /** The whole value when the label shortens it (a reference hash), for its Copy button */
+  subjectCopy?: string | null;
   txHash: string | null;
   createdAt: string;
   summary: {
@@ -640,6 +643,11 @@ export function StewardClient({
                       <Link href={d.subjectHref} className="underline decoration-rule underline-offset-4 hover:text-ink">
                         {d.subjectLabel}
                       </Link>
+                    ) : d.subjectCopy ? (
+                      <span className="inline-flex items-baseline">
+                        <span className="font-mono" title={d.subjectCopy}>{d.subjectLabel}</span>
+                        <CopyButton value={d.subjectCopy} label={`Copy reference ${d.subjectCopy}`} />
+                      </span>
                     ) : (
                       <span>{d.subjectLabel}</span>
                     )

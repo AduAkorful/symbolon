@@ -1,6 +1,7 @@
 import { TxLink } from "@/components/TxLink";
 import type { DecisionAnchorInfo } from "@/lib/server/anchoring";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, shortHex } from "@/lib/format";
+import { CopyButton } from "@/components/CopyButton";
 import { Eyebrow } from "@/components/ui/Type";
 
 interface Props {
@@ -47,7 +48,10 @@ export function AnchorProof({ anchor, explorerUrl }: Props) {
 
       <dl className="grid gap-2 border-t border-rule-soft pt-3 text-xs sm:grid-cols-[9rem_1fr]">
         <dt className="text-graphite">Merkle root</dt>
-        <dd className="font-mono break-all text-ink">{anchor.root}</dd>
+        <dd className="flex items-baseline font-mono text-ink">
+          <span className="whitespace-nowrap" title={anchor.root}>{shortHex(anchor.root ?? "")}</span>
+          {anchor.root ? <CopyButton value={anchor.root} label={`Copy Merkle root ${anchor.root}`} /> : null}
+        </dd>
 
         <dt className="text-graphite">Batch size</dt>
         <dd className="font-mono text-ink">{anchor.count} decisions</dd>
@@ -62,14 +66,15 @@ export function AnchorProof({ anchor, explorerUrl }: Props) {
         {anchor.txHash ? (
           <>
             <dt className="text-graphite">Transaction</dt>
-            <dd className="font-mono">
+            <dd className="flex items-baseline font-mono">
               <TxLink
                 href={`${explorerUrl}/tx/${anchor.txHash}`}
-                label="View anchoring transaction on Arc"
-                className="underline text-graphite hover:text-ink break-all"
+                label={`View anchoring transaction ${anchor.txHash} on Arc`}
+                className="whitespace-nowrap underline text-graphite hover:text-ink"
               >
-                {anchor.txHash}
+                <span title={anchor.txHash}>{shortHex(anchor.txHash)}</span>
               </TxLink>
+              <CopyButton value={anchor.txHash} label={`Copy anchoring transaction hash ${anchor.txHash}`} />
             </dd>
           </>
         ) : null}

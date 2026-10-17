@@ -5,9 +5,13 @@ import { getAddress } from "viem";
 
 import { businesses, invoices, seals, type Database } from "@symbolon/db";
 
+import { shortHex } from "../format";
+
 export interface SubjectRef {
   label: string;
   href: string | null;
+  /** The whole value behind a shortened label, for a Copy button beside it (QA retest 19: "Reference 0x6c34bcb4…" had none) */
+  copy?: string;
 }
 
 const HASH = /^0x[0-9a-fA-F]{64}$/;
@@ -55,7 +59,7 @@ export async function subjectRefs(db: Database, businessId: string, subjects: (s
         subject,
         inv
           ? { label: `Invoice ${inv.number} from ${vendorOf.get(inv.seal.toLowerCase()) ?? "a vendor"}`, href: `/business/inbox/${inv.fingerprint}` }
-          : { label: `Reference ${subject.slice(0, 10)}…`, href: null },
+          : { label: `Reference ${shortHex(key)}`, href: null, copy: key },
       );
     } else if (ADDRESS.test(subject)) {
       const vendor = vendorOf.get(key);

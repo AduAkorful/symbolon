@@ -134,6 +134,7 @@ export default async function BusinessStewardPage() {
     subject: d.subject,
     subjectLabel: d.subject ? (refs.get(d.subject)?.label ?? null) : null,
     subjectHref: d.subject ? (refs.get(d.subject)?.href ?? null) : null,
+    subjectCopy: d.subject ? (refs.get(d.subject)?.copy ?? null) : null,
     txHash,
     createdAt: d.createdAt.toISOString(),
     summary,

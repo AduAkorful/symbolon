@@ -187,7 +187,7 @@ export function LendingSection({ businessId, signer, explorer, isOwner }: { busi
           ) : null}
           {view.policy.enabled && view.minOperating === "0" ? (
             <p className="text-sm text-graphite">
-              The operating floor is {money("0")}, so nothing keeps cash back for bills except the Steward’s own check. You can raise it under Change policy.
+              The operating floor is {money("0")}, so nothing keeps cash back for bills except the Steward’s own check. You can raise it with Change lending policy.
             </p>
           ) : null}
         </div>

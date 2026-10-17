@@ -191,11 +191,11 @@ export function QueuedChangeList({
                   ) : (
                     <span>Ready at {formatDateTime(new Date(change.eta))}</span>
                   )}
-                  {" · "}
-                  <span className="inline-flex items-baseline">
-                    <span className="font-mono" title={change.changeId}>ID {shortHex(change.changeId)}</span>
-                    <CopyButton value={change.changeId} label={`Copy change ID ${change.changeId}`} />
-                  </span>
+                </div>
+                {/* the ID sits on its own line with its Copy, so a wrapped row never ends in a bare separator (QA retest 19) */}
+                <div className="mt-0.5 flex items-baseline text-xs text-graphite">
+                  <span className="whitespace-nowrap font-mono" title={change.changeId}>ID {shortHex(change.changeId)}</span>
+                  <CopyButton value={change.changeId} label={`Copy change ID ${change.changeId}`} />
                 </div>
               </div>
 

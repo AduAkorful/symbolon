@@ -3,7 +3,9 @@ import Link from "next/link";
 import { TxLink } from "@/components/TxLink";
 import type { DecisionDetailView } from "@/lib/server/decisions";
 import { AnchorProof } from "./AnchorProof";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, shortHex } from "@/lib/format";
+import { describeInputs, formatOutcome } from "@/lib/decision-inputs";
+import { CopyButton } from "@/components/CopyButton";
 import { StatusPill, type Tone } from "@/components/ui/StatusPill";
 import { Eyebrow, PageTitle } from "@/components/ui/Type";
 
@@ -29,7 +31,10 @@ interface Props {
 }
 
 export function DecisionView({ decision: d, explorerUrl }: Props) {
-  const tone = outcomeTone[d.outcome] ?? "neutral";
+  // "scheduled for 2026-10-27T…" is the scheduled outcome; its time is said the way the rest of the app says it (QA retest 19)
+  const tone = outcomeTone[d.outcome] ?? outcomeTone[d.outcome.split(" ")[0] ?? ""] ?? "neutral";
+  const outcomeText = formatOutcome(d.outcome);
+  const inputRows = describeInputs(d.inputs, d.currency);
 
   return (
     <div className="space-y-10 pb-24">
@@ -44,7 +49,7 @@ export function DecisionView({ decision: d, explorerUrl }: Props) {
         </Eyebrow>
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <StatusPill tone={tone}>{d.outcome.replace(/_/g, " ")}</StatusPill>
+          <StatusPill tone={tone}>{outcomeText}</StatusPill>
           <span className="text-sm text-graphite">{formatDateTime(new Date(d.at))}</span>
           {d.mode ? <StatusPill tone="neutral">{d.mode} mode</StatusPill> : null}
           <span className="sm:ml-auto">
@@ -103,16 +108,28 @@ export function DecisionView({ decision: d, explorerUrl }: Props) {
             <Eyebrow id="inputs-title" as="h2">
               What it saw (inputs)
             </Eyebrow>
+            {/* labelled and in words; the stored values stay one click away for an audit (QA retest 19) */}
             <dl className="mt-3 divide-y divide-rule-soft rounded-doc border border-rule bg-paper-raised text-sm">
-              {Object.entries(d.inputs).map(([k, v]) => (
-                <div key={k} className="grid gap-1 p-3.5 sm:grid-cols-[11rem_1fr]">
-                  <dt className="text-graphite font-medium">{k}</dt>
-                  <dd className="font-mono text-xs text-ink break-all">
-                    {typeof v === "object" && v !== null ? JSON.stringify(v, null, 1) : String(v)}
-                  </dd>
+              {inputRows.map((row) => (
+                <div key={row.key} className="grid gap-1 p-3.5 sm:grid-cols-[11rem_1fr]">
+                  <dt className="text-graphite font-medium">{row.label}</dt>
+                  <dd className="text-ink break-words">{row.value}</dd>
                 </div>
               ))}
             </dl>
+            {inputRows.length > 0 ? (
+              <details className="mt-2 text-xs">
+                <summary className="cursor-pointer select-none font-medium text-graphite hover:text-ink">Show raw</summary>
+                <dl className="mt-2 divide-y divide-rule-soft rounded-doc border border-rule-soft bg-paper p-1">
+                  {inputRows.map((row) => (
+                    <div key={row.key} className="grid gap-1 p-2.5 sm:grid-cols-[11rem_1fr]">
+                      <dt className="font-mono text-graphite">{row.key}</dt>
+                      <dd className="whitespace-pre-wrap break-all font-mono text-ink">{row.raw}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </details>
+            ) : null}
           </section>
 
           {/* Options Considered */}
@@ -183,19 +200,20 @@ export function DecisionView({ decision: d, explorerUrl }: Props) {
             <Eyebrow as="h2">
               What happened
             </Eyebrow>
-            <p className="text-sm text-ink">{d.outcome}</p>
+            <p className="text-sm text-ink">{outcomeText}</p>
 
             {d.txHash ? (
               <div className="border-t border-rule-soft pt-3">
                 <span className="text-xs text-graphite">Transaction on Arc:</span>
-                <p className="mt-1 font-mono text-xs break-all">
+                <p className="mt-1 flex items-baseline font-mono text-xs">
                   <TxLink
                     href={`${explorerUrl}/tx/${d.txHash}`}
-                    label="View transaction on Arc explorer"
-                    className="underline text-graphite hover:text-ink"
+                    label={`View transaction ${d.txHash} on Arc explorer`}
+                    className="whitespace-nowrap underline text-graphite hover:text-ink"
                   >
-                    {d.txHash}
+                    <span title={d.txHash}>{shortHex(d.txHash)}</span>
                   </TxLink>
+                  <CopyButton value={d.txHash} label={`Copy transaction hash ${d.txHash}`} />
                 </p>
               </div>
             ) : (

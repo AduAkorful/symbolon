@@ -45,6 +45,8 @@ export interface DecisionDetailView {
   rule: string;
   outcome: string;
   inputs: Record<string, unknown>;
+  /** The invoice's currency ("USDC", "EURC"), so stored amounts read as money; USDC when the record isn't about an invoice */
+  currency: string;
   options: DecisionOptionView[];
   humanResponses: Array<{
     id: string;
@@ -154,6 +156,7 @@ export async function loadDecision(
   const anchor = await anchorState(db, client, cfg, businessId, row.hash as Hex);
 
   let since: DecisionDetailView["since"] = null;
+  let currency = "USDC";
   if (row.subject && /^0x[0-9a-fA-F]{64}$/.test(row.subject)) {
     const [newer] = await db
       .select({ id: decisions.id, createdAt: decisions.createdAt, record: decisions.record })
@@ -162,10 +165,11 @@ export async function loadDecision(
       .orderBy(desc(decisions.createdAt))
       .limit(1);
     const [inv] = await db
-      .select({ status: invoices.status })
+      .select({ status: invoices.status, token: invoices.token })
       .from(invoices)
       .where(and(eq(invoices.businessId, businessId), eq(invoices.fingerprint, row.subject.toLowerCase() as Hex)))
       .limit(1);
+    if (inv?.token && inv.token.toLowerCase() === cfg.deployment.tokens.eurc.toLowerCase()) currency = "EURC";
     since = {
       newerId: newer?.id ?? null,
       newerAt: newer?.createdAt ?? null,
@@ -195,6 +199,7 @@ export async function loadDecision(
     rule: String(rec.rule ?? ""),
     outcome: String(rec.outcome ?? ""),
     inputs: (rec.inputs as Record<string, unknown>) ?? {},
+    currency,
     options: rawOptions,
     humanResponses,
     txHash,
