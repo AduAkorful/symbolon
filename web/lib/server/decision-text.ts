@@ -84,8 +84,12 @@ export function humanizeKind(kind: string): string {
 /** The vendor's signed offer the Steward looked at and why it wasn't taken, said first (plan 05zu 3.1, 3.2) */
 function considered(record: Record<string, unknown>): string {
   const options = Array.isArray(record.options) ? (record.options as { kind?: unknown; discountBps?: unknown; reasons?: unknown }[]) : [];
-  const offers = options.filter((o) => o.kind === "offer" && typeof o.discountBps === "number");
+  // a signed offer is said first; with none, the Early Pay tiers written into the invoice itself (QA STW-4, STW-6)
+  const signed = options.filter((o) => o.kind === "offer" && typeof o.discountBps === "number");
+  const tiers = options.filter((o) => o.kind === "tier" && typeof o.discountBps === "number" && Number(o.discountBps) > 0);
+  const offers = signed.length > 0 ? signed : tiers;
   if (offers.length === 0) return "";
+  const what = signed.length > 0 ? "offer" : "Early Pay term in the invoice";
   const best = offers.sort((a, b) => Number(b.discountBps) - Number(a.discountBps))[0]!;
   const reasons = Array.isArray(best.reasons) ? (best.reasons as string[]) : [];
   const plain = (r: string) =>
@@ -97,13 +101,22 @@ function considered(record: Record<string, unknown>): string {
     : /already due/.test(r) ? "it is already due"
     : r;
   const pct = (Number(best.discountBps) / 100).toFixed(2).replace(/\.?0+$/, "");
-  if (reasons.length === 0) return `Considered the ${pct}% offer. `;
-  return `Considered the ${pct}% offer, not taken: ${plain(reasons[0]!)}. `;
+  if (reasons.length === 0) return `Considered the ${pct}% ${what}. `;
+  return `Considered the ${pct}% ${what}, not taken: ${plain(reasons[0]!)}. `;
 }
 
 export function summarizeDecision(record: Record<string, unknown>): DecisionSummary {
   const s = summarizeRecord(record);
-  return { ...s, sentence: tidyMoney(s.sentence), ...(s.explanation ? { explanation: tidyMoney(s.explanation) } : {}) };
+  const tidy = (t: string) => tidySignOff(tidyMoney(t));
+  return { ...s, sentence: tidy(s.sentence), ...(s.explanation ? { explanation: tidy(s.explanation) } : {}) };
+}
+
+/**
+ * Older records (and the model's wording of them) say a payment "requires an approver's sign-off", though an owner may always
+ * sign too (QA UI-2, UI-7). Only the words shown are changed; the stored record and its hash are untouched.
+ */
+export function tidySignOff(text: string): string {
+  return text.replace(/\b(a|an) approver[’']s sign-off\b/gi, (_m, article: string) => `${article[0] === "A" ? "A" : "a"} sign-off from an approver or the owner`);
 }
 
 /** "212.6 USDC" and "212.600000 EURC" in prose (the model's wording included) become "$212.60" and "€212.60", as everywhere else */
@@ -180,14 +193,19 @@ function summarizeRecord(record: Record<string, unknown>): DecisionSummary {
 
     case "sweep": {
       if (outcome === "depositing" || inputs.venue !== undefined) {
-        return { sentence: outcome === "depositing" ? "Moving excess cash into the lending vault" : "Proposed move of cash into the lending vault", explanation };
+        // QA ACT-1: a suggestion or a prepared move sits next to the "Moved …" row from the chain; say plainly which is which
+        if (inputs.actor !== undefined) return { sentence: "Prepared a move of cash into the lending vault (the move itself is listed as “Moved …”)", explanation };
+        if (outcome === "depositing") return { sentence: "Moving excess cash into the lending vault", explanation };
+        return { sentence: "The Steward suggested moving cash into the lending vault (a suggestion only; no money moved)", explanation };
       }
       return { sentence: outcome === "subscribing" ? "Sweeping excess cash into USYC reserve" : "Proposed sweep into USYC reserve", explanation };
     }
 
     case "redeem": {
       if (inputs.venue !== undefined) {
-        return { sentence: outcome === "redeeming" ? "Taking cash out of the lending vault ahead of upcoming bills" : "Proposed withdrawal from the lending vault", explanation };
+        if (inputs.actor !== undefined) return { sentence: "Prepared a withdrawal from the lending vault (the move itself is listed as “Took …”)", explanation };
+        if (outcome === "redeeming") return { sentence: "Taking cash out of the lending vault ahead of upcoming bills", explanation };
+        return { sentence: "The Steward suggested taking cash out of the lending vault (a suggestion only; no money moved)", explanation };
       }
       return { sentence: outcome === "redeeming" ? "Redeeming USYC reserve ahead of upcoming bills" : "Proposed USYC redemption", explanation };
     }

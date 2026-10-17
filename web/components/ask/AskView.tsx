@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { postJson } from "@/lib/client/api";
 import { useConfirm } from "@/components/useConfirm";
-import { formatDay } from "@/lib/format";
+import { formatDateTime, formatDay } from "@/lib/format";
 import { Button, buttonClass } from "@/components/ui/button";
 import { InlineLoading } from "@/components/ui/States";
 import { Lead, PageTitle, SmallTitle } from "@/components/ui/Type";
@@ -39,6 +39,8 @@ export interface EarlierItem {
 interface Message {
   q: string;
   a?: AskAnswer;
+  /** When a stored answer was given (QA ASK-1); absent for one asked just now */
+  at?: string;
   error?: string;
 }
 
@@ -74,6 +76,7 @@ function Exchange({ m }: { m: Message }) {
               </div>
             ) : null}
             <p className="text-sm text-graphite">{m.a.source}</p>
+            {m.at ? <p className="text-sm text-graphite">Answered {formatDateTime(m.at)}. Statuses may have changed since; ask again for the latest.</p> : null}
             {m.a.saved === false ? <p className="text-sm text-warn">This one wasn’t saved, so it won’t be here after a refresh.</p> : null}
           </div>
         ) : m.error ? (
@@ -101,13 +104,13 @@ export function AskView({
   quickQuestions: QuickQuestion[];
   typingAvailable: boolean;
   /** The person's stored thread (plan 05zf), oldest first */
-  initialThread: { question: string; answer: AskAnswer }[];
+  initialThread: { question: string; answer: AskAnswer; at?: string }[];
   /** Set when the stored thread could not be loaded */
   threadProblem?: boolean;
   /** The person's earlier conversations, newest first (plan 05zf amendment) */
   initialEarlier: EarlierItem[];
 }) {
-  const [log, setLog] = useState<Message[]>(() => initialThread.map((m) => ({ q: m.question, a: m.answer })));
+  const [log, setLog] = useState<Message[]>(() => initialThread.map((m) => ({ q: m.question, a: m.answer, at: m.at })));
   const [confirmAsk, confirmDialog] = useConfirm();
   const [problem, setProblem] = useState<string | null>(null);
   const [earlier, setEarlier] = useState<EarlierItem[]>(initialEarlier);
@@ -161,8 +164,8 @@ export function AskView({
     try {
       const res = await fetch(`/api/business/${businessId}/ask/conversations/${item.id}`, { cache: "no-store" });
       if (!res.ok) throw new Error("Couldn't open that conversation.");
-      const data = (await res.json()) as { messages: { question: string; answer: AskAnswer }[] };
-      setViewing({ id: item.id, title: item.title, messages: data.messages.map((m) => ({ q: m.question, a: m.answer })) });
+      const data = (await res.json()) as { messages: { question: string; answer: AskAnswer; at?: string }[] };
+      setViewing({ id: item.id, title: item.title, messages: data.messages.map((m) => ({ q: m.question, a: m.answer, at: m.at })) });
     } catch (err) {
       setProblem(err instanceof Error ? err.message : "Couldn't open that conversation.");
     }

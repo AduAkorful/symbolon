@@ -11,22 +11,6 @@ import { chainEvents, syncCursors, type Database } from "@symbolon/db";
 /** How far behind the chain's head the mirror may be and still be called collected: about three hours of Arc blocks */
 export const COLLECTED_WITHIN_BLOCKS = 20_000n;
 
-/** How many of the most recent settlements the landing page lists (plan 05zg) */
-export const LATEST_SHOWN = 5;
-
-/** One settlement as the ledger recorded it; the transaction hash is what makes it checkable on the explorer */
-export interface LatestSettlement {
-  txHash: string;
-  /** ISO time, or null when the block's time is not known */
-  at: string | null;
-  /** Null for a token the app has no name for: listed, with no amount, never summed */
-  token: "USDC" | "EURC" | null;
-  /** Exact digits of what was delivered to the vendor, or null with an unnamed token */
-  amount: string | null;
-  seal: string;
-  payer: string;
-}
-
 /** What the Vaults hold, token by token (never added together) */
 export interface ValueLocked {
   tokens: { token: "USDC" | "EURC"; amount: string }[];
@@ -46,15 +30,13 @@ export interface ProtocolNumbers {
   payingVaults: number;
   /** ISO time of the earliest settlement, or null when it can't be told */
   firstSettlement: string | null;
-  /** Newest first, at most `LATEST_SHOWN` */
-  latest: LatestSettlement[];
   /** The tokens held in every Vault a Symbolon factory created, read from Arc just now; null when any read failed (never a partial total) */
   locked: ValueLocked | null;
 }
 
 export interface ProtocolStats {
   network: { name: string; chainId: number; testnet: boolean };
-  /** The explorer's address, from the registry, for the links under each settlement */
+  /** The explorer's address, from the registry */
   explorer: string;
   /** Lowest block every stream has been read through; null before anything is read */
   readThrough: string | null;
@@ -147,24 +129,6 @@ export async function loadProtocolStats(db: Database, client: PublicClient | und
   }
   volume.sort((a, b) => a.token.localeCompare(b.token));
 
-  const recent = await db
-    .select({ txHash: chainEvents.txHash, at: chainEvents.blockTime, args: chainEvents.args })
-    .from(chainEvents)
-    .where(settled)
-    .orderBy(desc(chainEvents.blockNumber), desc(chainEvents.logIndex))
-    .limit(LATEST_SHOWN);
-  const latest: LatestSettlement[] = recent.map((row) => {
-    const name = known.get(String(row.args.token ?? "").toLowerCase()) ?? null;
-    return {
-      txHash: row.txHash,
-      at: row.at ? new Date(row.at).toISOString() : null,
-      token: name,
-      amount: name ? formatUnits(BigInt(String(row.args.paid ?? "0")), 6) : null,
-      seal: String(row.args.seal ?? ""),
-      payer: String(row.args.payer ?? ""),
-    };
-  });
-
   return {
     ...base,
     progressPercent: 100,
@@ -177,7 +141,6 @@ export async function loadProtocolStats(db: Database, client: PublicClient | und
       sealsPaid: people?.seals ?? 0,
       payingVaults: paying?.n ?? 0,
       firstSettlement: (undated?.n ?? 0) === 0 && people?.first ? new Date(people.first).toISOString() : null,
-      latest,
       locked,
     },
   };

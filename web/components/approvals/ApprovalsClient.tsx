@@ -6,7 +6,7 @@ import { useState } from "react";
 
 import { Address } from "@/components/Address";
 import { Overlay } from "@/components/Overlay";
-import { Button } from "@/components/ui/button";
+import { Button, buttonClass } from "@/components/ui/button";
 import { DetailList } from "@/components/ui/DetailList";
 import { Field, textareaClass } from "@/components/ui/Field";
 import { Callout } from "@/components/ui/Callout";
@@ -280,12 +280,14 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
         )}
       </section>
 
-      {/* Invoices that only need a sign-off and aren't due yet (plan 05zp) */}
+      {/* Invoices that only need a sign-off and aren't due yet (plan 05zp; listed in every mode since QA STW-2) */}
       {data.notYetApprovable.signoffAhead.length === 0 && data.notYetApprovable.count > 0 ? (
         <p className="max-w-[64ch] text-sm text-graphite">
           {data.mode === "auto"
             ? "Invoices that only need a sign-off before their due date are listed here once the Steward has looked at them. The ones below are held back by something else."
-            : "In Assisted mode the Steward asks for each sign-off on the invoice’s due date. Switch to Autonomous to sign ahead of time, or use Pay now on the invoice."}
+            : data.mode === "assist"
+              ? "In Assisted mode the Steward asks for each sign-off on the invoice’s due date. Switch to Autonomous to sign ahead of time, or use Pay now on the invoice."
+              : "In Shadow mode the Steward only records what it would do and never pays. Use Pay now on the invoice, or switch to Autonomous to sign ahead of time."}
         </p>
       ) : null}
       {data.notYetApprovable.signoffAhead.length > 0 ? (
@@ -295,7 +297,11 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
               Coming up that need your sign-off <span className="text-graphite">({data.notYetApprovable.signoffAhead.length})</span>
             </SectionTitle>
             <p className="mt-1 max-w-[64ch] text-sm text-graphite">
-              The Steward asks on each invoice’s due date. You can sign ahead now: nothing is paid earlier, and the approval stays valid for three days after the due date.
+              {data.mode === "auto"
+                ? "The Steward asks on each invoice’s due date. You can sign ahead now: nothing is paid earlier, and the approval stays valid for three days after the due date."
+                : data.mode === "assist"
+                  ? "In Assisted mode the Steward asks for each sign-off on the due date, and signing ahead needs Autonomous mode. To settle one now, open it and use Pay now."
+                  : "In Shadow mode the Steward never pays, so nothing here is paid without you. Open an invoice and use Pay now, or switch to Autonomous to sign ahead."}
             </p>
           </div>
           {actionError ? <InlineError>{actionError}</InlineError> : null}
@@ -319,6 +325,10 @@ export function ApprovalsClient({ businessId, data, signerPlan, explorerUrl, off
                     <Button size="sm" variant="secondary" disabled={actionLoading} onClick={() => void handleSignApproval(a)}>
                       Sign ahead
                     </Button>
+                  ) : data.mode !== "auto" ? (
+                    <Link href={`/business/inbox/${a.fingerprint}`} className={buttonClass({ variant: "secondary", size: "sm" })}>
+                      Pay now
+                    </Link>
                   ) : null}
                 </div>
               </li>

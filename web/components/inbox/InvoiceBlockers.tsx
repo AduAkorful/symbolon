@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import type { Blocker } from "@/lib/blockers";
 import { SectionTitle } from "@/components/ui/Type";
+import { RecheckNow } from "@/components/inbox/RecheckNow";
 
 const DOT: Record<Blocker["kind"], string> = { action: "bg-red", wait: "bg-warn", info: "bg-seal" };
 
@@ -10,7 +11,7 @@ const DOT: Record<Blocker["kind"], string> = { action: "bg-red", wait: "bg-warn"
  * "What's stopping this payment": each reason in words, with where to deal with it, and the pay controls underneath
  * (plan 05zj C, SYM-06). With nothing in the way it says so, because that is the answer an owner is looking for.
  */
-export function InvoiceBlockers({ blockers, children }: { blockers: Blocker[]; children?: ReactNode }) {
+export function InvoiceBlockers({ blockers, children, checkedAt }: { blockers: Blocker[]; children?: ReactNode; checkedAt?: string }) {
   const inTheWay = blockers.filter((b) => b.kind !== "info" || b.rule === "ChainUnreadable");
   const later = blockers.filter((b) => !inTheWay.includes(b));
   return (
@@ -48,6 +49,7 @@ export function InvoiceBlockers({ blockers, children }: { blockers: Blocker[]; c
           ))}
         </ul>
       ) : null}
+      {checkedAt ? <RecheckNow checkedAt={checkedAt} /> : null}
       {children ? <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-rule-soft pt-4">{children}</div> : null}
     </section>
   );

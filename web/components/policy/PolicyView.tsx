@@ -328,7 +328,7 @@ export function PolicyView({
               <PolicyField id="perTxCap" label="Largest single payment ($)" current={currentPolicyRaw.perTxCap} draft={draftNow.perTxCap} looserWhen="higher" hint="No single payment may ever exceed this.">
                 {(a) => <input {...a} type="number" step="any" value={draftPerTxCap} onChange={(e) => setDraftPerTxCap(e.target.value)} className={controlClass} required />}
               </PolicyField>
-              <PolicyField id="ownerThreshold" label="Owner signs above ($)" current={currentPolicyRaw.ownerThreshold} draft={draftNow.ownerThreshold} looserWhen="higher" hint="Between the auto-pay limit and this, an approver signs; above it, the owner.">
+              <PolicyField id="ownerThreshold" label="Owner signs above ($)" current={currentPolicyRaw.ownerThreshold} draft={draftNow.ownerThreshold} looserWhen="higher" hint="Between the auto-pay limit and this, a budget’s approver or the owner signs; above it, the owner signs.">
                 {(a) => <input {...a} type="number" step="any" value={draftOwnerThreshold} onChange={(e) => setDraftOwnerThreshold(e.target.value)} className={controlClass} required />}
               </PolicyField>
               <PolicyField id="autoPayLimit" label="Auto-pay limit ($)" current={currentPolicyRaw.autoPayLimit} draft={draftNow.autoPayLimit} looserWhen="higher" hint="Up to this, a payment can settle with no one signing, if every other rule holds.">

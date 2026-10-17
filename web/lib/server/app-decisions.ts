@@ -72,7 +72,8 @@ export async function appendAppDecision(
       body: input.kind === "change_queued"
         ? { title: typeof summary.title === "string" ? summary.title : null, eta: input.inputs.eta ?? null }
         : { stateMatch: input.outcome === "applied" },
-      dedupeKey: `${input.kind}:${hash}`,
+      // an upgrade rings once per transaction, even if the apply is recorded again (the record's hash carries its time)
+      dedupeKey: input.kind === "upgrade_applied" && (txHash ?? input.txHash) ? `upgrade_applied:${String(txHash ?? input.txHash).toLowerCase()}` : `${input.kind}:${hash}`,
     }, { roles: ["owner"] });
   }
   if (input.kind === "invoice_reopened" && input.subject) {

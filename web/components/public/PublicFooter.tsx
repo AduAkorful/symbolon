@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { BuildId } from "@/components/shell/BuildId";
 import { CONTAINER } from "@/components/shell/container";
 
 export function PublicFooter() {
@@ -10,6 +11,7 @@ export function PublicFooter() {
           Symbolon runs on Arc testnet.{" "}
           <Link href="/status" className="underline decoration-rule underline-offset-4 hover:text-ink">Read the contracts</Link>
         </p>
+        <BuildId />
         <nav aria-label="Footer" className="flex items-center gap-6">
           <Link href="/guide" className="inline-flex min-h-10 items-center hover:text-ink">
             Get started

@@ -22,7 +22,7 @@ export const GET = routeWith<Ctx>(async (_request, { params }) => {
   const { db, businessId, cid, userId } = await scope(params);
   const messages = await loadEarlier(db, businessId, userId, cid);
   if (messages.length === 0) throw new AuthError(404, "That conversation wasn't found.");
-  return NextResponse.json({ ok: true, messages: messages.map((m) => ({ question: m.question, answer: m.answer })) });
+  return NextResponse.json({ ok: true, messages: messages.map((m) => ({ question: m.question, answer: m.answer, at: m.createdAt })) });
 });
 
 /** Deletes one earlier conversation, the author's only */

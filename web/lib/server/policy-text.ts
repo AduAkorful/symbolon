@@ -70,7 +70,7 @@ export function describePolicyRuleItems(p: VaultPolicy, decimals = 6): PolicyRul
       formatted: usd(p.ownerThreshold, decimals),
       unit: "$",
       looserWhen: "higher",
-      note: "Between the auto-pay limit and this, a budget’s approver signs",
+      note: "Between the auto-pay limit and this, a budget’s approver or the owner signs; above it, the owner signs",
     },
     {
       id: "autoPayLimit",

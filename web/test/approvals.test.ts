@@ -233,6 +233,41 @@ describe("Approvals Service", () => {
     expect(BigInt(prep.deadline)).toBe(BigInt(due) + 3n * 86_400n);
   });
 
+  // QA STW-2: a later offer or counter row under the same invoice must not hide the Steward's finding, and the list shows in
+  // every mode (only Autonomous can sign ahead)
+  it.each(["auto", "assist"] as const)("keeps listing a sign-off-only invoice after a later offer row (%s mode)", async (mode) => {
+    const { user, business, vault } = await setupBusinessWithUser("owner", mode);
+    const due = 1_792_592_000;
+    const { sealed, envelope, fingerprint } = await createInvoiceEnvelope(vault, `ACCS-2026-${mode}`, "63.70");
+    await db.insert(invoices).values({
+      businessId: business.id, fingerprint, chainId: cfg.chainId, ledger: cfg.deployment.contracts.invoiceLedger,
+      seal: sealed.document.seal, payerRef: randHash(), source: "link", dueDate: new Date(due * 1000),
+      token: cfg.deployment.tokens.usdc.toLowerCase(), invoiceNumber: `ACCS-2026-${mode}`, envelope, total: 63_700_000n, credited: 0n,
+      receivedAt: new Date(), status: "scheduled",
+    });
+    await db.insert(decisions).values({
+      businessId: business.id, subject: fingerprint, hash: `0x${"1".repeat(63)}${mode === "auto" ? "a" : "b"}`, kind: "schedule",
+      record: { kind: "schedule", mode, inputs: { blockers: [{ rule: "ApprovalRequired", detail: "needs a sign-off from an approver or the owner" }] }, options: [], rule: "pay on the due date unless a signed discount beats the reserve yield plus the owner's spread", outcome: "scheduled for 2026-10-20T00:00:00.000Z" },
+      createdAt: new Date(Date.now() - 60_000),
+    });
+    await db.insert(decisions).values({
+      businessId: business.id, subject: fingerprint, hash: `0x${"2".repeat(63)}${mode === "auto" ? "a" : "b"}`, kind: "early_pay_offered",
+      record: { kind: "early_pay_offered", inputs: { discountBps: 50 }, options: [], rule: "vendor signed an offer", outcome: "offered" },
+      createdAt: new Date(),
+    });
+    const client = { getBlock: vi.fn().mockResolvedValue({ timestamp: 1_790_000_300n }) } as unknown as PublicClient;
+    const res = await listApprovals(db, client, cfg, user, business.id);
+    const listed = res.notYetApprovable.signoffAhead.find((a) => a.fingerprint === fingerprint);
+    expect(listed).toBeDefined();
+    expect(listed!.needs).toBe("approver");
+    expect(listed!.canSign).toBe(mode === "auto");
+    if (mode === "auto") {
+      // the scheduled rule mentions "the owner's spread"; signing ahead must not read that as owner-only
+      const prep = await prepareApproval(db, client, cfg, user, business.id, fingerprint);
+      expect(prep.ahead).toBe(true);
+    }
+  });
+
   it("prepareApproval fails if business is not in auto mode", async () => {
     const { user, business, vault } = await setupBusinessWithUser("owner", "assist");
     const { sealed, envelope, fingerprint } = await createInvoiceEnvelope(vault, "INV-003", "300");

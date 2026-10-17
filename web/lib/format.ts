@@ -3,11 +3,28 @@ import { formatAmount, parseAmount } from "@symbolon/seal";
 
 // Display helpers for canonical decimal strings. Amounts are never turned into floating point: they stay exact digits.
 
-/** "2880.000000" → "2,880.00"; keeps more decimals only where they are not zero ("15.375000" → "15.375") */
+const group = (whole: string) => whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+/**
+ * Money on screen, at two decimals (QA FMT-1): "2880.000000" → "2,880.00", "90.999999" → "91.00", half up on the third decimal.
+ * A non-zero amount under a cent keeps its exact digits ("0.000001"), so it never reads as nothing. The arithmetic stays on
+ * digits, never floating point. Where the exact figure matters (a receipt, a transaction's detail) use `showExactAmount`.
+ */
 export function showAmount(value: string): string {
+  const negative = value.startsWith("-");
+  const [rawWhole = "0", frac = ""] = (negative ? value.slice(1) : value).split(".");
+  const whole = rawWhole.replace(/^0+(?=\d)/, "") || "0";
+  if (whole === "0" && /^00/.test(frac.padEnd(2, "0")) && /[1-9]/.test(frac)) return `${negative ? "-" : ""}${showExactAmount(`0.${frac}`)}`;
+  const cents = BigInt(whole) * 100n + BigInt(frac.padEnd(2, "0").slice(0, 2)) + (Number(frac[2] ?? "0") >= 5 ? 1n : 0n);
+  const out = `${group((cents / 100n).toString())}.${(cents % 100n).toString().padStart(2, "0")}`;
+  return negative && cents > 0n ? `-${out}` : out;
+}
+
+/** The exact digits, grouped: "2880.000000" → "2,880.00", "15.375000" → "15.375", "90.999999" → "90.999999" */
+export function showExactAmount(value: string): string {
   const [whole = "0", frac = ""] = value.split(".");
   const trimmed = frac.replace(/0+$/, "").padEnd(2, "0");
-  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${trimmed}`;
+  return `${group(whole)}.${trimmed}`;
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
@@ -46,10 +63,10 @@ export function showDate(seconds: number): string {
 
 /**
  * An amount with its currency the way the rest of the product writes money: "$14,000.00", "€2,400.00"; any other token keeps
- * its symbol after the number. The digits are `showAmount`'s, so precision is never rounded away.
+ * its symbol after the number. Two decimals on screen (`showAmount`); `{ exact: true }` keeps every digit.
  */
-export function showMoney(amount: string, symbol: string): string {
-  const digits = showAmount(amount);
+export function showMoney(amount: string, symbol: string, opts: { exact?: boolean } = {}): string {
+  const digits = opts.exact ? showExactAmount(amount) : showAmount(amount);
   if (symbol === "USDC" || symbol === "USD") return `$${digits}`;
   if (symbol === "EURC" || symbol === "EUR") return `€${digits}`;
   return symbol ? `${digits} ${symbol}` : digits;

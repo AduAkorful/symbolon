@@ -159,6 +159,17 @@ export function findingFailures(inputs: unknown): { rule: string; detail: string
   return (list as { rule?: unknown; detail?: unknown }[]).filter((f) => typeof f?.rule === "string").map((f) => ({ rule: String(f.rule), detail: String(f.detail ?? "") }));
 }
 
+/**
+ * The kinds of record that are the Steward's own finding on an invoice. Anything else written under the same subject (a vendor's
+ * offer, a counter, a sign-off, an app action) says nothing about what stands in the way, so it must never hide the finding
+ * (QA STW-2: an "early_pay_offered" or counter row written after the scheduled decision emptied the sign-off list).
+ */
+export const STEWARD_FINDING_KINDS = ["schedule", "request_approval", "hold", "pay", "skip", "refuse", "reject"] as const;
+
+export function isStewardFinding(kind: string | null | undefined, record: unknown): boolean {
+  return (STEWARD_FINDING_KINDS as readonly string[]).includes(String(kind ?? "")) && !isPreparedPayment(record);
+}
+
 const NOT_YET_STATUSES = ["verified", "held", "scheduled", "partially_paid"] as const;
 
 /**
@@ -173,16 +184,17 @@ export async function loadNotYetApprovable(db: Database, businessId: string, ctx
   if (open.length === 0) return { count: 0, signoffAhead: [], reasons: [] };
   const subjects = open.map((o) => o.fingerprint.toLowerCase());
   const rows = await db
-    .select({ subject: decisions.subject, record: decisions.record })
+    .select({ subject: decisions.subject, kind: decisions.kind, record: decisions.record })
     .from(decisions)
-    .where(and(eq(decisions.businessId, businessId), inArray(decisions.subject, subjects)))
+    .where(and(eq(decisions.businessId, businessId), inArray(decisions.subject, subjects), inArray(decisions.kind, [...STEWARD_FINDING_KINDS])))
     .orderBy(desc(decisions.createdAt));
   const latest = new Map<string, Record<string, unknown>>();
-  for (const r of rows) if (r.subject && !latest.has(r.subject) && !isPreparedPayment(r.record)) latest.set(r.subject, r.record as Record<string, unknown>);
+  for (const r of rows) if (r.subject && !latest.has(r.subject) && isStewardFinding(r.kind, r.record)) latest.set(r.subject, r.record as Record<string, unknown>);
 
-  // plan 05zp: Autonomous only, scheduled, and the one thing stopping it is a sign-off
+  // plan 05zp: scheduled, and the one thing stopping it is a sign-off. Listed in every mode (QA STW-2); only Autonomous can take a
+  // signature ahead of time (`canSign`), the other modes point at Pay now on the invoice
   const signoffAhead: SignoffAhead[] = [];
-  if (ctx.autoMode) {
+  {
     for (const o of open) {
       if (o.status !== "scheduled") continue;
       const record = latest.get(o.fingerprint.toLowerCase());
@@ -207,7 +219,7 @@ export async function loadNotYetApprovable(db: Database, businessId: string, ctx
         token,
         dueDate: o.dueDate,
         needs: failures.some((f) => /needs the owner's sign-off/i.test(f.detail)) ? "owner" : "approver",
-        canSign: ctx.canApprove,
+        canSign: ctx.autoMode && ctx.canApprove,
       });
     }
     signoffAhead.sort((a, b) => (a.dueDate?.getTime() ?? 0) - (b.dueDate?.getTime() ?? 0));
@@ -474,15 +486,18 @@ export async function prepareApproval(
   if (!invRow) throw new AuthError(404, "Invoice not found.");
   // plan 05zp: a scheduled invoice whose only failing rule is the sign-off can be approved ahead of its due date
   let signingAhead = false;
+  let aheadNeedsOwner = false;
   if (invRow.status === "scheduled") {
-    const [finding] = await db
-      .select({ record: decisions.record })
+    const findings = await db
+      .select({ kind: decisions.kind, record: decisions.record })
       .from(decisions)
-      .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, fingerprint)))
+      .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, fingerprint), inArray(decisions.kind, [...STEWARD_FINDING_KINDS])))
       .orderBy(desc(decisions.createdAt))
-      .limit(1);
+      .limit(5);
+    const finding = findings.find((f) => isStewardFinding(f.kind, f.record));
     const failures = findingFailures((finding?.record as { inputs?: unknown } | undefined)?.inputs);
     signingAhead = failures.length > 0 && failures.every((f) => f.rule === "ApprovalRequired");
+    aheadNeedsOwner = failures.some((f) => /needs the owner's sign-off/i.test(f.detail));
   }
   if (invRow.status !== "awaiting_approval" && !signingAhead) {
     throw new AuthError(409, `This invoice is not awaiting approval (current status: ${invRow.status}).`);
@@ -519,7 +534,10 @@ export async function prepareApproval(
     .orderBy(desc(decisions.createdAt))
     .limit(1);
   const rule = String((latestDec?.record as any)?.rule ?? "");
-  if (rule.toLowerCase().includes("owner") && !isOwner) {
+  // signed ahead, the level comes from the finding's own sign-off rule; a scheduled decision's rule text mentions "the owner's
+  // spread", which must not be read as "owner only"
+  const ownerOnly = signingAhead ? aheadNeedsOwner : rule.toLowerCase().includes("owner");
+  if (ownerOnly && !isOwner) {
     throw new AuthError(403, "This payment exceeds the approver limit and requires the Vault owner's signature.");
   }
 

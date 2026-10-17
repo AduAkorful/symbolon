@@ -135,7 +135,7 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
           ) : null}
 
           {!closed ? (
-            <InvoiceBlockers blockers={blockers}>
+            <InvoiceBlockers blockers={blockers} checkedAt={new Date().toISOString()}>
               {canPay ? (
                 unavailable ? (
                   <Button disabled title={unavailable}>Pay now</Button>
@@ -170,6 +170,7 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
               fingerprint={fingerprint}
               view={offers}
               symbol={view.verification.document.currency.symbol}
+              terms={view.verification.document.earlyPay ?? []}
               pay={canPay ? { signer, explorer, ...(unavailable ? { unavailable } : {}) } : undefined}
             />
           ) : null}

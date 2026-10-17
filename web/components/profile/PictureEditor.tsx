@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { avatarUrl } from "@/lib/avatar-url";
@@ -36,25 +36,49 @@ export function PictureEditor({ userId, name, initialVersion }: { userId: string
   const [problem, setProblem] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  // QA PIC-3: a chosen picture is only previewed; nothing is saved until Save
+  const [pending, setPending] = useState<{ blob: Blob; url: string } | null>(null);
+  useEffect(() => () => {
+    if (pending) URL.revokeObjectURL(pending.url);
+  }, [pending]);
 
   async function choose(file: File | undefined) {
     if (!file) return;
-    setBusy(true);
     setProblem(null);
     setDone(null);
     try {
       const blob = await shrink(file);
+      setPending({ blob, url: URL.createObjectURL(blob) });
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : "That didn't work. Try again.");
+    } finally {
+      if (input.current) input.current.value = "";
+    }
+  }
+
+  function cancel() {
+    setPending(null);
+    setProblem(null);
+  }
+
+  async function save() {
+    if (!pending) return;
+    const blob = pending.blob;
+    setBusy(true);
+    setProblem(null);
+    setDone(null);
+    try {
       const res = await fetch("/api/profile/avatar", { method: "POST", headers: { "Content-Type": blob.type }, body: blob });
       const out = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
       if (!res.ok) throw new Error(out.error ?? "That didn't work. Try again.");
       const stored = out.url ? Number(new URL(out.url, window.location.origin).searchParams.get("v")) : NaN;
       setVersion(Number.isFinite(stored) && stored > 0 ? stored : Date.now());
+      setPending(null);
       setDone("Picture updated.");
     } catch (e) {
       setProblem(e instanceof Error ? e.message : "That didn't work. Try again.");
     } finally {
       setBusy(false);
-      if (input.current) input.current.value = "";
     }
   }
 
@@ -78,15 +102,23 @@ export function PictureEditor({ userId, name, initialVersion }: { userId: string
     <div className="space-y-2">
       <p className="text-sm font-medium text-ink">Your picture</p>
       <div className="flex items-center gap-4">
-        <Avatar key={version ?? "none"} name={name} src={avatarUrl(userId, version)} size={56} />
+        <Avatar key={pending?.url ?? version ?? "none"} name={name} src={pending?.url ?? avatarUrl(userId, version)} size={56} />
+        {pending ? (
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" disabled={busy} onClick={() => void save()}>{busy ? "Saving…" : "Save picture"}</Button>
+            <Button type="button" variant="quiet" size="sm" disabled={busy} onClick={cancel}>Cancel</Button>
+          </div>
+        ) : (
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="secondary" size="sm" disabled={busy} onClick={() => input.current?.click()}>
             {version === null ? "Choose a picture" : "Change picture"}
           </Button>
           {version !== null ? <Button type="button" variant="quiet" size="sm" disabled={busy} onClick={() => void remove()}>Remove</Button> : null}
         </div>
+        )}
         <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" tabIndex={-1} aria-label="Choose a picture" onChange={(e) => void choose(e.target.files?.[0])} />
       </div>
+      {pending ? <p role="status" className="text-sm text-graphite">This is a preview. Save it to use it as your picture, or cancel to keep the one you have.</p> : null}
       <p className="max-w-[48ch] text-xs text-graphite">Teammates and vendors you do business with can see it. It is never shown next to an approval or a payment.</p>
       {problem ? <p role="alert" className="text-sm text-red">{problem}</p> : null}
       {done ? <p role="status" className="text-sm text-ok">{done}</p> : null}

@@ -1,23 +1,16 @@
-import { Address } from "@/components/Address";
-import { TxLink } from "@/components/TxLink";
-import { Money } from "@/components/ui/Money";
-import { formatDay } from "@/lib/format";
+import { formatDay, showAmount } from "@/lib/format";
 import type { ProtocolStats } from "@/lib/server/stats";
 
 const WHOLE = new Intl.NumberFormat("en-US");
 
-/** "1,250.5": exact digits from the chain, grouped; never rounded */
-function groupedAmount(amount: string): string {
-  const [whole, fraction] = amount.split(".");
-  return `${WHOLE.format(BigInt(whole!))}${fraction ? `.${fraction}` : ""}`;
-}
+/** "503.956799" → "503.96": grouped, two decimals (FMT-1); the exact digits stay on the explorer */
+const groupedAmount = (amount: string) => showAmount(amount);
 
 /** "1 vendor", "3 vendors" */
 const count = (n: number, one: string, many: string) => `${WHOLE.format(n)} ${n === 1 ? one : many}`;
 
 /**
- * The network numbers on the landing page (plan 05zg): two headline figures, the latest settlements each with a link to its
- * transaction, and one quiet line for the rest. Renders nothing it cannot prove; a small number stays small.
+ * The network numbers on the landing page (plan 05zg): the headline figures and one quiet line for the rest. Renders nothing it cannot prove; a small number stays small.
  */
 export function ProtocolNumbers({ stats }: { stats: ProtocolStats }) {
   const n = stats.numbers;
@@ -36,7 +29,7 @@ export function ProtocolNumbers({ stats }: { stats: ProtocolStats }) {
   const LG_COLUMNS: Record<number, string> = { 2: "lg:grid-cols-2", 3: "lg:grid-cols-3", 4: "lg:grid-cols-4" };
   return (
     <div className="mt-10">
-      <dl className={`grid gap-x-12 gap-y-8 sm:grid-cols-2 ${LG_COLUMNS[Math.min(columns, 4)] ?? "lg:grid-cols-3"}`}>
+      <dl className={`grid gap-x-8 gap-y-8 sm:grid-cols-2 ${LG_COLUMNS[Math.min(columns, 4)] ?? "lg:grid-cols-3"}`}>
         <div className="border-t border-rule pt-4">
           <dt className="text-sm text-graphite">Vaults created</dt>
           <dd className="mt-1 font-display text-6xl leading-none text-ink">{WHOLE.format(n.vaultsCreated)}</dd>
@@ -49,11 +42,11 @@ export function ProtocolNumbers({ stats }: { stats: ProtocolStats }) {
         </div>
         {n.locked
           ? lockedTokens.map((t) => (
-              <div key={t.token} className="border-t border-rule pt-4">
+              <div key={t.token} className="min-w-0 border-t border-rule pt-4">
                 <dt className="text-sm text-graphite">{t.token} locked in Vaults</dt>
-                <dd className="mt-1 font-display text-6xl leading-none text-ink">
-                  {groupedAmount(t.amount)}
-                  <span className="ml-2 font-sans text-base text-graphite">{t.token}</span>
+                <dd className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 font-display text-[clamp(2rem,4.2vw,3.75rem)] leading-none text-ink [overflow-wrap:anywhere]">
+                  <span className="min-w-0">{groupedAmount(t.amount)}</span>
+                  <span className="font-sans text-base text-graphite">{t.token}</span>
                 </dd>
                 <p className="mt-3 max-w-[40ch] text-sm text-graphite">
                   Held by {count(n.locked!.vaults, "Vault", "Vaults")} right now, read from Arc. Each token is counted alone.
@@ -66,23 +59,7 @@ export function ProtocolNumbers({ stats }: { stats: ProtocolStats }) {
       {n.invoicesSettled === 0 ? (
         <p className="mt-8 text-sm text-graphite">No invoice has been settled yet.</p>
       ) : (
-        <>
-          <p className="mt-8 text-sm text-graphite">{quiet.join(" · ")}</p>
-          <h3 className="mt-10 font-display text-xl">Latest settlements</h3>
-          <ol className="mt-3 divide-y divide-rule-soft border-y border-rule">
-            {n.latest.map((s) => (
-              <li key={s.txHash} className="grid gap-x-6 gap-y-1 py-4 text-sm md:grid-cols-[6.5rem_9rem_minmax(0,1fr)_auto] md:items-center">
-                <span className="text-graphite">{s.at ? formatDay(s.at, { year: "always" }) : "Date unknown"}</span>
-                <Money className="font-medium text-ink">{s.token && s.amount ? `${groupedAmount(s.amount)} ${s.token}` : "Another token"}</Money>
-                <span className="min-w-0 space-y-1 text-graphite">
-                  <span className="block min-w-0">Paid by Vault<Address value={s.payer} full explorer={stats.explorer} className="text-ink" /></span>
-                  <span className="block min-w-0">to Seal<Address value={s.seal} full explorer={stats.explorer} className="text-ink" /></span>
-                </span>
-                <TxLink href={`${stats.explorer}/tx/${s.txHash}`} label="View this settlement on the Arc explorer">Transaction</TxLink>
-              </li>
-            ))}
-          </ol>
-        </>
+        <p className="mt-8 text-sm text-graphite">{quiet.join(" · ")}</p>
       )}
     </div>
   );

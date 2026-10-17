@@ -41,7 +41,7 @@ describe("schema", () => {
 
   it("applies every migration to an empty database", async () => {
     const tables = await db.execute(sql`select count(*)::int as n from information_schema.tables where table_schema = 'public'`);
-    expect((tables as { rows: { n: number }[] }).rows[0]!.n).toBeGreaterThanOrEqual(15);
+    expect((tables as unknown as { rows: { n: number }[] }).rows[0]!.n).toBeGreaterThanOrEqual(15);
   });
 
   it("returns a fresh empty database on the next createTestDb, without remigrating", async () => {

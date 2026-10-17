@@ -39,7 +39,7 @@ export default async function BusinessAskPage() {
         businessName={where.business.name}
         quickQuestions={QUICK_QUESTIONS}
         typingAvailable={typingAvailable}
-        initialThread={thread.map((m) => ({ question: m.question, answer: m.answer }))}
+        initialThread={thread.map((m) => ({ question: m.question, answer: m.answer, at: m.createdAt }))}
         threadProblem={threadProblem}
         initialEarlier={earlier}
       />

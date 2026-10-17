@@ -59,7 +59,7 @@ export function DecisionView({ decision: d, explorerUrl }: Props) {
             This is what the Steward found on {formatDateTime(new Date(d.at))}, and it stays as written.{" "}
             {d.since.newerId ? (
               <>
-                A later record for this invoice exists ({d.since.newerAt ? formatDateTime(new Date(d.since.newerAt)) : "newer"}):{" "}
+                A later record for this invoice exists ({d.since.newerAt ? laterTime(new Date(d.at), new Date(d.since.newerAt)) : "newer"}){d.since.newerSentence ? `, “${d.since.newerSentence}”` : ""}:{" "}
                 <Link href={`/business/decisions/${d.since.newerId}`} className="underline decoration-rule underline-offset-4 hover:text-ink">open it</Link>.{" "}
               </>
             ) : null}
@@ -259,4 +259,11 @@ export function DecisionView({ decision: d, explorerUrl }: Props) {
       </div>
     </div>
   );
+}
+
+/** The later record's time; with seconds when it falls in the same minute as this one, so the two never read the same (QA STW-4) */
+function laterTime(at: Date, newer: Date): string {
+  const text = formatDateTime(newer);
+  if (Math.floor(at.getTime() / 60_000) !== Math.floor(newer.getTime() / 60_000)) return text;
+  return text.replace(/ UTC$/, `:${String(newer.getUTCSeconds()).padStart(2, "0")} UTC`);
 }

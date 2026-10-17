@@ -51,7 +51,7 @@ export function ReceiptView({ data, explorerUrl }: Props) {
         <div className="mt-4 flex items-start justify-between gap-6">
           <div>
             <h1 className="font-display text-[clamp(2.6rem,5.5vw,4.2rem)] leading-none text-ink">
-              {showMoney(data.totalPaidFormatted, data.document.currency.symbol)}
+              {showMoney(data.totalPaidFormatted, data.document.currency.symbol, { exact: true })}
             </h1>
             <p className="mt-3 text-sm text-graphite">
               Paid to {data.vendor.name} for invoice #{data.invoiceNumber}
@@ -86,12 +86,12 @@ export function ReceiptView({ data, explorerUrl }: Props) {
 
           <div className="grid gap-1 border-b border-rule py-3.5 sm:grid-cols-[13rem_1fr]">
             <dt className="text-graphite">Credit settled</dt>
-            <dd className="font-mono text-ink">{showMoney(data.totalCreditFormatted, data.document.currency.symbol)}</dd>
+            <dd className="font-mono text-ink">{showMoney(data.totalCreditFormatted, data.document.currency.symbol, { exact: true })}</dd>
           </div>
 
           <div className="grid gap-1 border-b border-rule py-3.5 sm:grid-cols-[13rem_1fr]">
             <dt className="text-graphite">Remaining balance</dt>
-            <dd className="font-mono text-ink">{showMoney(data.ledgerRemainingFormatted, data.document.currency.symbol)}</dd>
+            <dd className="font-mono text-ink">{showMoney(data.ledgerRemainingFormatted, data.document.currency.symbol, { exact: true })}</dd>
           </div>
         </dl>
 
@@ -106,7 +106,7 @@ export function ReceiptView({ data, explorerUrl }: Props) {
               <div key={idx} className="p-4 space-y-2 text-xs">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-mono font-medium text-ink text-sm">
-                    {showMoney(s.paidFormatted, data.document.currency.symbol)}
+                    {showMoney(s.paidFormatted, data.document.currency.symbol, { exact: true })}
                   </span>
                   <span className="text-graphite">
                     {s.timestamp ? formatDateTime(s.timestamp) : "Payment time unavailable"}

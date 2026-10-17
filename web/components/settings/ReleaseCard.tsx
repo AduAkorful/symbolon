@@ -17,6 +17,8 @@ interface ReleaseCardProps {
   signer: SignerPlan;
   isOwner: boolean;
   onRefresh?: () => void;
+  /** the explorer base, so a scheduled or applied upgrade links its transaction in full (SYM-03) */
+  explorer?: string;
 }
 
 export function ReleaseCard({
@@ -25,10 +27,12 @@ export function ReleaseCard({
   signer,
   isOwner,
   onRefresh,
+  explorer,
 }: ReleaseCardProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [successTx, setSuccessTx] = useState<string | null>(null);
   const [stateDiffs, setStateDiffs] = useState<string[] | null>(null);
   const [now, setNow] = useState<number>(Date.now());
   const getProviders = useWalletProviders();
@@ -66,6 +70,7 @@ export function ReleaseCard({
     setBusy(true);
     setError(null);
     setSuccess(null);
+    setSuccessTx(null);
     try {
       // A transaction that was already sent is only checked again, never sent a second time
       let txHash = sent.get("schedule");
@@ -99,7 +104,8 @@ export function ReleaseCard({
       sent.clear("schedule");
 
       if (rec.ok) {
-        setSuccess(`Release ${latest.version} upgrade scheduled successfully.`);
+        setSuccess(`Release ${latest.version} upgrade scheduled.`);
+        setSuccessTx(txHash);
         onRefresh?.();
       }
     } catch (err: unknown) {
@@ -113,6 +119,7 @@ export function ReleaseCard({
     setBusy(true);
     setError(null);
     setSuccess(null);
+    setSuccessTx(null);
     try {
       let txHash = sent.get("cancel");
       if (!txHash) {
@@ -159,6 +166,7 @@ export function ReleaseCard({
     setBusy(true);
     setError(null);
     setSuccess(null);
+    setSuccessTx(null);
     setStateDiffs(null);
     try {
       // The operation (the Vault's state read before the upgrade) is kept with the hash, so a second try compares against the same "before"
@@ -201,7 +209,8 @@ export function ReleaseCard({
 
       if (rec.ok) {
         if (rec.stateMatch) {
-          setSuccess(`Vault successfully upgraded to Release ${latest.version}. Known payees, budgets, policy, roles and token balances matched.`);
+          setSuccess(`Vault upgraded to release ${latest.version}. Known payees, budgets, policy, roles and token balances matched.`);
+          setSuccessTx(txHash);
         } else {
           setStateDiffs(rec.diffs);
           setError("Vault upgraded, but state differences were detected.");
@@ -372,6 +381,12 @@ export function ReleaseCard({
       {success && (
         <div className="mt-3 rounded border border-seal/50 bg-seal-wash/40 p-2.5 text-sm text-seal">
           {success}
+          {successTx && explorer ? (
+            <>
+              {" "}
+              <TxLink href={`${explorer}/tx/${successTx}`} label="View the transaction on the Arc explorer">View transaction</TxLink>
+            </>
+          ) : null}
         </div>
       )}
 

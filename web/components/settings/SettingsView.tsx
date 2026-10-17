@@ -237,7 +237,7 @@ export function SettingsView({
           Your Vault is an upgradeable proxy and the upgrades are yours: you schedule one, wait out your delay, then apply it. No release changes your Vault without your wallet’s signature.
         </p>
         {business.vault ? (
-          <ReleaseCard businessId={business.id} release={release} signer={signer} isOwner={isOwner} onRefresh={handleRefresh} />
+          <ReleaseCard businessId={business.id} release={release} signer={signer} isOwner={isOwner} onRefresh={handleRefresh} explorer={explorer} />
         ) : (
           <EmptyState title="No Vault to upgrade yet" className="mt-4">Upgrades appear here once this business has a Vault.</EmptyState>
         )}

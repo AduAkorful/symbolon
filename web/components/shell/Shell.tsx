@@ -1,3 +1,4 @@
+import { BuildId } from "@/components/shell/BuildId";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Wordmark } from "@/components/Marks";
@@ -94,6 +95,7 @@ async function Frame({
         </header>
         {/* id="main-content" lets the skip-link jump here and lets Overlay make this inert while a dialog is open */}
         <main id="main-content" className={`${CONTAINER} py-10`}>{children}</main>
+        <footer className={`${CONTAINER} pb-6 print:hidden`}><BuildId /></footer>
       </div>
     );
   }
@@ -154,6 +156,7 @@ async function Frame({
 
         {/* id="main-content" lets the skip-link jump here and lets Overlay make this inert while a dialog is open */}
         <main id="main-content" className={`${CONTAINER} py-10`}>{children}</main>
+        <footer className={`${CONTAINER} pb-6 print:hidden`}><BuildId /></footer>
       </div>
     </div>
   );

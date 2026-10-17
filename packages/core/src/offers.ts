@@ -2,7 +2,7 @@ import { and, eq, isNull, lte, or } from "drizzle-orm";
 import { getAddress, type Address, type Hex } from "viem";
 
 import { earlyPayOffers, invoices, type Database } from "@symbolon/db";
-import { digest, MAX_DISCOUNT_BPS, sealDomain, verifySealSignature, type SignatureClient } from "@symbolon/seal";
+import { decodeSealedInvoice, digest, MAX_DISCOUNT_BPS, sealDomain, verifySealSignature, type SignatureClient } from "@symbolon/seal";
 import { notifyBusiness, notifyVendor } from "./domain-notifications.js";
 
 /**
@@ -33,10 +33,17 @@ export async function recordOffer(
     .returning({ id: earlyPayOffers.id });
   // the business is told a signed offer arrived (plan 05zj E, D11 a)
   if (inv.businessId) {
+    // the notice names the vendor (QA UI-24); an envelope that can't be read just leaves the name out
+    let vendorName: string | undefined;
+    try {
+      vendorName = decodeSealedInvoice(inv.envelope).document.vendor.name || undefined;
+    } catch {
+      vendorName = undefined;
+    }
     await notifyBusiness(db, inv.businessId, {
       kind: "offer_received",
       subject: inv.fingerprint,
-      body: { invoiceNumber: inv.invoiceNumber, discountPercent: (o.discountBps / 100).toString() },
+      body: { invoiceNumber: inv.invoiceNumber, discountPercent: (o.discountBps / 100).toString(), ...(vendorName ? { vendorName } : {}) },
       dedupeKey: `offer:${row!.id}`,
     });
   }

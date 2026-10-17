@@ -448,7 +448,7 @@ function Fund({ business, props, standing, run, busy, discover }: { business: { 
               {walletRaw !== null ? `Your wallet holds ${showMoney(moneyInput(walletRaw, 6), "USDC")}.` : balance?.ok ? "Can’t confirm your wallet’s balance right now." : ""}
               {maxRaw !== null && maxRaw > 0n ? (
                 <button type="button" onClick={() => setAmount(moneyInput(maxRaw, 6))} className="ml-2 underline decoration-rule underline-offset-4">
-                  Use the most ({showMoney(moneyInput(maxRaw, 6), "USDC")}), leaving a little for the fee
+                  Use the most ({showMoney(moneyInput(maxRaw, 6), "USDC", { exact: true })}), leaving a little for the fee
                 </button>
               ) : null}
             </p>

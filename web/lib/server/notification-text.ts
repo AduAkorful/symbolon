@@ -108,11 +108,15 @@ export function describeNotification(n: NotificationDescriberInput): Notificatio
     }
 
     case "offer_received": {
-      const vendorName = typeof body.vendorName === "string" ? body.vendorName : "A vendor";
+      const vendorName = typeof body.vendorName === "string" && body.vendorName ? body.vendorName : null;
+      const invoiceNumber = typeof body.invoiceNumber === "string" && body.invoiceNumber ? body.invoiceNumber : null;
       const percent = typeof body.discountPercent === "string" ? body.discountPercent : null;
+      // QA UI-24: name the vendor, and the invoice; older notices without a stored name still say which invoice
+      const who = vendorName ?? (invoiceNumber ? `The vendor on ${invoiceNumber}` : "A vendor");
+      const onInvoice = vendorName && invoiceNumber ? ` on ${invoiceNumber}` : "";
       return {
         title: "Early Pay offer",
-        body: `${vendorName} offered ${percent ? `${percent}% off` : "a discount"} to be paid early.`,
+        body: `${who} offered ${percent ? `${percent}% off` : "a discount"}${onInvoice} to be paid early.`,
         href: subject ? `/business/inbox/${subject}` : "/business/inbox",
       };
     }

@@ -5,7 +5,10 @@ import { vendorStatus } from "@/lib/invoice-status";
 describe("display formats keep amounts exact", () => {
   it.each([
     ["2880.000000", "2,880.00"],
-    ["15.375000", "15.375"],
+    ["15.375000", "15.38"],
+    ["90.999999", "91.00"],
+    ["503.956799", "503.96"],
+    ["457.454999", "457.45"],
     ["0.000001", "0.000001"],
     ["1234567.500000", "1,234,567.50"],
     ["0", "0.00"],
@@ -18,6 +21,8 @@ describe("display formats keep amounts exact", () => {
     expect(showMoney("0.000001", "USDC")).toBe("$0.000001");
     expect(showMoney("12.000000", "ACME")).toBe("12.00 ACME");
     expect(showMoney("1200.000000", "USDC")).not.toMatch(/\d\.\d{6}/);
+    expect(showMoney("90.999999", "USDC")).toBe("$91.00");
+    expect(showMoney("90.999999", "USDC", { exact: true })).toBe("$90.999999");
   });
 
   it("writes days and moments the same on the server and in the browser, in UTC, naming the zone", () => {

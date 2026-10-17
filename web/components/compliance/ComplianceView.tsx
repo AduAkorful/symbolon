@@ -36,6 +36,7 @@ export function ComplianceView({
   const [recordBusyId, setRecordBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeTx, setNoticeTx] = useState<string | null>(null);
   const sent = useSentHashes();
 
   const { businessId, counterparties, tiers, canScreen, canWrite, vault } = model;
@@ -45,6 +46,7 @@ export function ComplianceView({
     setBusySeal(seal);
     setError(null);
     setNotice(null);
+    setNoticeTx(null);
     try {
       const res = await postJson<{ ok: boolean; screening: { id: string; risk: number; result: string } }>(
         apiPath,
@@ -63,6 +65,7 @@ export function ComplianceView({
     setRecordBusyId(screeningId);
     setError(null);
     setNotice(null);
+    setNoticeTx(null);
     try {
       // a hash kept from an earlier try means the transaction was already sent: check it again, never send it twice
       let txHash = sent.get(screeningId);
@@ -81,7 +84,8 @@ export function ComplianceView({
       });
       sent.clear(screeningId);
 
-      setNotice(`Recorded on Vault: ${txHash.slice(0, 10)}…`);
+      setNotice("Saved in the Vault.");
+      setNoticeTx(txHash);
       refreshAfterChain(router);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Recording to Vault failed.");
@@ -100,7 +104,12 @@ export function ComplianceView({
       </header>
 
       {error ? <Callout tone="danger">{error}</Callout> : null}
-      {notice ? <Callout tone="info" onDismiss={() => setNotice(null)}>{notice}</Callout> : null}
+      {notice ? (
+        <Callout tone="info" onDismiss={() => { setNotice(null); setNoticeTx(null); }}>
+          {notice}
+          {noticeTx ? <>{" "}<TxLink href={`${explorer}/tx/${noticeTx}`} label="View the transaction on the Arc explorer">View transaction</TxLink></> : null}
+        </Callout>
+      ) : null}
 
       {!vault ? (
         <EmptyState title="This business has no Vault yet" action={<LinkButton href="/business" size="sm">Go to setup</LinkButton>}>

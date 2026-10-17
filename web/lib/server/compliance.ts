@@ -470,7 +470,7 @@ export function describeTiers(policy: {
 
   return [
     { tier: "Low", action: "Pays normally within limits" },
-    { tier: "Medium", action: "Needs an approver's sign-off before payment" },
+    { tier: "Medium", action: "Needs a sign-off from an approver or the owner before payment" },
     { tier: "High", action: "Needs the owner's sign-off before payment" },
     { tier: "Blocked", action: "Blocked onchain; cannot be paid" },
     {
