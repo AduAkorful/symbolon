@@ -26,6 +26,16 @@ const SPELLED = new Map<string, string>(
 /** Verdicts the facts do not give ("everything is flowing"): a friendly reply may not add a judgment of its own */
 const JUDGMENT = /\b(flowing|healthy|on track|all good|all clear|smoothly|no issues?|nothing to worry|looks? good|looking good|fine|resolved|stable|normal|safe|secure)\b/gi;
 
+/**
+ * A reply saying it can't see something ("I can't see the Vault's balance"). Allowed only when the facts really don't give it:
+ * the model once said it could see "operating cash of $510.39" and, in the next breath, that it couldn't see the Vault's balance,
+ * which is the same money (QA retest 18).
+ */
+const CANT_SEE = /\b(?:I|we)(?:\s+(?:can(?:'|’)?t|cannot|can not|don(?:'|’)t|do not|am (?:not able|unable) to)|['’]m (?:not able|unable) to)\s+(?:see|access|read|find|tell|know|get|view|have)\b[^.!?\n]*/gi;
+/** Words that name the same money: a balance the facts give under any of them is one the reply can't say it can't see */
+const MONEY_WORDS = /\b(?:balances?|cash|funds|money|holdings?)\b/i;
+const MONEY_FIGURE = /[$€]\s?\d|\d[\d,]*(?:\.\d+)?\s?(?:USDC|EURC|USYC)\b/i;
+
 const plain = (n: string) => n.replace(/,/g, "");
 
 /** The numbers a text contains, as plain digits ("14,250.50" → "14250.50") */
@@ -81,6 +91,12 @@ export function checkReply(reply: string, input: { facts: string[]; question: st
 
   for (const a of text.match(ADDRESS) ?? []) {
     if (!lowerSource.includes(a.toLowerCase())) return { ok: false, reason: `an address that is not in the facts: ${a}` };
+  }
+
+  if (MONEY_FIGURE.test(input.facts.join("\n"))) {
+    for (const denial of text.match(CANT_SEE) ?? []) {
+      if (MONEY_WORDS.test(denial)) return { ok: false, reason: "says it can't see a balance the facts give" };
+    }
   }
 
   for (const word of midSentenceCapitals(text)) {

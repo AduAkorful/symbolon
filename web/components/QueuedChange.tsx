@@ -7,7 +7,8 @@ import { useWalletProviders } from "@/components/wallet/useWalletProviders";
 import { useSentHashes } from "@/components/wallet/useSentTransaction";
 import { postJson } from "@/lib/client/api";
 import { applyQueuedChange, recordQueuedChange } from "@/lib/client/queued-actions";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, shortHex } from "@/lib/format";
+import { CopyButton } from "@/components/CopyButton";
 import { buttonClass } from "@/components/ui/button";
 
 export interface QueuedChangeRow {
@@ -191,7 +192,10 @@ export function QueuedChangeList({
                     <span>Ready at {formatDateTime(new Date(change.eta))}</span>
                   )}
                   {" · "}
-                  <span className="font-mono">ID {change.changeId.slice(0, 8)}…{change.changeId.slice(-6)}</span>
+                  <span className="inline-flex items-baseline">
+                    <span className="font-mono" title={change.changeId}>ID {shortHex(change.changeId)}</span>
+                    <CopyButton value={change.changeId} label={`Copy change ID ${change.changeId}`} />
+                  </span>
                 </div>
               </div>
 

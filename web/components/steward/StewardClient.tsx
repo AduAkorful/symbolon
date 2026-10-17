@@ -68,6 +68,8 @@ const humanKey = (key: string) => {
 export interface DecisionView {
   id: string;
   kind: string;
+  /** Said instead of the kind when set ("Lending") */
+  kindLabel?: string | null;
   subject: string | null;
   /** What the subject is called to a person, and where it lives, when it has a page (plan 05zj E, SYM-29) */
   subjectLabel?: string | null;
@@ -632,7 +634,7 @@ export function StewardClient({
                 </div>
                 {d.summary.explanation ? <p className="mt-1 text-graphite">{d.summary.explanation}</p> : null}
                 <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-graphite">
-                  <span>{humanKey(d.kind)}</span>
+                  <span>{d.kindLabel ?? humanKey(d.kind)}</span>
                   {d.subjectLabel ? (
                     d.subjectHref ? (
                       <Link href={d.subjectHref} className="underline decoration-rule underline-offset-4 hover:text-ink">

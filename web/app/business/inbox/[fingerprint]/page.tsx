@@ -196,7 +196,10 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
                 </Link>
               </div>
               <p className="mt-2 font-medium text-ink">
-                {summarizeDecision(latestDecision.record as Parameters<typeof summarizeDecision>[0]).sentence}
+                {summarizeDecision(latestDecision.record as Parameters<typeof summarizeDecision>[0], {
+                  // the invoice's own currency, checked just now for this page: a stored "doesn't accept this currency" that has cleared says so (QA retest 18)
+                  supportedTokens: "facts" in view && view.facts && view.facts.isSupportedToken(view.row.token as `0x${string}`) ? new Set([view.row.token.toLowerCase()]) : undefined,
+                }).sentence}
               </p>
               <p className="mt-1 text-sm text-graphite">Rule: {String((latestDecision.record as Record<string, unknown>).rule ?? "none recorded")}</p>
             </div>

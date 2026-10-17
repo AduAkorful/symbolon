@@ -105,8 +105,16 @@ function considered(record: Record<string, unknown>): string {
   return `Considered the ${pct}% ${what}, not taken: ${plain(reasons[0]!)}. `;
 }
 
-export function summarizeDecision(record: Record<string, unknown>): DecisionSummary {
-  const s = summarizeRecord(record);
+/** What the page reading a decision knows now, so a stored decision isn't shown as if it were still true (QA retest 18) */
+export interface DecisionNow {
+  /** Tokens the Vault pays in now, lowercased; a stored "doesn't accept this currency" for one of them has cleared since */
+  supportedTokens?: ReadonlySet<string>;
+  /** Lending vaults, lowercased; a transfer from one into the Vault is cash coming back from lending, not a deposit */
+  lendingVenues?: ReadonlySet<string>;
+}
+
+export function summarizeDecision(record: Record<string, unknown>, now: DecisionNow = {}): DecisionSummary {
+  const s = summarizeRecord(record, now);
   const tidy = (t: string) => tidySignOff(tidyMoney(t));
   return { ...s, sentence: tidy(s.sentence), ...(s.explanation ? { explanation: tidy(s.explanation) } : {}) };
 }
@@ -124,7 +132,28 @@ export function tidyMoney(text: string): string {
   return text.replace(/(?<![\d.,])(\d[\d,]*(?:\.\d+)?)\s?(USDC|EURC)\b/g, (_m, amount: string, symbol: string) => showMoney(amount.replace(/,/g, ""), symbol));
 }
 
-function summarizeRecord(record: Record<string, unknown>): DecisionSummary {
+/** "15 Oct, 17:07 UTC" from the record's own time, or "" when it has none */
+function recordedAt(record: Record<string, unknown>): string {
+  const at = typeof record.at === "string" ? new Date(record.at) : null;
+  return at && !Number.isNaN(at.getTime()) ? formatDateTime(at) : "";
+}
+
+/** The token a stored UnsupportedToken failure names ("0x… isn't a payment token of this Vault"), lowercased */
+function unsupportedTokenOf(b: { rule: string; detail: string }): string | null {
+  if (b.rule !== "UnsupportedToken") return null;
+  const m = /0x[0-9a-fA-F]{40}/.exec(b.detail ?? "");
+  return m ? m[0].toLowerCase() : null;
+}
+
+/** A transfer into the Vault that came back from a lending vault (the Steward's or the owner's redeem), not a deposit */
+export function isLendingReturn(record: Record<string, unknown>, venues?: ReadonlySet<string>): boolean {
+  const inputs = (record.inputs as Record<string, unknown> | undefined) ?? {};
+  if (inputs.fromLending === true) return true;
+  const from = typeof inputs.from === "string" ? inputs.from.toLowerCase() : "";
+  return Boolean(from && venues?.has(from));
+}
+
+function summarizeRecord(record: Record<string, unknown>, now: DecisionNow = {}): DecisionSummary {
   const kind = String(record.kind ?? "");
   const outcome = String(record.outcome ?? "");
   const rule = String(record.rule ?? "");
@@ -159,11 +188,20 @@ function summarizeRecord(record: Record<string, unknown>): DecisionSummary {
 
     case "schedule": {
       // since plan 05zj C a scheduled decision records the Vault rules that would stop a payment today
+      // The blockers are what stood in the way when the decision was made, not now: "today" read as current long after it wasn't
+      // (QA retest 18: a USDC invoice's decision said the Vault didn't accept its currency while its page said nothing was in the
+      // way). They are labelled with the decision's own time, and a currency the Vault pays in now is said to have cleared.
       const blockers = Array.isArray(inputs.blockers) ? (inputs.blockers as { rule: string; detail: string }[]) : [];
-      const inTheWay = blockers.filter((b) => b.rule !== "ApprovalRequired").map((b) => describeRule(b, { seal: "" }).title);
-      const base = inTheWay.length > 0
-        ? `Scheduled for the due date. In the way today: ${inTheWay.join("; ")}`
-        : "Scheduled for payment on the due date";
+      const found = blockers.filter((b) => b.rule !== "ApprovalRequired");
+      const cleared = found.filter((b) => { const t = unsupportedTokenOf(b); return t !== null && Boolean(now.supportedTokens?.has(t)); });
+      const still = found.filter((b) => !cleared.includes(b));
+      const when = recordedAt(record);
+      const titles = (list: typeof found) => list.map((b) => describeRule(b, { seal: "" }).title).join("; ");
+      const base = still.length > 0
+        ? `Scheduled for the due date. In the way when checked${when ? ` (${when})` : ""}: ${titles(still)}${cleared.length > 0 ? `. Cleared since: ${titles(cleared)}` : ""}`
+        : cleared.length > 0
+          ? `Scheduled for payment on the due date. Cleared since${when ? ` ${when}` : ""}: ${titles(cleared)}`
+          : "Scheduled for payment on the due date";
       return { sentence: `${considered(record)}${base}`, explanation };
     }
 
@@ -227,7 +265,12 @@ function summarizeRecord(record: Record<string, unknown>): DecisionSummary {
     case "deposit_confirmed": {
       const symbol = String(inputs.token ?? "");
       const raw = typeof inputs.amount === "string" && /^\d+$/.test(inputs.amount) ? BigInt(inputs.amount) : null;
-      return { sentence: raw !== null && symbol ? `Added ${showMoney(formatAmount(raw, 6), symbol)} to the Vault` : "Added funds to the Vault", explanation };
+      const amount = raw !== null && symbol ? showMoney(formatAmount(raw, 6), symbol) : "";
+      // a redeem from lending sends the cash back to the Vault with a token transfer, which the deposit reader also sees (QA retest 18)
+      if (isLendingReturn(record, now.lendingVenues)) {
+        return { sentence: amount ? `Took ${amount} back from the lending vault` : "Took cash back from the lending vault", explanation };
+      }
+      return { sentence: amount ? `Added ${amount} to the Vault` : "Added funds to the Vault", explanation };
     }
 
     case "payee_added": {

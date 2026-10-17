@@ -254,6 +254,15 @@ export function foldLendingMoves(items: ActivityItem[], prepared: PreparedLendin
   items.push(...kept);
 }
 
+/** Drops the deposit rows (item id → tx) whose transaction is a redeem from lending already listed from the chain. Mutates `items`. */
+export function dropLendingReturnDeposits(items: ActivityItem[], depositRows: Map<string, string>, redeemTxs: Set<string>): void {
+  const drop = new Set([...depositRows].filter(([, tx]) => redeemTxs.has(tx)).map(([id]) => id));
+  if (drop.size === 0) return;
+  const kept = items.filter((i) => !drop.has(i.id));
+  items.length = 0;
+  items.push(...kept);
+}
+
 const VIEW_SYNC_WINDOW_BLOCKS = 20_000n;
 const VIEW_SYNC_DEADLINE_MS = 4_000;
 
@@ -435,6 +444,10 @@ export async function loadActivity(
   // an owner's prepared lending move, folded into the chain row it became (QA retest 17: it was listed twice, once with no link)
   const preparedMoves: PreparedLendingMove[] = [];
   const movedByDecision = new Map<string, string>();
+  // a redeem's token transfer back into the Vault, recorded by the deposit reader: the chain's "Took … out of the lending vault"
+  // row already lists it, so it is not listed again as "Added … to the Vault" (QA retest 18)
+  const depositRows = new Map<string, string>();
+  const redeemTxs = new Set<string>();
 
   for (const d of decRows) {
     if (isPreparedPayment(d.record)) continue;
@@ -444,6 +457,7 @@ export async function loadActivity(
         preparedMoves.push({ itemId: `dec-${d.id}`, hash: d.hash.toLowerCase(), kind: d.kind, assets: String(inp.assets ?? inp.all ?? ""), at: d.createdAt.getTime() });
       }
     }
+    if (d.kind === "deposit_confirmed" && d.txHash) depositRows.set(`dec-${d.id}`, d.txHash.toLowerCase());
     let desc = describeDecision(d, refFor);
     // a reopen recorded before the reason was stored with it: take it from the decline it undid (QA R7-2)
     if (d.kind === "invoice_reopened" && d.subject && !String((d.record as { inputs?: { previousReason?: unknown } } | null)?.inputs?.previousReason ?? "")) {
@@ -492,6 +506,7 @@ export async function loadActivity(
       const sealAddr = args.seal ? String(args.seal).toLowerCase() : undefined;
       const vendor = inv ? (sealMap.get(inv.seal.toLowerCase()) || inv.seal) : sealAddr ? sealMap.get(sealAddr) : undefined;
 
+      if (e.eventName === "LendingRedeemed") redeemTxs.add(e.txHash.toLowerCase());
       if ((e.eventName === "LendingDeposited" || e.eventName === "LendingRedeemed") && typeof args.decisionHash === "string") {
         movedByDecision.set(args.decisionHash.toLowerCase(), `vev-${e.txHash}-${e.logIndex}`);
       }
@@ -541,6 +556,7 @@ export async function loadActivity(
   }
 
   foldLendingMoves(items, preparedMoves, movedByDecision);
+  dropLendingReturnDeposits(items, depositRows, redeemTxs);
 
   // 4. Invoices received
   for (const inv of bizInvoices.slice(0, 50)) {

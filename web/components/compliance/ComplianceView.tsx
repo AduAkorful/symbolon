@@ -137,8 +137,10 @@ export function ComplianceView({
                     <li key={row.seal} className="grid gap-x-6 gap-y-3 py-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                       <div className="min-w-0">
                         <p className="font-medium text-ink">{row.name}</p>
-                        <p className="mt-1 text-sm text-graphite">
-                          Seal <TxLink href={`${explorer}/address/${row.seal}`} label="View the vendor's Seal on the Arc explorer">{row.seal.slice(0, 8)}…{row.seal.slice(-6)}</TxLink>
+                        {/* the same short form and Copy as every other address on the page (QA retest 18) */}
+                        <p className="mt-1 flex flex-wrap items-baseline gap-x-2 text-sm text-graphite">
+                          <span>Seal</span>
+                          <AddressView value={row.seal} explorer={explorer} copy />
                         </p>
                         <div className="mt-2 flex flex-wrap items-baseline gap-x-3 text-sm">
                           <span className="text-graphite">Payout</span>

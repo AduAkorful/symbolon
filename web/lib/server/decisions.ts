@@ -3,7 +3,7 @@ import "server-only";
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { getAddress, type Hex, type PublicClient } from "viem";
 
-import { businesses, decisions, invoices, type Database } from "@symbolon/db";
+import { businesses, chainEvents, decisions, invoices, type Database } from "@symbolon/db";
 import { hashRecord, type DecisionRecord } from "@symbolon/steward";
 
 import { requireMember, type Role } from "./access";
@@ -97,7 +97,17 @@ export async function loadDecision(
     canonicalJson = JSON.stringify(rec, null, 2);
   }
 
-  const summary = summarizeDecision(rec);
+  // cash back from lending reads as that, not as a deposit, on its own page too (QA retest 18)
+  let summaryRec = rec;
+  if (row.kind === "deposit_confirmed" && row.txHash) {
+    const [redeemed] = await db
+      .select({ txHash: chainEvents.txHash })
+      .from(chainEvents)
+      .where(and(eq(chainEvents.txHash, row.txHash.toLowerCase() as Hex), eq(chainEvents.eventName, "LendingRedeemed")))
+      .limit(1);
+    if (redeemed) summaryRec = { ...rec, inputs: { ...((rec.inputs as Record<string, unknown> | undefined) ?? {}), fromLending: true } };
+  }
+  const summary = summarizeDecision(summaryRec);
 
   // Human responses linked to this recommendation (Decision A9)
   const humanDecRows = await db

@@ -7,12 +7,12 @@ import { StewardClient, type DecisionView, type RunView } from "@/components/ste
 import { getClient } from "@/lib/server/chain";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
-import { summarizeDecision } from "@/lib/server/decision-text";
 import { requirePageSession } from "@/lib/server/http";
 import { describePolicyLines } from "@/lib/server/policy-text";
 import { signerPlanFor } from "@/lib/server/signer-plan";
 import { loadSpaces } from "@/lib/server/space";
 import { subjectRefs } from "@/lib/server/subject-label";
+import { decisionNow, foldRecentDecisions, loadLendingEvents } from "@/lib/server/steward-decisions";
 import { feeBalance, formatFeeBalance, lastRun, lastScheduledRun, listRunDecisions, listRuns, STEWARD_RUN_LEASE_MS } from "@/lib/server/steward-runtime";
 import { readVaultState, stewardStanding } from "@/lib/server/vault-read";
 import { PageTitle } from "@/components/ui/Type";
@@ -125,15 +125,18 @@ export default async function BusinessStewardPage() {
 
   const rawDecisions = await listRunDecisions(db, business.id, 25);
   const refs = await subjectRefs(db, business.id, rawDecisions.map((d) => d.subject));
-  const recentDecisions: DecisionView[] = rawDecisions.map((d) => ({
+  // each move told once, cash back from lending said as such, and stored blockers shown against what holds now (QA retest 18)
+  const [lendingEvents, now] = await Promise.all([loadLendingEvents(db, business.vault), decisionNow(client, config.deployment, business.vault)]);
+  const recentDecisions: DecisionView[] = foldRecentDecisions(rawDecisions, lendingEvents, now).map(({ row: d, summary, kindLabel, txHash }) => ({
     id: d.id,
     kind: d.kind,
+    kindLabel,
     subject: d.subject,
     subjectLabel: d.subject ? (refs.get(d.subject)?.label ?? null) : null,
     subjectHref: d.subject ? (refs.get(d.subject)?.href ?? null) : null,
-    txHash: d.txHash,
+    txHash,
     createdAt: d.createdAt.toISOString(),
-    summary: summarizeDecision(d.record as Record<string, unknown>),
+    summary,
   }));
 
   const agreement = await humanResponseAgreement(db, business.id);

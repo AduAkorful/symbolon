@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { sendCall, wasRejected, type SignerPlan } from "@/components/setup/owner-signer";
+import { Address } from "@/components/Address";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { SentTransactionNotice, useSentTransaction } from "@/components/wallet/useSentTransaction";
@@ -78,7 +79,7 @@ export function CurrencyRow({
     <li className="rounded-doc border border-rule px-3 py-2 text-sm">
       <div className="flex flex-wrap items-center gap-3">
         <span className="font-medium text-ink">{token.symbol}</span>
-        <span className="text-graphite">{token.address.slice(0, 6)}…{token.address.slice(-4)}</span>
+        <Address value={token.address} explorer={explorer} copy className="text-graphite" />
         <StatusPill tone={token.supported ? "ok" : queued ? "info" : "neutral"}>{token.supported ? "On" : token.pendingOnAt ? (new Date(token.pendingOnAt).getTime() <= Date.now() ? "Ready to turn on" : "Turning on") : queuedHere ? "Turning on" : "Off"}</StatusPill>
         {isOwner && (next || canTurnOff) ? (
           <Button variant="secondary" size="sm" busy={busy || tx.busy} disabled={tx.locked || (next && queued)} onClick={() => void change()}>

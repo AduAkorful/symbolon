@@ -128,6 +128,12 @@ export function shortAddress(value: string): string {
 }
 
 
+/** "0x9145…449e": any long hex value (a change ID, a transaction hash) in the same short form as an address (QA retest 18) */
+export function shortHex(value: string): string {
+  if (/^0x[0-9a-fA-F]{40}$/.test(value)) return shortAddress(value);
+  return /^0x[0-9a-fA-F]{12,}$/.test(value) ? `${value.slice(0, 6)}…${value.slice(-4)}` : value;
+}
+
 /** Free text with any full address in it shortened ("paid 0x7d9a…", never 42 characters that can't be split): for names and labels, not for places an address is checked */
 export function shortenAddressesIn(text: string): string {
   return text.replace(/0x[0-9a-fA-F]{40}\b/g, (a) => shortAddress(a));

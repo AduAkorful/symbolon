@@ -23,18 +23,22 @@ function SeamLine({ seam, side, tone }: { seam: Seam; side: Side; tone: string }
 }
 
 /** The fingerprint written across the cut, as on a chirograph; each half keeps part of every letter */
-function SeamLetters({ text, seam, side, className = "" }: { text: string; seam: Seam; side: Side; className?: string }) {
-  const center: CSSProperties =
-    side === "vendor" ? { right: seam.amplitude, transform: "translateX(50%)" } : { left: seam.amplitude, transform: "translateX(-50%)" };
+function SeamLetters({ text, seam, side, inside = false, className = "" }: { text: string; seam: Seam; side: Side; inside?: boolean; className?: string }) {
+  // a half drawn on its own (an invoice card) has no other half beside it to carry the rest of each letter, so the letters sit
+  // just inside the cut instead of across it and are never clipped at the card's edge (QA retest 18)
+  const gap = seam.amplitude * 2 + 4;
+  const center: CSSProperties = inside
+    ? side === "vendor" ? { right: gap } : { left: gap }
+    : side === "vendor" ? { right: seam.amplitude, transform: "translateX(50%)" } : { left: seam.amplitude, transform: "translateX(-50%)" };
   return (
     <div
       aria-hidden
       data-seam="letters"
-      className="pointer-events-none absolute top-0 bottom-0 flex items-center justify-center select-none"
+      className="pointer-events-none absolute top-0 bottom-0 flex items-center justify-center overflow-hidden select-none"
       style={center}
     >
       <span
-        className={`whitespace-nowrap font-mono text-[22px] leading-none tracking-[0.3em] text-ink/[0.2] ${className}`}
+        className={`whitespace-nowrap font-mono leading-none text-ink/[0.2] ${inside ? "text-[18px] tracking-[0.2em]" : "text-[22px] tracking-[0.3em]"} ${className}`}
         style={{ writingMode: "vertical-rl" }}
       >
         {text}
@@ -50,9 +54,12 @@ export function Half({
   className = "",
   seamClassName = "",
   tone = "var(--rule)",
+  lettersInside = false,
   children,
 }: {
   side: Side;
+  /** Keep the fingerprint letters wholly inside this half: for a half shown without its other half */
+  lettersInside?: boolean;
   fingerprint: string;
   amplitude?: number;
   className?: string;
@@ -65,7 +72,7 @@ export function Half({
   return (
     <div className={`relative ${className}`} style={{ clipPath: side === "vendor" ? vendorClip(seam) : payerClip(seam) }}>
       {children}
-      <SeamLetters text={text} seam={seam} side={side} className={seamClassName} />
+      <SeamLetters text={text} seam={seam} side={side} inside={lettersInside} className={seamClassName} />
       <SeamLine seam={seam} side={side} tone={tone} />
     </div>
   );

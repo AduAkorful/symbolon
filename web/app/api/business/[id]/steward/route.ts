@@ -13,6 +13,7 @@ import { getClient } from "@/lib/server/chain";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
 import { summarizeDecision } from "@/lib/server/decision-text";
+import { decisionNow, foldRecentDecisions, loadLendingEvents } from "@/lib/server/steward-decisions";
 import { AuthError } from "@/lib/server/errors";
 import { readBody, requireSession, routeWith } from "@/lib/server/http";
 import { describePolicyLines } from "@/lib/server/policy-text";
@@ -67,14 +68,26 @@ export const GET = routeWith<Ctx>(async (_request, ctx) => {
 
   const latestRun = await lastRun(db, businessId);
   const rawDecisions = await listRunDecisions(db, businessId, 25);
-  const recentDecisions = rawDecisions.map((d) => ({
-    id: d.id,
-    kind: d.kind,
-    subject: d.subject,
-    txHash: d.txHash,
-    createdAt: d.createdAt.toISOString(),
-    summary: summarizeDecision(d.record as Record<string, unknown>),
-  }));
+  // the same list the Steward page shows: each move once, cash back from lending said as such (QA retest 18)
+  const recentDecisions = biz.vault
+    ? foldRecentDecisions(rawDecisions, await loadLendingEvents(db, biz.vault), await decisionNow(client, config.deployment, biz.vault)).map(({ row: d, summary, kindLabel, txHash }) => ({
+        id: d.id,
+        kind: d.kind,
+        kindLabel,
+        subject: d.subject,
+        txHash,
+        createdAt: d.createdAt.toISOString(),
+        summary,
+      }))
+    : rawDecisions.map((d) => ({
+        id: d.id,
+        kind: d.kind,
+        kindLabel: null,
+        subject: d.subject,
+        txHash: d.txHash,
+        createdAt: d.createdAt.toISOString(),
+        summary: summarizeDecision(d.record as Record<string, unknown>),
+      }));
 
   return NextResponse.json({
     business: {

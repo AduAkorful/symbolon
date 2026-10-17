@@ -155,7 +155,7 @@ export function LendingSection({ businessId, signer, explorer, isOwner }: { busi
 
           <DetailList
             items={[
-              { label: "Lending vault", value: <span>{view.venue?.name ?? "Not on our list"} <Address value={view.policy.venue!} explorer={explorer} /></span> },
+              { label: "Lending vault", value: <span>{view.venue?.name ?? "Not on our list"} <Address value={view.policy.venue!} explorer={explorer} copy /></span> },
               { label: "Held", value: view.lendingValue === null ? "Can’t read its value right now" : `${money(view.lendingValue)} (${hasShares ? "shares held by the Vault" : view.lastMove ? `nothing held now; last ${view.lastMove.direction === "in" ? "moved in" : "taken out"} ${formatDateTime(view.lastMove.at)}` : "nothing yet"})` },
               { label: "Most allowed", value: `${view.policy.maxLendingBps / 100}% of the Vault’s cash` },
               { label: "Operating floor", value: `Never below ${money(view.minOperating)}` },

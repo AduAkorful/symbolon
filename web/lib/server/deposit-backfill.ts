@@ -57,6 +57,10 @@ export async function backfillDeposits(
       }
     }
 
+    // a redeem from a lending vault sends the cash back with the same Transfer; it is marked so it reads as cash back from lending,
+    // never as a deposit (QA retest 18: the Steward's 17:27 redeem was listed as "Added $91.00 to the Vault")
+    const venues = new Set((deployment.lendingVenues ?? []).map((v) => v.address.toLowerCase()));
+
     if (found.length > 0) {
       const known = await db
         .select({ txHash: decisions.txHash })
@@ -74,10 +78,10 @@ export async function backfillDeposits(
           subject: vault.toLowerCase(),
           at: at.toISOString(),
           mode: "assist",
-          inputs: { txHash: f.txHash, token: f.symbol, amount: f.value.toString(), from: f.from, actor: "chain", block: f.block.toString() },
+          inputs: { txHash: f.txHash, token: f.symbol, amount: f.value.toString(), from: f.from, actor: "chain", block: f.block.toString(), ...(venues.has(f.from.toLowerCase()) ? { fromLending: true } : {}) },
           options: [],
-          rule: "the token's own Transfer log into this Vault, read from the chain",
-          outcome: "deposited",
+          rule: venues.has(f.from.toLowerCase()) ? "the token's own Transfer log into this Vault from its lending vault, read from the chain" : "the token's own Transfer log into this Vault, read from the chain",
+          outcome: venues.has(f.from.toLowerCase()) ? "returned from lending" : "deposited",
         };
         const { hash } = hashRecord(record);
         await db

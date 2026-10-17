@@ -12,7 +12,7 @@ export function InvoiceDoc({ document: d, fingerprint, handle, sealed = false }:
   const sym = d.currency.symbol;
   return (
     <div className="drop-shadow-[0_14px_24px_rgba(0,0,0,0.45)]">
-      <Half side="vendor" fingerprint={fingerprint} className="bg-paper-raised" tone={sealed ? "var(--seal)" : "var(--rule)"}>
+      <Half side="vendor" fingerprint={fingerprint} className="bg-paper-raised" tone={sealed ? "var(--seal)" : "var(--rule)"} lettersInside>
         <article className="px-7 py-8 pr-14 text-ink">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
