@@ -244,7 +244,7 @@ export function TreasuryView({
             ) : undefined
           }
         >
-          <p>Upcoming bills are {usd(usdcShortfall.short)} more than the Vault’s operating USDC.</p>
+          <p>USDC bills due within your buffer total {usd(usdcShortfall.due)}; that is {usd(usdcShortfall.short)} more than the Vault’s operating USDC ({usd(usdcShortfall.balance)}).</p>
           <p className="mt-1 text-graphite">Add funds from your wallet, or redeem from the USYC reserve if you have one.</p>
         </Callout>
       ) : null}
@@ -284,6 +284,9 @@ export function TreasuryView({
                       : `${usd(state.budget.spent)} of ${usd(state.budget.cap)} · ${state.budget.periodLengthDays} days`}
                   </span>
                 </div>
+                {state.budget.includesEurc ? (
+                  <p className="mt-2 text-xs text-graphite">The Vault counts USDC and EURC payments together against this budget, one unit each, so this figure includes euro payments.</p>
+                ) : null}
                 {state.budget.cap !== null && parseFloat(state.budget.cap) > 0 ? (
                   <div
                     className="mt-3 h-2 w-full overflow-hidden rounded-full bg-rule-soft"

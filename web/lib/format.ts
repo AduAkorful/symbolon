@@ -72,6 +72,28 @@ export function showMoney(amount: string, symbol: string, opts: { exact?: boolea
   return symbol ? `${digits} ${symbol}` : digits;
 }
 
+/**
+ * Raw token units inside the Steward's stored reasons, as money (QA R25-6, R25-14): "cash 234576799 is below the 1297500000 needed"
+ * → "cash $234.58 is below the $1,297.50 needed". Only numbers in the places those reasons put an amount are touched, so a date,
+ * a count or a percentage is never read as money. Used for decision records, Steward summaries, the bell, Telegram and push.
+ */
+export function tidyRawUnits(text: string, symbol = "USDC", decimals = 6): string {
+  const m = (raw: string) => showMoney(formatAmount(BigInt(raw), decimals), symbol);
+  return text
+    .replace(/\b([Cc]ash|[Ee]xcess|[Ff]ee) (\d+)\b(?![.,]\d)(?!\s?(?:days?|hours?|%|bps|percent)\b)/g, (_x, w: string, n: string) => `${w} ${m(n)}`)
+    .replace(/\b([Ii]nvoice) (\d+) exceeds\b/g, (_x, w: string, n: string) => `${w} ${m(n)} exceeds`)
+    .replace(/\bthe (\d+) (needed|target|sweep threshold|threshold|left on the PO|limit)\b/g, (_x, n: string, w: string) => `the ${m(n)} ${w}`)
+    .replace(/\bis (\d+) above\b/g, (_x, n: string) => `is ${m(n)} above`)
+    .replace(/; (\d+) stays counted\b/g, (_x, n: string) => `; ${m(n)} stays counted`);
+}
+
+/** Lending or reserve shares in words, "58.1385 shares": raw share units at the venue's own decimals, four places at most */
+export function showShares(raw: string | bigint, decimals: number): string {
+  const [whole = "0", frac = ""] = formatAmount(BigInt(raw), decimals).split(".");
+  const short = frac.slice(0, 4).replace(/0+$/, "");
+  return `${group(whole)}${short ? `.${short}` : ""} shares`;
+}
+
 /** 150 → "1.5", 75 → "0.75", 2000 → "20" */
 export function showBps(bps: number): string {
   const s = (bps / 100).toFixed(2).replace(/0+$/, "").replace(/\.$/, "");

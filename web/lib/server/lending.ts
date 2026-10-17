@@ -12,7 +12,7 @@ import {
   withSlippage,
   type Deployment,
 } from "@symbolon/chain";
-import { lendingYield } from "@symbolon/core";
+import { BILL_STATUSES, lendingYield } from "@symbolon/core";
 import { businesses, decisions, invoices, queuedChanges, type Database } from "@symbolon/db";
 import { hashRecord, type DecisionRecord } from "@symbolon/steward";
 
@@ -379,7 +379,8 @@ async function usdcBillsDue(db: Database, businessId: string, deployment: Deploy
     .where(and(
       eq(invoices.businessId, businessId),
       eq(invoices.token, deployment.tokens.usdc.toLowerCase()),
-      inArray(invoices.status, ["verified", "scheduled", "awaiting_approval", "partially_paid"]),
+      // the same bills the Steward and the Treasury shortfall count (QA R25-8)
+      inArray(invoices.status, [...BILL_STATUSES]),
       lte(invoices.dueDate, horizon),
     ));
   return rows.reduce((sum, r) => sum + (r.total > r.credited ? r.total - r.credited : 0n), 0n).toString();

@@ -1,15 +1,16 @@
 import "server-only";
 
 import { and, desc, eq, gt, sql } from "drizzle-orm";
-import { getAddress, type Hex, type PublicClient } from "viem";
+import { erc20Abi, getAddress, type Hex, type PublicClient } from "viem";
 
-import { businesses, chainEvents, decisions, invoices, type Database } from "@symbolon/db";
+import { businesses, chainEvents, decisions, invoices, members, users, type Database } from "@symbolon/db";
 import { hashRecord, type DecisionRecord } from "@symbolon/steward";
 
 import { requireMember, type Role } from "./access";
 import { anchorState, type DecisionAnchorInfo } from "./anchoring";
 import type { ChainSettings } from "./business";
 import { humanizeKind, summarizeDecision } from "./decision-text";
+import { shortHex } from "../format";
 import { AuthError } from "./errors";
 import type { SessionUser } from "./session";
 
@@ -47,6 +48,10 @@ export interface DecisionDetailView {
   inputs: Record<string, unknown>;
   /** The invoice's currency ("USDC", "EURC"), so stored amounts read as money; USDC when the record isn't about an invoice */
   currency: string;
+  /** The lending vault's share decimals, so its shares read as "58.1385 shares" (QA R25-6); absent when the record names no venue */
+  shareDecimals?: number;
+  /** Person ids in the record (`actor`) in words: "You (wallet 0x645c…4E7b)", never a raw id (QA R25-5) */
+  people: Record<string, string>;
   options: DecisionOptionView[];
   humanResponses: Array<{
     id: string;
@@ -109,7 +114,6 @@ export async function loadDecision(
       .limit(1);
     if (redeemed) summaryRec = { ...rec, inputs: { ...((rec.inputs as Record<string, unknown> | undefined) ?? {}), fromLending: true } };
   }
-  const summary = summarizeDecision(summaryRec);
 
   // Human responses linked to this recommendation (Decision A9)
   const humanDecRows = await db
@@ -152,6 +156,12 @@ export async function loadDecision(
     }
   }
 
+  // a record that carries its own transaction (an owner's Pay now) shows it under "What happened" too (QA R25-5)
+  if (!txHash) {
+    const own = (rec.inputs as { txHash?: unknown } | undefined)?.txHash ?? rec.txHash;
+    if (typeof own === "string" && /^0x[0-9a-fA-F]{64}$/.test(own)) txHash = own;
+  }
+
   // Anchor status and proof (Decision A10)
   const anchor = await anchorState(db, client, cfg, businessId, row.hash as Hex);
 
@@ -174,10 +184,25 @@ export async function loadDecision(
       newerId: newer?.id ?? null,
       newerAt: newer?.createdAt ?? null,
       // QA STW-4: say what the later record is, so two records in the same minute aren't confusing
-      newerSentence: newer ? summarizeDecision(newer.record as Record<string, unknown>).sentence : null,
+      newerSentence: newer ? summarizeDecision(newer.record as Record<string, unknown>, { currency }).sentence : null,
       invoiceStatus: inv?.status ?? null,
       invoiceHref: inv ? `/business/inbox/${row.subject.toLowerCase()}` : null,
     };
+  }
+
+  // said in the invoice's own currency: "Paid €239.45" for an EURC invoice (QA R25-2)
+  const summary = summarizeDecision(summaryRec, { currency });
+
+  const ids = new Set<string>();
+  const inputActor = (rec.inputs as { actor?: unknown } | undefined)?.actor;
+  for (const a of [rec.actor, inputActor, ...humanResponses.map((h) => h.actor)]) if (typeof a === "string" && UUID.test(a)) ids.add(a);
+  const people = await peopleLabels(db, businessId, user.id, [...ids]);
+
+  // a lending record's shares are in the venue's own decimals (an ERC-4626 vault is often 18, not USDC's 6)
+  let shareDecimals: number | undefined;
+  const venue = (rec.inputs as { venue?: unknown } | undefined)?.venue;
+  if (typeof venue === "string" && /^0x[0-9a-fA-F]{40}$/.test(venue)) {
+    shareDecimals = await client.readContract({ address: getAddress(venue), abi: erc20Abi, functionName: "decimals" }).then(Number).catch(() => undefined);
   }
 
   const rawOptions = Array.isArray(rec.options) ? (rec.options as DecisionOptionView[]) : [];
@@ -200,12 +225,37 @@ export async function loadDecision(
     outcome: String(rec.outcome ?? ""),
     inputs: (rec.inputs as Record<string, unknown>) ?? {},
     currency,
+    people,
+    ...(shareDecimals !== undefined ? { shareDecimals } : {}),
     options: rawOptions,
     humanResponses,
     txHash,
     anchor,
     since,
   };
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** "You (wallet 0x645c…4E7b)", "Ama Owusu (owner, wallet 0xc81f…1CFb)": a person in a record, said the way the team page says them */
+async function peopleLabels(db: Database, businessId: string, viewer: string, ids: string[]): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  for (const id of ids) {
+    const [row] = await db
+      .select({ displayName: users.displayName, wallet: users.wallet, role: members.role })
+      .from(users)
+      .leftJoin(members, and(eq(members.userId, users.id), eq(members.businessId, businessId)))
+      .where(eq(users.id, id))
+      .limit(1);
+    const wallet = row?.wallet ? `wallet ${shortHex(row.wallet)}` : "";
+    if (id === viewer) out[id] = wallet ? `You (${row?.role ? `${row.role}, ` : ""}${wallet})` : "You";
+    else if (row) {
+      const who = row.displayName?.trim() || (row.role ? `A team ${row.role}` : "A team member");
+      const extra = [row.displayName?.trim() && row.role ? row.role : "", wallet].filter(Boolean).join(", ");
+      out[id] = extra ? `${who} (${extra})` : who;
+    } else out[id] = "A former team member";
+  }
+  return out;
 }
 
 /** "settings:early_pay" → "Early pay"; an invoice fingerprint → "Invoice <number>"; a hash with no invoice row → null */

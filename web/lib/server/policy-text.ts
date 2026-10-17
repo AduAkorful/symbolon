@@ -19,10 +19,12 @@ const NAMES: Record<PolicyTemplate, { name: string; blurb: string }> = {
 };
 
 export function describePolicyLines(p: VaultPolicy, decimals = 6): string[] {
+  // the per-payment cap is a hard limit the Vault checks first, so an auto-pay limit above it is never reached (QA R25-13)
+  const capped = p.autoPayLimit > p.perTxCap ? `, still within the ${usd(p.perTxCap, decimals)} per-payment cap` : "";
   const lines = [
     p.newVendorMinPaid === 0
-      ? `Auto-pay up to ${usd(p.autoPayLimit, decimals)} to any payee on the list`
-      : `Auto-pay up to ${usd(p.autoPayLimit, decimals)} to vendors with ${p.newVendorMinPaid} or more paid ${p.newVendorMinPaid === 1 ? "invoice" : "invoices"}`,
+      ? `Auto-pay up to ${usd(p.autoPayLimit, decimals)} to any payee on the list${capped}`
+      : `Auto-pay up to ${usd(p.autoPayLimit, decimals)} to vendors with ${p.newVendorMinPaid} or more paid ${p.newVendorMinPaid === 1 ? "invoice" : "invoices"}${capped}`,
     `Owner signs above ${usd(p.ownerThreshold, decimals)}`,
     `No single payment above ${usd(p.perTxCap, decimals)}`,
     p.screeningMaxAge === 0n ? "Payees aren’t required to be screened" : `Payees screened within ${duration(p.screeningMaxAge)}`,

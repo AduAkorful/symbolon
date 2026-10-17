@@ -2,8 +2,7 @@ import "server-only";
 import { describeRule } from "../blockers";
 
 import { formatAmount } from "@symbolon/seal";
-import { formatDateTime, showMoney } from "../format";
-import { usd } from "./policy-text";
+import { formatDateTime, showMoney, tidyRawUnits } from "../format";
 
 export interface DecisionSummary {
   sentence: string;
@@ -111,11 +110,22 @@ export interface DecisionNow {
   supportedTokens?: ReadonlySet<string>;
   /** Lending vaults, lowercased; a transfer from one into the Vault is cash coming back from lending, not a deposit */
   lendingVenues?: ReadonlySet<string>;
+  /** The currency of the invoice a record is about ("USDC" | "EURC"), keyed by lowercased fingerprint (QA R25-2) */
+  currencyBySubject?: ReadonlyMap<string, string>;
+  /** The currency of the one record being summarized, when the caller already knows it */
+  currency?: string;
+}
+
+/** The symbol a payment record's amounts are in: the record's own, else the invoice's, else USDC (the Vault's operating token) */
+function currencyOf(record: Record<string, unknown>, inputs: Record<string, unknown>, now: DecisionNow): string {
+  if (typeof inputs.currency === "string" && inputs.currency) return inputs.currency;
+  const subject = typeof record.subject === "string" ? record.subject.toLowerCase() : "";
+  return now.currency ?? (subject ? now.currencyBySubject?.get(subject) : undefined) ?? "USDC";
 }
 
 export function summarizeDecision(record: Record<string, unknown>, now: DecisionNow = {}): DecisionSummary {
   const s = summarizeRecord(record, now);
-  const tidy = (t: string) => tidySignOff(tidyMoney(t));
+  const tidy = (t: string) => tidySignOff(tidyMoney(tidyRawUnits(t)));
   return { ...s, sentence: tidy(s.sentence), ...(s.explanation ? { explanation: tidy(s.explanation) } : {}) };
 }
 
@@ -172,7 +182,8 @@ function summarizeRecord(record: Record<string, unknown>, now: DecisionNow = {})
 
     case "pay": {
       const amount = inputs.paid ?? inputs.amount;
-      const amountStr = typeof amount === "string" ? usd(BigInt(amount)) : "";
+      // an EURC invoice is paid in euros: "Paid €239.45", never "$239.45" (QA R25-2)
+      const amountStr = typeof amount === "string" && /^\d+$/.test(amount) ? showMoney(formatAmount(BigInt(amount), 6), currencyOf(record, inputs, now)) : "";
       if (outcome === "paid") {
         return { sentence: amountStr ? `Paid ${amountStr} on Arc` : "Payment sent on Arc", explanation };
       }
@@ -202,7 +213,9 @@ function summarizeRecord(record: Record<string, unknown>, now: DecisionNow = {})
         : cleared.length > 0
           ? `Scheduled for payment on the due date. Cleared since${when ? ` ${when}` : ""}: ${titles(cleared)}`
           : "Scheduled for payment on the due date";
-      return { sentence: `${considered(record)}${base}`, explanation };
+      // Assisted mode asks on the due date, not now; say so, or the invoice looks forgotten when Approvals is empty (QA R25-4)
+      const asks = record.mode === "assist" ? ". It goes to Approvals for your sign-off then" : "";
+      return { sentence: `${considered(record)}${base}${asks}`, explanation };
     }
 
     case "reject": {

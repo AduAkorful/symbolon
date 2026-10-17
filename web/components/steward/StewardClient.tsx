@@ -22,6 +22,7 @@ import { EmptyState } from "@/components/ui/States";
 import { StatusPill, type Tone } from "@/components/ui/StatusPill";
 import { plainRunError } from "@/lib/run-error";
 import { refreshAfterChain } from "@/lib/client/refresh";
+import { announceStewardMode } from "@/components/shell/StewardModeName";
 import { settleFee, type FeeView } from "@/components/steward/fee-settle";
 import { Eyebrow, Lead, PageTitle, SectionTitle } from "@/components/ui/Type";
 
@@ -35,8 +36,9 @@ const modes = [
   {
     key: "assist",
     name: "Assisted",
-    tagline: "One-tap approval for every payment",
-    body: "Proposes payments and marks them for human approval. Sends nothing on its own.",
+    tagline: "One-tap approval for every payment, when it's due",
+    // QA R25-4: a payment not yet due is scheduled; it reaches Approvals on its due date (or sooner when a discount is worth taking)
+    body: "Puts each payment in Approvals when it's due, or sooner when an Early Pay discount is worth taking, and waits for your tap. Until then it shows as scheduled. Sends nothing on its own.",
   },
   {
     key: "auto",
@@ -257,6 +259,7 @@ export function StewardClient({
         mode: nextMode,
       });
       setCurrentMode(nextMode);
+      announceStewardMode(nextMode);
       // going back to Autonomous needs its own confirmation, so only a step to or between the other two can be undone from here
       setModeUndo(previous === "auto" ? null : { from: previous as "shadow" | "assist", to: nextMode });
       router.refresh();
@@ -274,6 +277,7 @@ export function StewardClient({
     try {
       await postJson(`/api/business/${business.id}/steward`, { action: "mode", mode: modeUndo.from });
       setCurrentMode(modeUndo.from);
+      announceStewardMode(modeUndo.from);
       setModeUndo(null);
       router.refresh();
     } catch (err) {
@@ -294,6 +298,7 @@ export function StewardClient({
         policyConfirmed: true,
       });
       setCurrentMode("auto");
+      announceStewardMode("auto");
       setAutoModalOpen(false);
       router.refresh();
     } catch (err) {

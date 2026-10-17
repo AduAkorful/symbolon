@@ -5,7 +5,7 @@ import { getAddress, type PublicClient } from "viem";
 
 import { formatAmount } from "@symbolon/seal";
 import { symbolonContracts, type Deployment } from "@symbolon/chain";
-import { chainEvents, type Database, type decisions } from "@symbolon/db";
+import { chainEvents, invoices, type Database, type decisions } from "@symbolon/db";
 
 import { showMoney } from "../format";
 import { isLendingReturn, summarizeDecision, type DecisionNow, type DecisionSummary } from "./decision-text";
@@ -114,7 +114,12 @@ export async function loadLendingEvents(db: Database, vault: string): Promise<Le
  * What a page needs to show stored decisions as they stand now: the lending vaults, and the currencies the Vault pays in (one read
  * per token). A read that fails leaves the token out, so a stored blocker is then shown as recorded, never cleared on a guess.
  */
-export async function decisionNow(client: PublicClient, deployment: Deployment, vault: string): Promise<DecisionNow> {
+export async function decisionNow(
+  client: PublicClient,
+  deployment: Deployment,
+  vault: string,
+  invoicesOf?: { db: Database; businessId: string },
+): Promise<DecisionNow> {
   const lendingVenues = new Set((deployment.lendingVenues ?? []).map((v) => v.address.toLowerCase()));
   const supportedTokens = new Set<string>();
   try {
@@ -127,5 +132,12 @@ export async function decisionNow(client: PublicClient, deployment: Deployment, 
       }),
     );
   } catch { /* no lens: nothing is cleared */ }
-  return { lendingVenues, supportedTokens };
+  // each invoice's currency, so a decision about an EURC invoice says "€" (QA R25-2)
+  const currencyBySubject = new Map<string, string>();
+  if (invoicesOf) {
+    const eurc = deployment.tokens.eurc?.toLowerCase();
+    const rows = await invoicesOf.db.select({ fingerprint: invoices.fingerprint, token: invoices.token }).from(invoices).where(eq(invoices.businessId, invoicesOf.businessId));
+    for (const r of rows) currencyBySubject.set(r.fingerprint.toLowerCase(), eurc && r.token.toLowerCase() === eurc ? "EURC" : "USDC");
+  }
+  return { lendingVenues, supportedTokens, currencyBySubject };
 }

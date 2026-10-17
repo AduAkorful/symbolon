@@ -1,7 +1,7 @@
 import { formatAmount } from "@symbolon/seal";
 
 import { describeRule } from "./blockers";
-import { formatDateTime, showBps, showDate, showMoney, shortHex } from "./format";
+import { formatDateTime, showBps, showDate, showMoney, showShares, shortHex, tidyRawUnits } from "./format";
 
 /**
  * A decision record's stored values, in words (QA retest 19). The record page showed "credit 41150000", "dueDate 1793119755",
@@ -63,9 +63,26 @@ const LABELS: Record<string, string> = {
   from: "From",
   to: "To",
   actor: "By",
+  lendingValue: "Lending value",
+  redeemable: "Can be taken out now",
+  simulated: "Simulated payout",
+  minAssets: "Least it will accept",
+  minShares: "Fewest shares it will accept",
+  quoted: "Shares quoted",
+  unavailable: "Can't be taken out now",
+  minOperating: "Operating floor",
+  valueKnown: "Value readable",
+  maxLendingBps: "Most in lending",
+  asset: "Currency",
 };
 
-const MONEY_KEYS = new Set(["credit", "paid", "amount", "assets", "remaining", "limit", "cap", "billsDue", "cash"]);
+const MONEY_KEYS = new Set([
+  "credit", "paid", "amount", "assets", "remaining", "limit", "cap", "billsDue", "cash",
+  // lending and reserve records (QA R25-6): every one of these is raw USDC units
+  "lendingValue", "redeemable", "simulated", "minAssets", "unavailable", "minOperating", "reserveValue", "buffer", "upcoming", "minSweep",
+]);
+/** Raw share units of a lending vault or the reserve: shown as shares at the venue's decimals, never as a 20-digit number */
+const SHARE_KEYS = new Set(["shares", "minShares", "quoted"]);
 const UNIX_KEYS = new Set(["dueDate", "validUntil", "payBy", "activeAt"]);
 const BPS_KEYS = /Bps$/;
 
@@ -105,10 +122,11 @@ function blockerSentence(b: unknown): string {
 }
 
 /** One value in words: money at two decimals, dates formatted, blockers as sentences, long hex shortened */
-export function formatInputValue(key: string, v: unknown, symbol = "USDC", opts: { now?: Date } = {}): string {
+export function formatInputValue(key: string, v: unknown, symbol = "USDC", opts: { now?: Date; shareDecimals?: number } = {}): string {
   if (v === null || v === undefined || v === "") return "None";
   if (typeof v === "boolean") return v ? "Yes" : "No";
   if (MONEY_KEYS.has(key) && isIntegerText(v)) return money(v, symbol);
+  if (SHARE_KEYS.has(key) && isIntegerText(v)) return showShares(BigInt(v), opts.shareDecimals ?? 6);
   if (UNIX_KEYS.has(key) && isIntegerText(v)) return showDate(Number(v));
   if (BPS_KEYS.test(key) && isIntegerText(v)) return `${showBps(Number(v))}%`;
   if (key === "timing" && typeof v === "string") return TIMING[v] ?? humanKey(v);
@@ -116,7 +134,8 @@ export function formatInputValue(key: string, v: unknown, symbol = "USDC", opts:
     const list = Array.isArray(v) ? v : [];
     return list.length === 0 ? "Nothing" : list.map(blockerSentence).join(" ");
   }
-  if (key === "policy" && typeof v === "object" && !Array.isArray(v)) {
+  // a payment's rules check carries ok/failures; a lending policy ({ enabled, maxLendingBps, venue }) is read like any object
+  if (key === "policy" && typeof v === "object" && !Array.isArray(v) && ("ok" in (v as object) || "failures" in (v as object))) {
     const p = v as { ok?: unknown; failures?: unknown };
     const failures = Array.isArray(p.failures) ? p.failures : [];
     if (p.ok === true || failures.length === 0) return "Every Vault rule passes.";
@@ -125,7 +144,8 @@ export function formatInputValue(key: string, v: unknown, symbol = "USDC", opts:
   if (typeof v === "string") {
     if (/^0x[0-9a-fA-F]{12,}$/.test(v)) return shortHex(v);
     if (HAS_ISO.test(v)) return v.replace(ISO, (iso) => formatDateTime(iso, opts));
-    return v;
+    // "cash 234576799 is below the 1297500000 needed" → "cash $234.58 is below the $1,297.50 needed" (QA R25-6)
+    return key === "reason" ? tidyRawUnits(v) : v;
   }
   if (typeof v === "number" || typeof v === "bigint") return String(v);
   if (Array.isArray(v)) return v.length === 0 ? "None" : v.map((x) => formatInputValue(key, x, symbol, opts)).join("; ");
@@ -136,11 +156,16 @@ export function formatInputValue(key: string, v: unknown, symbol = "USDC", opts:
 }
 
 /** Every stored input, labelled and in words, with its raw text kept beside it */
-export function describeInputs(inputs: Record<string, unknown>, symbol = "USDC", opts: { now?: Date } = {}): InputRow[] {
+export function describeInputs(
+  inputs: Record<string, unknown>,
+  symbol = "USDC",
+  opts: { now?: Date; people?: Record<string, string>; shareDecimals?: number } = {},
+): InputRow[] {
   return Object.entries(inputs).map(([key, v]) => ({
     key,
     label: LABELS[key] ?? humanKey(key),
-    value: formatInputValue(key, v, symbol, opts),
+    // a person is named, never shown as their id (QA R25-5); the id stays under "Show raw"
+    value: key === "actor" && typeof v === "string" && opts.people?.[v] ? opts.people[v]! : formatInputValue(key, v, symbol, opts),
     raw: rawText(v),
   }));
 }

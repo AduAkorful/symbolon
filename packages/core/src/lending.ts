@@ -23,6 +23,7 @@ import {
 } from "@symbolon/steward";
 import { inArray } from "drizzle-orm";
 
+import { billFlows } from "./bills.js";
 import { notifyBusiness } from "./domain-notifications.js";
 import type { StewardEnv } from "./steward.js";
 import { DEFAULT_TREASURY, type TreasuryOptions } from "./treasury.js";
@@ -85,16 +86,8 @@ export async function runLending(env: StewardEnv, businessId: string, opts: Trea
   const reserve = await env.contracts.lens.read.getReservePolicy([vault]);
   const exit = await simulateLendingExit(env.client, venue, vault, lending.shares);
   const now = (await env.client.getBlock()).timestamp;
-  const open = await env.db
-    .select()
-    .from(invoices)
-    .where(and(eq(invoices.businessId, businessId), inArray(invoices.status, ["verified", "scheduled", "awaiting_approval"])));
-  const flows: CashFlow[] = open.map((o) => ({
-    at: BigInt(Math.floor(o.dueDate.getTime() / 1000)),
-    amount: o.total - o.credited,
-    direction: "out",
-    ref: o.fingerprint,
-  }));
+  // USDC bills only, by the shared definition: an EURC bill is paid from EURC and never counts against USDC cash (QA R25-8)
+  const flows: CashFlow[] = await billFlows(env.db, businessId, env.deployment.tokens.usdc);
   const plan = planLending({
     enabled: lending.policy.enabled,
     venueSet: true,

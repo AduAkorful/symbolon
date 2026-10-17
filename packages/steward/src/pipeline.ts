@@ -178,7 +178,7 @@ export async function processInvoice(ctx: InvoiceContext, deps: Deps): Promise<S
 
   // 4. duplicates
   const dupes = findDuplicates(
-    { fingerprint: fp, seal: inv.seal, invoiceNumber: verification.document?.invoiceNumber ?? "", amount: inv.amount, issuedAt: inv.issuedAt },
+    { fingerprint: fp, seal: inv.seal, invoiceNumber: verification.document?.invoiceNumber ?? "", amount: inv.amount, issuedAt: inv.issuedAt, token: inv.token },
     ctx.knownInvoices,
   );
   if (dupes.length > 0) {
@@ -277,7 +277,9 @@ export async function processInvoice(ctx: InvoiceContext, deps: Deps): Promise<S
     }
   }
 
-  const inputs = { credit, paid, policy, timing: timing.action };
+  // the invoice's currency travels with the record, so "Paid €239.45" is said in the right money (QA R25-2)
+  const currency = verification.document?.currency.symbol;
+  const inputs = { credit, paid, policy, timing: timing.action, ...(currency ? { currency } : {}) };
   const onlyNeedsApproval = policy.failures.length > 0 && policy.failures.every((f) => f.rule === "ApprovalRequired");
   if (!policy.ok && !onlyNeedsApproval) {
     return finish("held", { kind: "hold", subject, inputs, options, rule: "the Vault would refuse this payment", outcome: "held" });

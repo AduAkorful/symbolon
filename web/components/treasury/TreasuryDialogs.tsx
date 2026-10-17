@@ -143,7 +143,7 @@ export function FundModal({
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [mode, setMode] = useState<{ walletSends: boolean; release: number | null; walletUsdc: string | null } | null>(null);
+  const [mode, setMode] = useState<{ walletSends: boolean; release: number | null; walletUsdc: string | null; walletEurc: string | null } | null>(null);
   const [sentHash, setSentHash] = useState<string | null>(null);
   const [watchable, setWatchable] = useState<{ address: string; symbol: string; decimals: number }[]>([]);
   const getProviders = useWalletProviders();
@@ -153,9 +153,9 @@ export function FundModal({
     let live = true;
     void fetch(`/api/business/${businessId}/fund`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((j: { ok?: boolean; walletUsdc?: string | null; funding?: { walletSends: boolean; release: number | null }; tokens?: { address: string; symbol: string; decimals: number }[] } | null) => {
+      .then((j: { ok?: boolean; walletUsdc?: string | null; walletEurc?: string | null; funding?: { walletSends: boolean; release: number | null }; tokens?: { address: string; symbol: string; decimals: number }[] } | null) => {
         if (live && j?.ok) {
-          setMode({ walletSends: j.funding?.walletSends ?? false, release: j.funding?.release ?? null, walletUsdc: j.walletUsdc ?? null });
+          setMode({ walletSends: j.funding?.walletSends ?? false, release: j.funding?.release ?? null, walletUsdc: j.walletUsdc ?? null, walletEurc: j.walletEurc ?? null });
           setWatchable(j.tokens ?? []);
         }
       })
@@ -166,7 +166,9 @@ export function FundModal({
   }, [businessId]);
 
   const typed = amount.trim() === "" ? null : moneyDraft(amount.trim(), 6);
-  const walletRaw = mode?.walletUsdc != null && tokenSymbol === "USDC" ? BigInt(mode.walletUsdc) : null;
+  // the wallet's balance of the token picked: EURC showed none before (QA R25-11)
+  const walletText = tokenSymbol === "USDC" ? mode?.walletUsdc : mode?.walletEurc;
+  const walletRaw = walletText != null ? BigInt(walletText) : null;
   const eurcOff = tokenSymbol === "EURC" && eurcSupported === false;
   const amountProblem =
     eurcOff
@@ -178,7 +180,7 @@ export function FundModal({
         : typed.raw <= 0n
           ? "The amount has to be more than zero."
           : walletRaw !== null && typed.raw > walletRaw
-            ? `Your wallet holds only ${showMoney(moneyInput(walletRaw, 6), "USDC")}.`
+            ? `Your wallet holds only ${showMoney(moneyInput(walletRaw, 6), tokenSymbol)}.`
             : null;
 
   async function submit(e: React.FormEvent) {
@@ -202,7 +204,8 @@ export function FundModal({
       });
 
       const providers = await getProviders();
-      await rememberTokens(providers, signer, watchable);
+      // only the token being sent: an EURC deposit asked the wallet to add USDC (QA R25-12)
+      await rememberTokens(providers, signer, watchable.filter((t) => t.symbol === tokenSymbol));
       const hash = await sendWithWallet(providers, signer, { to: prep.to, data: prep.data });
 
       // The Vault emits nothing for a token transfer, so the app writes the Activity record from the receipt (plan 05zj E, SYM-14).
@@ -240,9 +243,16 @@ export function FundModal({
         {mode === null ? <p className="text-xs text-graphite">Reading your wallet balance…</p> : null}
         {walletRaw !== null ? (
           <p className="text-xs text-graphite">
-            Your wallet holds {showMoney(moneyInput(walletRaw, 6), "USDC")}.
+            Your wallet holds {showMoney(moneyInput(walletRaw, 6), tokenSymbol)}.
             {/* USDC is also Arc's fee token, so "everything" would leave nothing to pay the fee with (QA SYM-19) */}
-            {walletRaw > FEE_RESERVE_RAW ? (
+            {tokenSymbol === "EURC" && walletRaw > 0n ? (
+              <>
+                {" "}
+                <button type="button" className="underline decoration-rule underline-offset-4 hover:text-ink" onClick={() => setAmount(moneyInput(walletRaw, 6))}>
+                  Use all of it
+                </button>
+              </>
+            ) : tokenSymbol === "USDC" && walletRaw > FEE_RESERVE_RAW ? (
               <>
                 {" "}
                 <button type="button" className="underline decoration-rule underline-offset-4 hover:text-ink" onClick={() => setAmount(moneyInput(walletRaw - FEE_RESERVE_RAW, 6))}>

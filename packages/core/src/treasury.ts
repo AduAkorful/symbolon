@@ -6,6 +6,7 @@ import { businesses, decisions, invoices, type Database } from "@symbolon/db";
 import { hashRecord, outflowsWithin, planReserve, toRecordValue, type CashFlow, type DecisionRecord } from "@symbolon/steward";
 
 import type { StewardEnv } from "./steward.js";
+import { billFlows } from "./bills.js";
 
 export interface TreasuryOptions {
   /** Redeem this many days ahead of a bill (spec Flow 9: two days) */
@@ -41,16 +42,8 @@ export async function runTreasury(env: StewardEnv, businessId: string, opts: Tre
   }
 
   const now = (await env.client.getBlock()).timestamp;
-  const open = await env.db
-    .select()
-    .from(invoices)
-    .where(and(eq(invoices.businessId, businessId), inArray(invoices.status, ["verified", "scheduled", "awaiting_approval"])));
-  const flows: CashFlow[] = open.map((o) => ({
-    at: BigInt(Math.floor(o.dueDate.getTime() / 1000)),
-    amount: o.total - o.credited,
-    direction: "out",
-    ref: o.fingerprint,
-  }));
+  // USDC bills only, by the shared definition: an EURC bill is paid from EURC and never counts against USDC cash (QA R25-8)
+  const flows: CashFlow[] = await billFlows(env.db, businessId, env.deployment.tokens.usdc);
   const plan = planReserve({
     enabled: status.policy.enabled,
     entitled: status.entitled,

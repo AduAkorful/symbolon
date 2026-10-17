@@ -26,7 +26,7 @@ export type TrustState = "verified" | "new_vendor" | "blocked" | "failed";
 export type InboxFilter = "all" | "verified" | "new" | "unsigned" | "blocked" | "declined" | "cancelled";
 
 export function duplicateCandidates(db: Database, businessId: string, seal: string, fingerprint: string) {
-  return db.select({ fingerprint: invoices.fingerprint, seal: invoices.seal, invoiceNumber: invoices.invoiceNumber, total: invoices.total, issuedAt: invoices.issuedAt, receivedAt: invoices.receivedAt })
+  return db.select({ fingerprint: invoices.fingerprint, seal: invoices.seal, invoiceNumber: invoices.invoiceNumber, token: invoices.token, total: invoices.total, issuedAt: invoices.issuedAt, receivedAt: invoices.receivedAt })
     .from(invoices).where(and(eq(invoices.businessId, businessId), eq(invoices.seal, seal), ne(invoices.fingerprint, fingerprint)));
 }
 
@@ -171,8 +171,8 @@ export async function loadInvoiceDetail(db: Database, client: PublicClient, cfg:
   const trust: TrustState = payee?.status === "blocked" ? "blocked" : payee?.status === "verified" ? "verified" : "new_vendor";
   const known = await duplicateCandidates(db, businessId, row.seal, row.fingerprint);
   const duplicates = findDuplicates(
-    { fingerprint: row.fingerprint as Hex, seal: row.seal, invoiceNumber: row.invoiceNumber, amount: row.total, issuedAt: BigInt(Math.floor((row.issuedAt ?? row.receivedAt).getTime() / 1000)) },
-    known.map((x) => ({ fingerprint: x.fingerprint as Hex, seal: x.seal, invoiceNumber: x.invoiceNumber, amount: x.total, issuedAt: BigInt(Math.floor((x.issuedAt ?? x.receivedAt).getTime() / 1000)) })),
+    { fingerprint: row.fingerprint as Hex, seal: row.seal, invoiceNumber: row.invoiceNumber, amount: row.total, token: row.token, issuedAt: BigInt(Math.floor((row.issuedAt ?? row.receivedAt).getTime() / 1000)) },
+    known.map((x) => ({ fingerprint: x.fingerprint as Hex, seal: x.seal, invoiceNumber: x.invoiceNumber, amount: x.total, token: x.token, issuedAt: BigInt(Math.floor((x.issuedAt ?? x.receivedAt).getTime() / 1000)) })),
   );
   const match = facts ? matchInvoice(verification.invoice, facts.payee?.terms, facts.purchaseOrder, facts.deliveryConfirmed, facts.now) : undefined;
 

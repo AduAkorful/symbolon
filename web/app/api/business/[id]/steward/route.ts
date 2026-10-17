@@ -70,7 +70,7 @@ export const GET = routeWith<Ctx>(async (_request, ctx) => {
   const rawDecisions = await listRunDecisions(db, businessId, 25);
   // the same list the Steward page shows: each move once, cash back from lending said as such (QA retest 18)
   const recentDecisions = biz.vault
-    ? foldRecentDecisions(rawDecisions, await loadLendingEvents(db, biz.vault), await decisionNow(client, config.deployment, biz.vault)).map(({ row: d, summary, kindLabel, txHash }) => ({
+    ? foldRecentDecisions(rawDecisions, await loadLendingEvents(db, biz.vault), await decisionNow(client, config.deployment, biz.vault, { db, businessId })).map(({ row: d, summary, kindLabel, txHash }) => ({
         id: d.id,
         kind: d.kind,
         kindLabel,

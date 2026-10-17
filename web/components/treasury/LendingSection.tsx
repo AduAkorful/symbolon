@@ -179,10 +179,10 @@ export function LendingSection({ businessId, signer, explorer, isOwner }: { busi
             </div>
           ) : null}
           {view.paused ? <p className="text-sm text-graphite">Payments are paused: moving cash in is blocked; taking it out still works for the owner.</p> : null}
-          {view.policy.enabled && !view.paused && view.billsDue !== null && BigInt(view.cash) <= BigInt(view.billsDue) + BigInt(view.minOperating) ? (
+          {view.policy.enabled && !view.paused && view.billsDue !== null && BigInt(view.cash) <= (BigInt(view.billsDue) > BigInt(view.minOperating) ? BigInt(view.billsDue) : BigInt(view.minOperating)) ? (
             <p className="text-sm text-graphite">
               Nothing is moved into lending while USDC bills due within your buffer ({money(view.billsDue)}) are at least the cash ({money(view.cash)}).
-              The Steward moves only what is left after bills and the operating floor.
+              The Steward moves only cash above those bills (or the operating floor, if that is higher).
             </p>
           ) : null}
           {view.policy.enabled && view.minOperating === "0" ? (

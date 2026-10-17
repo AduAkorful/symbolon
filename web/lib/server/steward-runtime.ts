@@ -15,6 +15,7 @@ import { ensureFresh } from "./sync";
 import { notifyDueNotices } from "./due-notices";
 import { notifyPayeesActive } from "./payee-active";
 import { notPreparedPayment } from "./prepared-payment";
+import { showMoney } from "../format";
 
 /**
  * 0.01 native USDC (18 decimals on Arc) minimum fee balance.
@@ -275,7 +276,15 @@ export async function runForBusiness(
     // the lending reserve (plan 05zk) is its own pass: it does nothing for a Vault with no lending vault set
     try {
       const lendingResult = await runLending(env, businessId);
-      if (lendingResult.action !== "none") treasuryAction = treasuryAction ?? `lending ${lendingResult.action}`;
+      // a reserve pass that did nothing ("none") must not hide the lending move this run made (QA R25-7: "Treasury action none"
+      // on the run that took $58.20 out of lending); the amount is said too
+      if (lendingResult.action !== "none") {
+        const inputs = (lendingResult.record?.inputs ?? {}) as { simulated?: unknown; plan?: { assets?: unknown } };
+        const raw = String((lendingResult.action === "redeem" ? inputs.simulated : undefined) ?? inputs.plan?.assets ?? "");
+        const amount = /^\d+$/.test(raw) ? ` ${showMoney(formatUnits(BigInt(raw), 6), "USDC")}` : "";
+        const lending = lendingResult.action === "redeem" ? `took${amount || " cash"} out of lending` : `moved${amount || " cash"} into lending`;
+        treasuryAction = treasuryAction && treasuryAction !== "none" ? `${treasuryAction}; ${lending}` : lending;
+      }
     } catch (lendingErr) {
       console.warn("Lending run failed; invoice pass succeeded:", lendingErr);
     }

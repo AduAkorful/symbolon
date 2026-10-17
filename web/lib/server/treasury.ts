@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { formatDay, isUnlimitedCap } from "../format";
 import {
   decodeEventLog,
@@ -46,6 +46,8 @@ import {
   type ForecastDay,
   type TokenShortfall,
 } from "@symbolon/steward";
+import { BILL_STATUSES } from "@symbolon/core";
+
 import { requireMember } from "./access";
 import { appendAppDecision } from "./app-decisions";
 import { parseUsdcAmount, type ChainSettings } from "./business";
@@ -86,6 +88,11 @@ export interface TreasuryState {
     cap: string | null;
     spent: string;
     periodLengthDays: number;
+    /**
+     * The Vault counts a budget in raw token units whatever the currency, so an EURC payment adds to it 1:1 with USDC (QA R25-3).
+     * True when this business has paid EURC invoices, so the page can say the figure isn't dollars only.
+     */
+    includesEurc: boolean;
   } | null;
   reserve: {
     readAvailable: boolean;
@@ -277,7 +284,8 @@ export async function loadTreasury(
     .where(
       and(
         eq(invoices.businessId, businessId),
-        inArray(invoices.status, ["verified", "scheduled", "awaiting_approval", "held"]),
+        // the shared bill definition, so this shortfall matches the lending section and the Steward (QA R25-8)
+        inArray(invoices.status, [...BILL_STATUSES]),
       ),
     );
 
@@ -334,10 +342,16 @@ export async function loadTreasury(
     const nowBn = BigInt(Math.floor(Date.now() / 1000));
     const currentPeriodIndex = budgetRead.periodLength > 0n ? nowBn / budgetRead.periodLength : 0n;
     const spentThisPeriod = budgetRead.periodIndex === currentPeriodIndex ? budgetRead.spent : 0n;
+    const [eurcPaid] = spentThisPeriod > 0n && deployment.tokens.eurc
+      ? await db.select({ fingerprint: invoices.fingerprint }).from(invoices)
+          .where(and(eq(invoices.businessId, businessId), eq(invoices.token, deployment.tokens.eurc.toLowerCase()), gt(invoices.credited, 0n)))
+          .limit(1)
+      : [];
     budgetInfo = {
       cap: isUnlimitedCap(budgetRead.cap) ? null : formatUnits(budgetRead.cap, usdcDecimals),
       spent: formatUnits(spentThisPeriod, usdcDecimals),
       periodLengthDays: Number(budgetRead.periodLength / 86400n),
+      includesEurc: Boolean(eurcPaid),
     };
   }
 

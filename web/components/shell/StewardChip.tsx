@@ -2,6 +2,8 @@ import Link from "next/link";
 
 import type { stewardStanding } from "@/lib/server/vault-read";
 
+import { StewardModeName } from "./StewardModeName";
+
 const MODE_NAMES: Record<string, string> = { shadow: "Shadow", assist: "Assisted", auto: "Autonomous" };
 
 /** What the header says about the Steward: its mode, and whether the Vault shows it paused, active, or something to look at */
@@ -36,7 +38,7 @@ export function StewardChip({ standing, mode }: { standing: ReturnType<typeof st
     return (
       <span className="flex items-center gap-1.5 whitespace-nowrap text-graphite">
         <span className="h-2 w-2 rounded-full bg-ok" aria-hidden />
-        Steward: <span className="text-ink">{modeName ?? "Active"}</span>
+        Steward: <span className="text-ink"><StewardModeName initial={modeName ?? "Active"} /></span>
       </span>
     );
   }

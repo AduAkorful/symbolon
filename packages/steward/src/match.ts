@@ -46,6 +46,8 @@ export interface KnownInvoice {
   invoiceNumber: string;
   amount: bigint;
   issuedAt: bigint;
+  /** The invoice's token. Amounts in different currencies are never compared as near-duplicates */
+  token?: string;
 }
 
 export interface DuplicateFinding {
@@ -73,6 +75,8 @@ export function findDuplicates(
       findings.push({ kind: "same_number", fingerprint: k.fingerprint, detail: `invoice number ${k.invoiceNumber} used before` });
       continue;
     }
+    // A similar figure in a different currency (EURC vs USDC) is a different bill, not a near-duplicate
+    if (k.token && candidate.token && k.token.toLowerCase() !== candidate.token.toLowerCase()) continue;
     const diff = k.amount > candidate.amount ? k.amount - candidate.amount : candidate.amount - k.amount;
     const gap = k.issuedAt > candidate.issuedAt ? k.issuedAt - candidate.issuedAt : candidate.issuedAt - k.issuedAt;
     if (diff * 10_000n <= candidate.amount * tolerance && gap <= window) {

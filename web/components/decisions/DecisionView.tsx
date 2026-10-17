@@ -34,7 +34,7 @@ export function DecisionView({ decision: d, explorerUrl }: Props) {
   // "scheduled for 2026-10-27T…" is the scheduled outcome; its time is said the way the rest of the app says it (QA retest 19)
   const tone = outcomeTone[d.outcome] ?? outcomeTone[d.outcome.split(" ")[0] ?? ""] ?? "neutral";
   const outcomeText = formatOutcome(d.outcome);
-  const inputRows = describeInputs(d.inputs, d.currency);
+  const inputRows = describeInputs(d.inputs, d.currency, { people: d.people, ...(d.shareDecimals !== undefined ? { shareDecimals: d.shareDecimals } : {}) });
 
   return (
     <div className="space-y-10 pb-24">
@@ -242,7 +242,7 @@ export function DecisionView({ decision: d, explorerUrl }: Props) {
                     </span>
                   </div>
                   {hr.reason ? <p className="text-ink">Reason: {hr.reason}</p> : null}
-                  {hr.actor ? <p className="font-mono text-graphite">Actor: {hr.actor}</p> : null}
+                  {hr.actor ? <p className="text-graphite">By: {d.people[hr.actor] ?? hr.actor}</p> : null}
                 </div>
               ))}
             </section>

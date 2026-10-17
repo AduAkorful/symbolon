@@ -1,5 +1,12 @@
 const BPS = 10_000n;
 
+/** A raw 6-decimal USDC amount in words for a reason, "234.58 USDC" (to the cent, half up); the exact units stay in the record (QA R25-6) */
+export function usdcWords(raw: bigint): string {
+  const cents = (raw + 5_000n) / 10_000n;
+  const whole = (cents / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${whole}.${(cents % 100n).toString().padStart(2, "0")} USDC`;
+}
+
 export interface ReservePlanInputs {
   /** The Vault's reserve policy and whether Circle currently allows it */
   enabled: boolean;
@@ -43,7 +50,7 @@ export function planReserve(i: ReservePlanInputs): ReservePlan {
       action: "redeem",
       assets,
       shares: shares > i.shares ? i.shares : shares,
-      reason: `cash ${i.cash} is below the ${target} needed for the buffer and upcoming bills`,
+      reason: `cash ${usdcWords(i.cash)} is below the ${usdcWords(target)} needed for the buffer and upcoming bills`,
     };
   }
 
@@ -55,8 +62,8 @@ export function planReserve(i: ReservePlanInputs): ReservePlan {
   const maxReserve = (total * BigInt(i.maxReserveBps)) / BPS;
   const room = maxReserve > i.reserveValue ? maxReserve - i.reserveValue : 0n;
   const assets = excess < room ? excess : room;
-  if (assets < i.minSweep) return { action: "none", reason: `excess ${assets} is below the ${i.minSweep} sweep threshold` };
-  return { action: "subscribe", assets, reason: `cash ${i.cash} is ${excess} above the ${target} target` };
+  if (assets < i.minSweep) return { action: "none", reason: `excess ${usdcWords(assets)} is below the ${usdcWords(i.minSweep)} sweep threshold` };
+  return { action: "subscribe", assets, reason: `cash ${usdcWords(i.cash)} is ${usdcWords(excess)} above the ${usdcWords(target)} target` };
 }
 
 export interface LendingPlanInputs {
@@ -98,7 +105,7 @@ export function planLending(i: LendingPlanInputs): LendingPlan {
   if (i.shares > 0n && !i.exit.ok) {
     return {
       action: "none",
-      reason: `the lending vault can't pay out right now (${i.exit.reason}); ${i.lendingValue} stays counted as unavailable`,
+      reason: `the lending vault can't pay out right now (${i.exit.reason}); ${usdcWords(i.lendingValue)} stays counted as unavailable`,
       unavailable,
     };
   }
@@ -114,7 +121,7 @@ export function planLending(i: LendingPlanInputs): LendingPlan {
       action: "redeem",
       assets,
       shares: shares > i.shares ? i.shares : shares,
-      reason: `cash ${i.cash} is below the ${target} needed for the buffer and upcoming bills`,
+      reason: `cash ${usdcWords(i.cash)} is below the ${usdcWords(target)} needed for the buffer and upcoming bills`,
       unavailable,
     };
   }
@@ -127,8 +134,8 @@ export function planLending(i: LendingPlanInputs): LendingPlan {
   const maxLending = (total * BigInt(i.maxLendingBps)) / BPS;
   const room = maxLending > i.lendingValue ? maxLending - i.lendingValue : 0n;
   const assets = excess < room ? excess : room;
-  if (assets < i.minSweep) return { action: "none", reason: `excess ${assets} is below the ${i.minSweep} threshold`, unavailable };
-  return { action: "deposit", assets, reason: `cash ${i.cash} is ${excess} above the ${target} target`, unavailable };
+  if (assets < i.minSweep) return { action: "none", reason: `excess ${usdcWords(assets)} is below the ${usdcWords(i.minSweep)} threshold`, unavailable };
+  return { action: "deposit", assets, reason: `cash ${usdcWords(i.cash)} is ${usdcWords(excess)} above the ${usdcWords(target)} target`, unavailable };
 }
 
 export interface LendingSample {

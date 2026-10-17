@@ -61,6 +61,18 @@ describe("duplicates", () => {
     expect(findDuplicates(c({ amount: 1_005_000n, issuedAt: 86_400n * 30n }), known)).toEqual([]);
     expect(findDuplicates(c({ seal: "0xcd", invoiceNumber: "INV-1" }), known)).toEqual([]);
   });
+
+  // QA R25-1: a €213.40 EURC invoice was held as a near-duplicate of a $213.40 USDC one
+  it("never calls a similar amount in another currency a near-duplicate", () => {
+    const usdc = "0x3600000000000000000000000000000000000000";
+    const eurc = "0x89b50855aa3be2f677cd6303cec089b5f319d72a";
+    const k = [{ ...known[0]!, amount: 213_400_000n, token: usdc }];
+    const c = (o: object) => ({ fingerprint: `0x${"02".repeat(32)}` as Hex, seal: "0xab", invoiceNumber: "ACCS-2026-0011", amount: 213_400_000n, issuedAt: 0n, ...o });
+    expect(findDuplicates(c({ token: eurc }), k)).toEqual([]);
+    expect(findDuplicates(c({ token: usdc.toUpperCase().replace("0X", "0x") }), k)[0]!.kind).toBe("near");
+    // a reused invoice number is still flagged whatever the currency, and so is the same sealed invoice
+    expect(findDuplicates(c({ token: eurc, invoiceNumber: "INV-1" }), k)[0]!.kind).toBe("same_number");
+  });
 });
 
 import { idempotencyKeyFor } from "../src/index.js";

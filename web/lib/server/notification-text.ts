@@ -2,7 +2,7 @@ import "server-only";
 import { plainRunError } from "../run-error";
 import { tidyMoney } from "./decision-text";
 import { formatUnits } from "viem";
-import { formatDateTime, showMoney } from "../format";
+import { formatDateTime, showMoney, tidyRawUnits } from "../format";
 import { byPhrase } from "@symbolon/core";
 import { describeRule } from "../blockers";
 
@@ -32,7 +32,19 @@ function truncate(text: string, max = 120): string {
  * Pure describer turning a notification row into title, body, and safe internal href (plan 05u N4).
  * Never outputs HTML. Text from vendor inputs is length-limited and safe.
  */
+/**
+ * Every notice, in the bell and on Telegram and push, says money in words: raw token units a stored reason carries ("cash 234576799
+ * is below the 1297500000 needed") and "239.450000 EURC" both become "$234.58" / "€239.45" (QA R25-14). Applied to the finished
+ * title and body, so no notice kind can skip it.
+ */
 export function describeNotification(n: NotificationDescriberInput): NotificationViewItem {
+  const view = describeNotificationRaw(n);
+  const symbol = typeof n.body.symbol === "string" && n.body.symbol === "EURC" ? "EURC" : "USDC";
+  const tidy = (t: string) => tidyMoney(tidyRawUnits(t, symbol));
+  return { ...view, title: tidy(view.title), body: tidy(view.body) };
+}
+
+function describeNotificationRaw(n: NotificationDescriberInput): NotificationViewItem {
   const { kind, subject, body } = n;
 
   switch (kind) {

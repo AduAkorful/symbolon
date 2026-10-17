@@ -25,7 +25,7 @@ function env(db: Awaited<ReturnType<typeof createTestDb>>, status: Record<string
   };
   const contracts = { lens: { read: { reserveStatus: async () => status } }, teller } as unknown as SymbolonContracts;
   const client = { getBlock: async () => ({ timestamp: NOW }), simulateContract: vi.fn(async () => ({ request: {} })) } as unknown as PublicClient;
-  return { db, client, contracts, deployment: {} as Deployment, program: DEFAULT_EARLY_PAY, bufferDays: 30, reserveYieldBps: 320, ...(wallet ? { wallet } : {}) };
+  return { db, client, contracts, deployment: { tokens: getDeployment(arcTestnet.id).tokens } as Deployment, program: DEFAULT_EARLY_PAY, bufferDays: 30, reserveYieldBps: 320, ...(wallet ? { wallet } : {}) };
 }
 
 const status = (o: Record<string, unknown> = {}) => ({
@@ -223,7 +223,7 @@ describe("lending run (plan 05zk)", () => {
         return 1_001_058n; // convertToAssets of one share
       }),
     } as unknown as PublicClient;
-    return { db, client, contracts, deployment: { chainId: 5_042_002 } as Deployment, program: DEFAULT_EARLY_PAY, bufferDays: 30, reserveYieldBps: 0, ...(wallet ? { wallet } : {}) };
+    return { db, client, contracts, deployment: { chainId: 5_042_002, tokens: getDeployment(arcTestnet.id).tokens } as Deployment, program: DEFAULT_EARLY_PAY, bufferDays: 30, reserveYieldBps: 0, ...(wallet ? { wallet } : {}) };
   }
 
   const status = (o: Record<string, unknown> = {}) => ({

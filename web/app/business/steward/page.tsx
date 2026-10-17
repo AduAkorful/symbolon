@@ -126,7 +126,7 @@ export default async function BusinessStewardPage() {
   const rawDecisions = await listRunDecisions(db, business.id, 25);
   const refs = await subjectRefs(db, business.id, rawDecisions.map((d) => d.subject));
   // each move told once, cash back from lending said as such, and stored blockers shown against what holds now (QA retest 18)
-  const [lendingEvents, now] = await Promise.all([loadLendingEvents(db, business.vault), decisionNow(client, config.deployment, business.vault)]);
+  const [lendingEvents, now] = await Promise.all([loadLendingEvents(db, business.vault), decisionNow(client, config.deployment, business.vault, { db, businessId: business.id })]);
   const recentDecisions: DecisionView[] = foldRecentDecisions(rawDecisions, lendingEvents, now).map(({ row: d, summary, kindLabel, txHash }) => ({
     id: d.id,
     kind: d.kind,

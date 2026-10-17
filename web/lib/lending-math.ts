@@ -6,7 +6,10 @@ export function lendingShortfall(input: { cash: string; billsDue: string | null;
   if (input.billsDue === null || !/^\d+(\.\d{1,6})?$/.test(input.amount.trim())) return null;
   const [whole, frac = ""] = input.amount.trim().split(".");
   const units = BigInt(whole!) * 1_000_000n + BigInt(frac.padEnd(6, "0"));
-  const needed = BigInt(input.billsDue) + BigInt(input.minOperating);
+  // the Steward keeps the larger of the bills due within the buffer and the operating floor (QA R25-8: one definition everywhere)
+  const bills = BigInt(input.billsDue);
+  const floor = BigInt(input.minOperating);
+  const needed = bills > floor ? bills : floor;
   const cash = BigInt(input.cash);
   const left = cash - units;
   if (left >= needed) return null;

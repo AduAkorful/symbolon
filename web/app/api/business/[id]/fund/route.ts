@@ -41,10 +41,14 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
   const walletUsdc = s.user.wallet
     ? await client.readContract({ address: deployment.tokens.usdc, abi: erc20Abi, functionName: "balanceOf", args: [getAddress(s.user.wallet)], blockNumber: r.block }).then((v) => v.toString(), () => null)
     : null;
+  // and its EURC, so the dialog shows the balance of whichever token is picked (QA R25-11)
+  const walletEurc = s.user.wallet && deployment.tokens.eurc
+    ? await client.readContract({ address: deployment.tokens.eurc, abi: erc20Abi, functionName: "balanceOf", args: [getAddress(s.user.wallet)], blockNumber: r.block }).then((v) => v.toString(), () => null)
+    : null;
   const funding = await readFundingMode(client, b.vault).catch(() => ({ walletSends: false, release: null }));
   const tokens = [
     { address: deployment.tokens.usdc, symbol: "USDC", decimals: 6 },
     { address: deployment.tokens.eurc, symbol: "EURC", decimals: 6 },
   ];
-  return NextResponse.json({ ok: true, usdc: r.usdc.toString(), decimals: r.decimals, block: r.block.toString(), walletUsdc, funding, tokens });
+  return NextResponse.json({ ok: true, usdc: r.usdc.toString(), decimals: r.decimals, block: r.block.toString(), walletUsdc, walletEurc, funding, tokens });
 }

@@ -72,7 +72,7 @@ export async function createInvoiceInputReader(
       buffer: outflowsWithin(flows, now, env.bufferDays),
       earlyPayCommitted: committed,
       knownInvoices: known.map((k) => ({
-        fingerprint: k.fingerprint as Hex, seal: k.seal, invoiceNumber: k.invoiceNumber, amount: k.total,
+        fingerprint: k.fingerprint as Hex, seal: k.seal, invoiceNumber: k.invoiceNumber, amount: k.total, token: k.token,
         issuedAt: BigInt(Math.floor((k.issuedAt ?? k.receivedAt).getTime() / 1000)),
       })),
       offers: offers.filter((o) => o.signature).map((o) => ({
