@@ -166,7 +166,7 @@ describe("Shortfall notices ring again only when the shortfall changes", () => {
   it("keys on the amount short and the first due date, not the day", () => {
     const due = BigInt(Date.parse("2026-10-27T00:00:00Z") / 1000);
     const a = shortfallDedupeKey("biz", "USDC", 572_393_201n, due);
-    expect(a).toBe("shortfall:biz:USDC:572393201:2026-10-27");
+    expect(a).toBe("shortfall:biz:USDC:57239c:2026-10-27");
     expect(shortfallDedupeKey("biz", "USDC", 572_393_201n, due + 3600n)).toBe(a);
     expect(shortfallDedupeKey("biz", "USDC", 480_000_000n, due)).not.toBe(a);
     expect(shortfallDedupeKey("biz", "EURC", 572_393_201n, due)).not.toBe(a);

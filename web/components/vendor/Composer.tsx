@@ -60,12 +60,6 @@ function scaled(text: string): bigint | null {
   return BigInt(whole) * 1_000_000n + BigInt(frac.padEnd(6, "0"));
 }
 
-/** The amount as a wallet shows it: digits only, in the token's smallest unit */
-function rawAmount(total: string, decimals: number): string {
-  const [whole = "0", frac = ""] = total.split(".");
-  return `${whole}${frac.padEnd(decimals, "0").slice(0, decimals)}`.replace(/^0+(?=\d)/, "");
-}
-
 function lineProblem(l: { quantity: string; unitPrice: string }): { quantity?: string; unitPrice?: string } {
   const out: { quantity?: string; unitPrice?: string } = {};
   const q = scaled(l.quantity);
@@ -283,7 +277,7 @@ export function Composer({ handle, clients, nextNumber, signer, prefill, fromFil
             Check it, then sign.
           </PageTitle>
           <p className="mt-3 max-w-[52ch] text-graphite">
-            This is the invoice you are sealing. Your wallet shows the same facts in its raw form, and it can’t translate them: the amount is a whole number in the token’s smallest unit ({prepared.document.total} {prepared.document.currency.symbol} appears as {rawAmount(prepared.document.total, prepared.document.currency.decimals)}), and the token appears as its address ({prepared.document.currency.symbol} is <span className="break-all font-mono">{prepared.document.currency.token}</span>). Signing seals it: a sealed invoice can’t be edited, and the fingerprint under it changes with any change to a word or a number.
+            This is the invoice you are sealing. Your wallet shows the same facts in its raw form, and it can’t translate them: the amount is a whole number in the token’s smallest unit, and the token appears as its address ({prepared.document.currency.symbol} is <span className="break-all font-mono">{prepared.document.currency.token}</span>). Signing seals it: a sealed invoice can’t be edited, and the fingerprint under it changes with any change to a word or a number.
           </p>
           {signer.kind === "none" ? (
             <p role="status" className="mt-6 rounded-doc border border-rule p-4 text-sm text-graphite">

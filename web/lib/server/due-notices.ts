@@ -90,5 +90,7 @@ async function shortfalls(db: Database, client: PublicClient, cfg: ChainSettings
  */
 export function shortfallDedupeKey(businessId: string, symbol: string, short: bigint, firstDueSec: bigint | null): string {
   const day = firstDueSec === null ? "none" : new Date(Number((firstDueSec / DAY) * DAY) * 1000).toISOString().slice(0, 10);
-  return `shortfall:${businessId}:${symbol}:${short.toString()}:${day}`;
+  // to the whole cent (6-decimal tokens, half up), so 572.393201 and 572.3932 are the same alert (QA R26-5)
+  const cents = (short + 5_000n) / 10_000n;
+  return `shortfall:${businessId}:${symbol}:${cents.toString()}c:${day}`;
 }
