@@ -342,3 +342,67 @@ describe("release notes", () => {
   });
 });
 
+
+describe("scanLogs under a deadline (cron sync timeouts, 17 Oct)", () => {
+  const events = [] as const;
+  const address = "0x0000000000000000000000000000000000000001";
+
+  it("stops starting ranges at the deadline and reports how far it got without a gap", async () => {
+    let clock = 0;
+    const asked: [bigint, bigint][] = [];
+    const client = {
+      getLogs: vi.fn(async ({ fromBlock, toBlock }: { fromBlock: bigint; toBlock: bigint }) => {
+        asked.push([fromBlock, toBlock]);
+        clock += 10; // each request takes 10 ms of the fake clock
+        return [{ blockNumber: toBlock, logIndex: 0 }];
+      }),
+    } as unknown as PublicClient;
+    const result = await scanLogs(client, { address, events, fromBlock: 1n, toBlock: 1_000n, chunk: 100n, deadline: 35, now: () => clock });
+    expect(asked).toHaveLength(4);
+    expect(result).toMatchObject({ scannedTo: 400n, stopped: true });
+    expect(result.logs.map((l) => (l as { blockNumber: bigint }).blockNumber)).toEqual([100n, 200n, 300n, 400n]);
+  });
+
+  it("reads everything when the deadline is not reached", async () => {
+    const client = { getLogs: vi.fn(async () => []) } as unknown as PublicClient;
+    const result = await scanLogs(client, { address, events, fromBlock: 1n, toBlock: 1_000n, chunk: 100n, deadline: Date.now() + 60_000 });
+    expect(result.scannedTo).toBe(1_000n);
+    expect(result.stopped).toBeUndefined();
+  });
+
+  it("keeps only the gap-free part when a later range finished first", async () => {
+    let clock = 0;
+    const client = {
+      getLogs: vi.fn(async ({ fromBlock, toBlock }: { fromBlock: bigint; toBlock: bigint }) => {
+        // the first range is slow and refused; the second answers
+        if (fromBlock === 1n) {
+          clock = 100;
+          throw new Error("range too large");
+        }
+        return [{ blockNumber: toBlock, logIndex: 0 }];
+      }),
+    } as unknown as PublicClient;
+    const result = await scanLogs(client, { address, events, fromBlock: 1n, toBlock: 400n, chunk: 200n, minChunk: 100n, concurrency: 2, deadline: 50, now: () => clock });
+    // blocks 201–400 were read, but 1–200 was refused and not asked again past the deadline: nothing is saved past block 0
+    expect(result).toMatchObject({ scannedTo: 0n, stopped: true, logs: [] });
+  });
+
+  it("does not start a rate-limit wait that would run past the deadline; returns what it read", async () => {
+    let calls = 0;
+    const client = {
+      getLogs: vi.fn(async ({ toBlock }: { toBlock: bigint }) => {
+        if (++calls > 2) throw new Error("429 Too Many Requests");
+        return [{ blockNumber: toBlock, logIndex: 0 }];
+      }),
+    } as unknown as PublicClient;
+    const started = Date.now();
+    const result = await scanLogs(client, { address, events, fromBlock: 1n, toBlock: 1_000n, chunk: 100n, backoffMs: 10_000, deadline: Date.now() + 1_000 });
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(result).toMatchObject({ scannedTo: 200n, stopped: true });
+  });
+
+  it("still throws when nothing was read", async () => {
+    const client = { getLogs: vi.fn(async () => { throw new Error("429 Too Many Requests"); }) } as unknown as PublicClient;
+    await expect(scanLogs(client, { address, events, fromBlock: 1n, toBlock: 1_000n, chunk: 100n, backoffMs: 10_000, deadline: Date.now() + 1_000 })).rejects.toThrow(/429/);
+  });
+});

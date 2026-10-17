@@ -112,7 +112,7 @@ export async function syncLedger(
   client: PublicClient,
   contracts: SymbolonContracts,
   deployment: Deployment,
-  opts: { toBlock?: bigint; maxBlocks?: bigint } = {},
+  opts: { toBlock?: bigint; maxBlocks?: bigint; deadline?: number } = {},
 ): Promise<SyncReport> {
   const key = `ledger:${deployment.chainId}:${deployment.contracts.invoiceLedger.toLowerCase()}`;
   const [cursor] = await db.select().from(syncCursors).where(eq(syncCursors.key, key));
@@ -141,6 +141,8 @@ export async function syncLedger(
     fromBlock: from,
     toBlock: to,
     concurrency: SYNC_CONCURRENCY,
+    // past the deadline the scan stops where it got to without a gap; the cursor below is saved there and the next run goes on
+    deadline: opts.deadline,
   });
   const touched = [...new Set(logs.map((l) => (l.args as { fingerprint: Hex }).fingerprint.toLowerCase()))];
   const known = touched.length
@@ -186,7 +188,7 @@ export async function syncVault(
   client: PublicClient,
   deployment: Deployment,
   vault: `0x${string}`,
-  opts: { fromBlock?: bigint; toBlock?: bigint; maxBlocks?: bigint } = {},
+  opts: { fromBlock?: bigint; toBlock?: bigint; maxBlocks?: bigint; deadline?: number } = {},
 ): Promise<SyncReport> {
   const key = `vault:${deployment.chainId}:${vault.toLowerCase()}`;
   const [cursor] = await db.select().from(syncCursors).where(eq(syncCursors.key, key));
@@ -197,7 +199,7 @@ export async function syncVault(
   const to = opts.maxBlocks !== undefined && from + opts.maxBlocks - 1n < head ? from + opts.maxBlocks - 1n : head;
   if (from > to) return { from, to, head, events: 0, invoicesUpdated: 0 };
 
-  const { logs, scannedTo } = await scanLogs(client, { address: vault, events: VAULT_EVENTS, fromBlock: from, toBlock: to, concurrency: SYNC_CONCURRENCY });
+  const { logs, scannedTo } = await scanLogs(client, { address: vault, events: VAULT_EVENTS, fromBlock: from, toBlock: to, concurrency: SYNC_CONCURRENCY, deadline: opts.deadline });
   await db.transaction(async (tx) => {
     await storeEvents(tx, client, deployment.chainId, logs);
     await tx

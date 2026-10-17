@@ -49,7 +49,7 @@ export async function syncProtocolEvents(
   db: Database,
   client: PublicClient,
   deployment: Deployment,
-  opts: { toBlock?: bigint; maxBlocks?: bigint } = {},
+  opts: { toBlock?: bigint; maxBlocks?: bigint; deadline?: number } = {},
 ): Promise<ProtocolSyncReport> {
   const head = opts.toBlock ?? (await client.getBlockNumber());
   const window = opts.maxBlocks ?? WINDOW_BLOCKS;
@@ -57,15 +57,16 @@ export async function syncProtocolEvents(
   for (const stream of protocolStreams(deployment)) {
     const [cursor] = await db.select().from(syncCursors).where(eq(syncCursors.key, stream.key));
     const from = cursor ? cursor.block + 1n : stream.startBlock;
-    if (from > head) {
+    // out of time: the streams left keep their cursors and go on next run
+    if (from > head || (opts.deadline !== undefined && Date.now() >= opts.deadline)) {
       report.streams.push({ address: stream.address, kind: stream.kind, from, to: from - 1n, events: 0 });
       continue;
     }
     const to = from + window - 1n < head ? from + window - 1n : head;
     const { logs, scannedTo } =
       stream.kind === "ledger"
-        ? await scanLogs(client, { address: stream.address, events: SETTLED, fromBlock: from, toBlock: to, concurrency: CONCURRENCY })
-        : await scanLogs(client, { address: stream.address, events: VAULT_CREATED, fromBlock: from, toBlock: to, concurrency: CONCURRENCY });
+        ? await scanLogs(client, { address: stream.address, events: SETTLED, fromBlock: from, toBlock: to, concurrency: CONCURRENCY, deadline: opts.deadline })
+        : await scanLogs(client, { address: stream.address, events: VAULT_CREATED, fromBlock: from, toBlock: to, concurrency: CONCURRENCY, deadline: opts.deadline });
     await db.transaction(async (tx) => {
       await storeEvents(tx, client, deployment.chainId, logs);
       await tx

@@ -111,3 +111,42 @@ describe("Vault event sync in bounded windows", () => {
     await db.$client.close();
   });
 });
+
+describe("ledger and Vault sync under a deadline (cron sync timeouts, 17 Oct)", () => {
+  it("saves the cursor where the scan stopped, so the next run goes on from there instead of starting over", async () => {
+    const db = await createTestDb();
+    const head = deployment.startBlock + 500_000n;
+    await knownOldInvoice(db);
+    const { client, ranges } = chainAt(head);
+    // each request takes 30 ms and the run has 50 ms: a few ranges are read, then the scan stops
+    const getLogs = client.getLogs as unknown as ReturnType<typeof vi.fn>;
+    getLogs.mockImplementation(async ({ fromBlock, toBlock }: { fromBlock: bigint; toBlock: bigint }) => {
+      await new Promise((r) => setTimeout(r, 30));
+      ranges.push([fromBlock, toBlock]);
+      return [];
+    });
+    const first = await syncLedger(db, client, contracts, deployment, { deadline: Date.now() + 50 });
+    expect(first.to).toBeLessThan(head);
+    expect(first.to).toBeGreaterThanOrEqual(first.from);
+    expect(first.to).toBe(ranges.map((r) => r[1]).reduce((a, b) => (a > b ? a : b)));
+    const [cursor] = await db.select().from(syncCursors).where(eq(syncCursors.key, key));
+    expect(cursor!.block).toBe(first.to);
+
+    const second = await syncLedger(db, client, contracts, deployment, { deadline: Date.now() + 60_000 });
+    expect(second.from).toBe(first.to + 1n);
+    expect(second.to).toBe(head);
+    await db.$client.close();
+  });
+
+  it("a Vault scan stopped by the deadline saves its partial cursor too", async () => {
+    const db = await createTestDb();
+    const head = deployment.startBlock + 50_000n;
+    const { client } = chainAt(head);
+    const vault = "0x00000000000000000000000000000000000000f1";
+    const r = await syncVault(db, client, deployment, vault, { deadline: 0 });
+    // nothing could start: the cursor stays before the first block and the report says how far behind it is
+    expect(r.to).toBe(deployment.startBlock - 1n);
+    expect(r.head).toBe(head);
+    await db.$client.close();
+  });
+});
