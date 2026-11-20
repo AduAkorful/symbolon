@@ -1,8 +1,8 @@
 import "server-only";
 
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { formatAmount } from "@symbolon/seal";
-import { resolveTokenSymbol, syncVault } from "@symbolon/core";
+import { resolveTokenSymbol } from "@symbolon/core";
 import type { Deployment } from "@symbolon/chain";
 import { formatDateTime, showMoney } from "../format";
 import {
@@ -17,9 +17,7 @@ import {
 } from "@symbolon/db";
 import { getAddress, isAddress, type Address, type PublicClient } from "viem";
 import { requireMember } from "./access";
-import { ensureVaultBlock } from "./business";
 import { isPreparedPayment } from "./prepared-payment";
-import { backfillDeposits } from "./deposit-backfill";
 import { summarizeDecision } from "./decision-text";
 import { AuthError } from "./errors";
 import type { SessionUser } from "./session";
@@ -263,54 +261,6 @@ export function dropLendingReturnDeposits(items: ActivityItem[], depositRows: Ma
   items.push(...kept);
 }
 
-const VIEW_SYNC_WINDOW_BLOCKS = 20_000n;
-const VIEW_SYNC_DEADLINE_MS = 4_000;
-
-async function syncVaultForView(db: Database, client: PublicClient, deployment: Deployment, businessId: string, vault: string): Promise<void> {
-  try {
-    const fromBlock = await ensureVaultBlock(db, client, deployment, businessId, vault);
-    const late = new Promise<void>((resolve) => setTimeout(resolve, VIEW_SYNC_DEADLINE_MS));
-    const sync = syncVault(db, client, deployment, getAddress(vault), { fromBlock, maxBlocks: VIEW_SYNC_WINDOW_BLOCKS }).then(
-      () => undefined,
-      (error) => console.error("activity: vault sync failed", error instanceof Error ? error.message : error),
-    );
-    await Promise.race([sync, late]);
-  } catch (error) {
-    console.error("activity: couldn't start the vault sync", error instanceof Error ? error.message : error);
-  }
-}
-
-/** Lazy backfill of block times for unpopulated chain_events (K9) */
-async function backfillBlockTimes(db: Database, client: PublicClient, vaultAddress: string) {
-  try {
-    const unbacked = await db
-      .select({ blockNumber: chainEvents.blockNumber })
-      .from(chainEvents)
-      .where(and(eq(chainEvents.address, vaultAddress.toLowerCase()), isNull(chainEvents.blockTime)))
-      .limit(20);
-
-    const distinct = [...new Set(unbacked.map((u) => u.blockNumber))];
-    if (distinct.length === 0) return;
-
-    await Promise.all(
-      distinct.map(async (bn) => {
-        try {
-          const block = await client.getBlock({ blockNumber: bn });
-          const blockTime = new Date(Number(block.timestamp) * 1000);
-          await db
-            .update(chainEvents)
-            .set({ blockTime })
-            .where(eq(chainEvents.blockNumber, bn));
-        } catch {
-          // ignore transient rpc errors
-        }
-      }),
-    );
-  } catch {
-    // ignore
-  }
-}
-
 /**
  * Loads the normalised business activity feed assembled from decisions, Vault events,
  * ledger events, and invoices received (spec §7.7, K10-K13).
@@ -329,32 +279,28 @@ export async function loadActivity(
   if (!business) throw new AuthError(404, "Business not found");
 
   const vault = business.vault?.toLowerCase() ?? "";
-
-  // Bring the Vault's own events forward by one bounded window before reading (plan 05zj E, SYM-14, D7 a): a page that only read
-  // what a Steward run or the cron had stored showed an empty Activity until one of those ran. It never holds the page past its
-  // deadline; what it hasn't read yet arrives on the next view.
-  if (client && vault && opts.deployment) {
-    await syncVaultForView(db, client, opts.deployment, businessId, vault);
-    await backfillDeposits(db, client, opts.deployment, businessId, getAddress(vault));
-  }
-
-  // Perform bounded lazy backfill of block times if client is available
-  if (client && vault) {
-    await backfillBlockTimes(db, client, vault);
-  }
+  void client;
+  void opts;
 
   // Load team members and users for actor resolution (K11)
-  const memberRows = await db
-    .select({
-      userId: members.userId,
-      role: members.role,
-      email: users.email,
-      wallet: users.wallet,
-      displayName: users.displayName,
-    })
-    .from(members)
-    .innerJoin(users, eq(users.id, members.userId))
-    .where(eq(members.businessId, businessId));
+  const [memberRows, bizInvoices, decRows, vEvents] = await Promise.all([
+    db
+      .select({
+        userId: members.userId,
+        role: members.role,
+        email: users.email,
+        wallet: users.wallet,
+        displayName: users.displayName,
+      })
+      .from(members)
+      .innerJoin(users, eq(users.id, members.userId))
+      .where(eq(members.businessId, businessId)),
+    db.select().from(invoices).where(eq(invoices.businessId, businessId)),
+    db.select().from(decisions).where(eq(decisions.businessId, businessId)).orderBy(desc(decisions.createdAt)).limit(100),
+    vault
+      ? db.select().from(chainEvents).where(eq(chainEvents.address, vault)).orderBy(desc(chainEvents.blockNumber), desc(chainEvents.logIndex)).limit(100)
+      : Promise.resolve([]),
+  ]);
 
   const memberByUserId = new Map(memberRows.map((m) => [m.userId, m]));
   const memberByWallet = new Map(
@@ -365,12 +311,33 @@ export async function loadActivity(
 
   const stewardWallet = business.stewardWallet?.toLowerCase();
 
-  // Load seals for vendor resolution
-  const sealRows = await db.select().from(seals);
+  const sealAddrs = [...new Set(bizInvoices.map((inv) => inv.seal.toLowerCase()))];
+  const fps = bizInvoices.map((inv) => inv.fingerprint.toLowerCase());
+  const ledgers = [...new Set(bizInvoices.map((inv) => inv.ledger.toLowerCase()))];
+  const [sealRows, ledgerEvents] = await Promise.all([
+    sealAddrs.length
+      ? db
+          .select({ address: seals.address, displayName: seals.displayName, handle: seals.handle })
+          .from(seals)
+          .where(inArray(sql`lower(${seals.address})`, sealAddrs))
+      : Promise.resolve([]),
+    fps.length
+      ? db
+          .select()
+          .from(chainEvents)
+          .where(
+            and(
+              inArray(sql`lower(${chainEvents.address})`, ledgers),
+              inArray(chainEvents.eventName, ["Settled", "Cancelled", "CreditNoteApplied"]),
+              inArray(sql`lower(${chainEvents.args}->>'fingerprint')`, fps),
+            ),
+          )
+          .orderBy(desc(chainEvents.blockNumber), desc(chainEvents.logIndex))
+          .limit(100)
+      : Promise.resolve([]),
+  ]);
   const sealMap = new Map(sealRows.map((s) => [s.address.toLowerCase(), s.displayName || s.handle || s.address]));
 
-  // Invoices for this business
-  const bizInvoices = await db.select().from(invoices).where(eq(invoices.businessId, businessId));
   const invoiceByFp = new Map(bizInvoices.map((inv) => [inv.fingerprint.toLowerCase(), inv]));
   const invoiceBySeal = new Map(bizInvoices.map((inv) => [inv.seal.toLowerCase(), inv]));
 
@@ -423,14 +390,6 @@ export async function loadActivity(
   }
 
   const items: ActivityItem[] = [];
-
-  // 1. Decisions
-  const decRows = await db
-    .select()
-    .from(decisions)
-    .where(eq(decisions.businessId, businessId))
-    .orderBy(desc(decisions.createdAt))
-    .limit(100);
 
   // what a decision's subject is called to a person: an invoice by number and vendor, a vendor by name
   const refFor = (subject: string): string | undefined => {
@@ -485,16 +444,7 @@ export async function loadActivity(
     });
   }
 
-  // 2. Vault Events
-  if (vault) {
-    const vEvents = await db
-      .select()
-      .from(chainEvents)
-      .where(eq(chainEvents.address, vault))
-      .orderBy(desc(chainEvents.blockNumber), desc(chainEvents.logIndex))
-      .limit(100);
-
-    for (const e of vEvents) {
+  for (const e of vEvents) {
       const args = e.args as Record<string, unknown>;
       const inv0 = args.fingerprint ? invoiceByFp.get(String(args.fingerprint).toLowerCase()) : undefined;
       const tokenOf = args.token ? String(args.token) : inv0?.token;
@@ -520,39 +470,25 @@ export async function loadActivity(
         tone: desc.tone,
         source: "chain_event",
       });
-    }
   }
 
-  // 3. Ledger Events for business invoices
-  if (bizInvoices.length > 0) {
-    const fps = bizInvoices.map((i) => i.fingerprint.toLowerCase());
-    const ledgerEvents = await db
-      .select()
-      .from(chainEvents)
-      .where(inArray(chainEvents.eventName, ["Settled", "Cancelled", "CreditNoteApplied"]))
-      .orderBy(desc(chainEvents.blockNumber), desc(chainEvents.logIndex))
-      .limit(100);
-
-    for (const le of ledgerEvents) {
-      const args = le.args as Record<string, unknown>;
-      const fp = args.fingerprint ? String(args.fingerprint).toLowerCase() : "";
-      if (fps.includes(fp)) {
-        const inv = invoiceByFp.get(fp);
-        const ledgerToken = args.token ? String(args.token) : inv?.token;
-        const desc = withInvoiceNumber(describeEvent(le.eventName, args, le.txHash, ledgerToken ? resolveTokenSymbol(ledgerToken, business.chainId) : undefined), args, inv?.invoiceNumber);
-        const vendor = inv ? (sealMap.get(inv.seal.toLowerCase()) || inv.seal) : undefined;
-        items.push({
-          id: `lev-${le.txHash}-${le.logIndex}`,
-          at: le.blockTime ? le.blockTime.toISOString() : le.createdAt.toISOString(),
-          actor: { kind: "vault", label: "Ledger" },
-          what: desc.what,
-          vendor,
-          tx: le.txHash,
-          tone: desc.tone,
-          source: "chain_event",
-        });
-      }
-    }
+  for (const le of ledgerEvents) {
+    const args = le.args as Record<string, unknown>;
+    const fp = args.fingerprint ? String(args.fingerprint).toLowerCase() : "";
+    const inv = invoiceByFp.get(fp);
+    const ledgerToken = args.token ? String(args.token) : inv?.token;
+    const desc = withInvoiceNumber(describeEvent(le.eventName, args, le.txHash, ledgerToken ? resolveTokenSymbol(ledgerToken, business.chainId) : undefined), args, inv?.invoiceNumber);
+    const vendor = inv ? (sealMap.get(inv.seal.toLowerCase()) || inv.seal) : undefined;
+    items.push({
+      id: `lev-${le.txHash}-${le.logIndex}`,
+      at: le.blockTime ? le.blockTime.toISOString() : le.createdAt.toISOString(),
+      actor: { kind: "vault", label: "Ledger" },
+      what: desc.what,
+      vendor,
+      tx: le.txHash,
+      tone: desc.tone,
+      source: "chain_event",
+    });
   }
 
   foldLendingMoves(items, preparedMoves, movedByDecision);

@@ -12,7 +12,7 @@ import { InlineError } from "@/components/ui/States";
 import { sendCall, wasRejected, type SignerPlan } from "@/components/setup/owner-signer";
 import { TxLink } from "@/components/TxLink";
 import { useWalletProviders } from "@/components/wallet/useWalletProviders";
-import { postJson, postRecord } from "@/lib/client/api";
+import { getJson, postJson, postRecord } from "@/lib/client/api";
 import { SentTransactionNotice, useSentTransaction } from "@/components/wallet/useSentTransaction";
 import { formatDateTime } from "@/lib/format";
 import { Address } from "@/components/Address";
@@ -53,6 +53,7 @@ const standingLabel = (kind: string) => STANDING[kind] ?? "Can't confirm";
 
 const RUN: Record<string, { label: string; tone: Tone }> = {
   done: { label: "Completed", tone: "ok" },
+  queued: { label: "Queued", tone: "info" },
   running: { label: "Running", tone: "info" },
   stalled: { label: "Stalled", tone: "warn" },
   failed: { label: "Failed", tone: "danger" },
@@ -308,6 +309,15 @@ export function StewardClient({
     }
   }
 
+  function runFinishedMessage(status: string, error: string | null): { message: string | null; failed: string | null } {
+    if (status === "failed") return { message: null, failed: plainRunError(error) };
+    if (status === "done") return { message: "Run completed successfully.", failed: null };
+    if (status === "skipped_paused") return { message: "Run skipped: Payments are paused.", failed: null };
+    if (status === "skipped_fees") return { message: "Run skipped: Low Steward wallet fee balance.", failed: null };
+    if (status === "queued" || status === "running") return { message: "Run queued. It will show here when it finishes.", failed: null };
+    return { message: `Run ended with status: ${status.replace(/_/g, " ")}`, failed: null };
+  }
+
   async function handleRunNow() {
     if (!canRun) return;
     setRunning(true);
@@ -317,21 +327,25 @@ export function StewardClient({
       const res = await postJson<{ ok: boolean; run: RunView }>(`/api/business/${business.id}/steward`, {
         action: "run",
       });
-      if (res.run.status === "failed") {
-        setRunError(plainRunError(res.run.error));
+      const first = runFinishedMessage(res.run.status, res.run.error);
+      setRunMessage(first.message);
+      if (first.failed) setRunError(first.failed);
+      router.refresh();
+      if (res.run.status !== "queued" && res.run.status !== "running") return;
+      for (let i = 0; i < 40; i++) {
+        await new Promise((r) => setTimeout(r, 3_000));
+        const view = await getJson<{ lastRun: RunView | null }>(`/api/business/${business.id}/steward`);
+        const run = view.lastRun?.id === res.run.id ? view.lastRun : null;
+        if (!run || run.status === "queued" || run.status === "running") {
+          router.refresh();
+          continue;
+        }
+        const done = runFinishedMessage(run.status, run.error);
+        setRunMessage(done.message);
+        setRunError(done.failed);
         router.refresh();
         return;
       }
-      setRunMessage(
-        res.run.status === "done"
-          ? "Run completed successfully."
-          : res.run.status === "skipped_paused"
-          ? "Run skipped: Payments are paused."
-          : res.run.status === "skipped_fees"
-          ? "Run skipped: Low Steward wallet fee balance."
-          : `Run ended with status: ${res.run.status}`,
-      );
-      router.refresh();
     } catch (err) {
       setRunError(err instanceof Error ? err.message : "Run failed.");
     } finally {

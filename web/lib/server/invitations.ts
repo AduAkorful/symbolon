@@ -8,6 +8,7 @@ import { businesses, invoices, members, payees, seals, vendorInvitations, vendor
 import { requireMember } from "./access";
 import { appendAppDecision } from "./app-decisions";
 import { AuthError } from "./errors";
+import { refreshInboxFor } from "./inbox";
 import type { SessionUser } from "./session";
 
 const sha = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -77,6 +78,7 @@ export async function acceptInvitation(db: Database, client: PublicClient, deplo
     await tx.insert(vendorVerifications).values({ businessId: invitation.businessId, seal: sealAddress, method: "invitation", status, raisedBy: invitation.createdBy, confirmedBy: invitation.createdBy, invitationId: invitation.id, cap, createdAt: now, updatedAt: now });
     await appendAppDecision(tx, invitation.businessId, { kind: requiresSecond ? "vendor_invitation_awaiting_second" : "vendor_verified_invitation", subject: sealAddress, actor: user.id, inputs: { invitationId: invitation.id, invitedBy: invitation.createdBy, ownerThreshold: threshold.toString(), ...(cap !== null ? { cap: cap.toString() } : {}), ...(pendingInvoice ? { pendingInvoice: pendingInvoice.total.toString(), invoiceFingerprint: pendingInvoice.fingerprint } : {}) }, rule: requiresSecond ? "vendor cap or largest invoice on file exceeds the live Vault owner threshold" : "vendor accepted a single-use invitation sent over a pre-existing trusted channel", outcome: status });
   });
+  await refreshInboxFor(db, { chainId: deployment.chainId, deployment }, invitation.businessId, sealAddress, client);
   return { businessId: invitation.businessId, seal: sealAddress, status };
 }
 

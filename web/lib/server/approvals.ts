@@ -1,6 +1,5 @@
 import { livePurchaseOrderEvidence } from "./po-evidence";
 import { CHAIN_READ_DEADLINE_MS, withDeadline } from "./deadline";
-import { ensureFresh } from "./sync";
 import { isPreparedPayment } from "./prepared-payment";
 import "server-only";
 
@@ -14,7 +13,7 @@ import {
 } from "viem";
 
 import { simulateCall, symbolonContracts, symbolonVaultAbi, toTransaction } from "@symbolon/chain";
-import { createInvoiceInputReader, readVaultFacts, recordApproval, syncVault } from "@symbolon/core";
+import { createInvoiceInputReader, readVaultFacts, recordApproval } from "@symbolon/core";
 import {
   businesses,
   decisions,
@@ -49,7 +48,7 @@ import { describeRule } from "@/lib/blockers";
 import { UNSAFE_TEXT } from "@/lib/text-safety";
 import { requireMember, type Role } from "./access";
 import { appendAppDecision } from "./app-decisions";
-import { ensureVaultBlock, type ChainSettings } from "./business";
+import { type ChainSettings } from "./business";
 import { summarizeDecision } from "./decision-text";
 import { AuthError } from "./errors";
 import { awaitReceipt } from "./tx-receipt";
@@ -58,9 +57,6 @@ import type { SessionUser } from "./session";
 import { readPaymentBudget, readPaymentLedger, verifyPaymentDocument } from "./payment-ledger";
 import { buildStewardEnv } from "./steward-runtime";
 
-/** How much of the Vault's history one recorded payment may read before it answers, and for how long */
-const RECORD_SYNC_WINDOW_BLOCKS = 20_000n;
-const RECORD_SYNC_DEADLINE_MS = 8_000;
 /** Proposals that were never sent are dropped after this long */
 const PREPARED_KEEP_MS = 3 * 24 * 60 * 60 * 1000;
 
@@ -1042,21 +1038,6 @@ export async function recordPayNow(
       rule: "payment confirmed onchain by wallet",
       outcome: "paid",
     });
-  }
-
-  // The payment is recorded above; bringing the copies forward is a courtesy and must never hold the answer (QA payment retest:
-  // an unbounded Vault scan left the dialog on "Sending…"). The scheduled sync finishes whatever this window doesn't reach.
-  try {
-    const fromBlock = await ensureVaultBlock(db, client, cfg.deployment, businessId, vault);
-    await withDeadline(
-      syncVault(db, client, cfg.deployment, vault, { fromBlock, maxBlocks: RECORD_SYNC_WINDOW_BLOCKS }),
-      RECORD_SYNC_DEADLINE_MS,
-      "Syncing the Vault's events",
-    );
-    const ledger = await ensureFresh(db, client, cfg, { force: true });
-    if (!ledger.ok) console.error("ledger sync after a confirmed payment failed", ledger.reason);
-  } catch (e) {
-    console.error("sync after a confirmed payment didn't finish; the scheduled sync will", e);
   }
 
   return { ok: true, txHash };

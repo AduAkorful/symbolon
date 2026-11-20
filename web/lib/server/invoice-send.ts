@@ -17,6 +17,7 @@ import {
 } from "@symbolon/seal";
 import { buildDocument, type ComposerDraft } from "./compose";
 import { AuthError } from "./errors";
+import { refreshInboxFor } from "./inbox";
 import type { ChainSettings } from "./business";
 import type { SessionUser } from "./session";
 import { requireMySeal, upsertClient } from "./vendor";
@@ -159,6 +160,7 @@ export async function sendInvoice(
 
   const r = await receiveInvoice(db, { chainId: cfg.chainId, ledger }, envelope, "link", { signatureClient: client });
   if (r.status !== "verified" || !r.fingerprint) throw new AuthError(400, "The invoice didn't check out.");
+  if (r.businessId) await refreshInboxFor(db, cfg, r.businessId, undefined, client);
   // V5: remember who was invoiced. The invoice is already saved, so a client that can't be remembered never fails the send.
   await upsertClient(db, user, { name: document.payer.name, vault: document.payer.vault, email: document.payer.email }).catch((e: unknown) => {
     if (!(e instanceof AuthError)) throw e;

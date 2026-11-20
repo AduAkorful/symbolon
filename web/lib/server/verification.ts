@@ -7,7 +7,9 @@ import { symbolonContracts } from "@symbolon/chain";
 import type { Deployment } from "@symbolon/chain";
 import { requireMember } from "./access";
 import { appendAppDecision } from "./app-decisions";
+import { getConfig } from "./config";
 import { AuthError } from "./errors";
+import { refreshInboxFor } from "./inbox";
 import type { SessionUser } from "./session";
 
 // The comparison value is keyed by the server secret (per request), so a copied row can't be guessed offline: six digits are only a million tries
@@ -144,5 +146,10 @@ async function finishVerification(db: Database, id: string, businessId: string, 
     if (!saved) throw new AuthError(403, "This business has blocked this Seal; verification can't override that decision.");
     await appendAppDecision(tx, businessId, { kind: evidence.secondPerson ? "vendor_verification_second_confirmed" : "vendor_verified_code", subject: seal, actor, inputs: { verificationId: id, ...evidence }, rule: evidence.secondPerson ? "a distinct owner or approver confirmed the first-contact check" : "the submitted callback code matched in constant time", outcome: "verified" });
   });
+  try {
+    await refreshInboxFor(db, getConfig(), businessId, seal);
+  } catch (e) {
+    console.error("inbox mirror refresh failed", e instanceof Error ? e.message : e);
+  }
   return { status: "verified" as const };
 }

@@ -4,14 +4,15 @@ import "server-only";
 import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import { getAddress, keccak256, stringToBytes, type Address, type Hex, type PublicClient } from "viem";
 import { notifyBusiness, readVaultFacts, receiveInvoice, vaultFromPayerRef } from "@symbolon/core";
-import { invoiceStatus, symbolonContracts, vaultLensAbi } from "@symbolon/chain";
+import { invoiceStatus, symbolonContracts } from "@symbolon/chain";
 import { businesses, deliveries, invoices, payees, purchaseOrders, seals, unsignedBills, type Database } from "@symbolon/db";
 import { decodeSealedInvoice, deriveInvoice, verifySealedInvoice, type InvoiceDocument } from "@symbolon/seal";
+import { refreshInboxMirror } from "@symbolon/core";
 import { findDuplicates, matchInvoice } from "@symbolon/steward";
 
 import { requireMember, type Role } from "./access";
+import { getClient } from "./chain";
 import { appendAppDecision } from "./app-decisions";
-import { CHAIN_READ_DEADLINE_MS, withDeadline } from "./deadline";
 import { AuthError } from "./errors";
 import type { ChainSettings } from "./business";
 import type { SessionUser } from "./session";
@@ -61,64 +62,50 @@ function formatAmount(raw: bigint, decimals: number): string {
   return decimals === 0 ? s : `${s.slice(0, -decimals)}.${s.slice(-decimals)}`;
 }
 
-async function trustFor(db: Database, client: PublicClient, cfg: ChainSettings, row: typeof invoices.$inferSelect): Promise<{ trust: TrustState; document?: InvoiceDocument }> {
-  const v = await verifySealedInvoice(row.envelope, { client, expected: { chainId: cfg.chainId, ledger: cfg.deployment.contracts.invoiceLedger } });
-  const [payee] = await db.select({ status: payees.status }).from(payees).where(and(eq(payees.businessId, row.businessId!), eq(payees.seal, row.seal))).limit(1);
-  if (!v.ok || !v.document) return { trust: "failed" };
-  if (payee?.status === "blocked") return { trust: "blocked", document: v.document };
-  if (payee?.status === "verified") return { trust: "verified", document: v.document };
-  return { trust: "new_vendor", document: v.document };
+function documentOf(envelope: string): InvoiceDocument | undefined {
+  try {
+    return decodeSealedInvoice(envelope).document;
+  } catch {
+    return undefined;
+  }
 }
 
-/** Lists the business inbox. Trust is recomputed from the envelope and the business's payee record. */
-export async function listInbox(db: Database, client: PublicClient, cfg: ChainSettings, user: Pick<SessionUser, "id">, businessId: string, filter: InboxFilter = "all"): Promise<InboxItem[]> {
+/** Writes trust and the currency flag for this business. A failure here never fails the action that changed the payee or the invoice. */
+export async function refreshInboxFor(db: Database, cfg: ChainSettings, businessId: string, seal?: string, client?: PublicClient): Promise<void> {
+  try {
+    await refreshInboxMirror(db, client ?? getClient(), cfg.deployment, seal ? { businessId, seal } : { businessId });
+  } catch (e) {
+    console.error("inbox mirror refresh failed", e instanceof Error ? e.message : e);
+  }
+}
+
+/** Lists the business inbox from the stored mirror. Opening one invoice still checks that envelope on Arc. */
+export async function listInbox(db: Database, cfg: ChainSettings, user: Pick<SessionUser, "id">, businessId: string, filter: InboxFilter = "all"): Promise<InboxItem[]> {
   await businessFor(db, cfg, user, businessId);
   await releaseDueSafe(db, cfg, { businessId });
-  const rows = await db.select().from(invoices).where(eq(invoices.businessId, businessId)).orderBy(desc(invoices.receivedAt));
-  // Each invoice is checked on its own; one after another, a long inbox would wait for the sum of every check
-  const checked = await Promise.all(rows.map(async (row) => {
-    let trust: TrustState = "failed";
-    let document: InvoiceDocument | undefined;
-    try {
-      ({ trust, document } = await withDeadline(trustFor(db, client, cfg, row), CHAIN_READ_DEADLINE_MS, "Checking the invoice"));
-    } catch {
-      trust = "failed";
-    }
-    return { row, trust, document };
-  }));
-  // One read per currency, not per invoice. A read that fails leaves the flag unset: never a guess either way (QA UI-3)
-  const [vaultRow] = await db.select({ vault: businesses.vault }).from(businesses).where(eq(businesses.id, businessId)).limit(1);
-  const supported = new Map<string, boolean>();
-  if (vaultRow?.vault) {
-    const vaultAddress = getAddress(vaultRow.vault);
-    await Promise.all([...new Set(rows.map((r) => r.token.toLowerCase()))].map(async (token) => {
-      try {
-        const ok = await withDeadline(
-          client.readContract({ address: cfg.deployment.contracts.vaultLens, abi: vaultLensAbi, functionName: "isSupportedToken", args: [vaultAddress, getAddress(token)] }) as Promise<boolean>,
-          CHAIN_READ_DEADLINE_MS,
-          "Checking the Vault's currencies",
-        );
-        supported.set(token, Boolean(ok));
-      } catch { /* unread stays unknown */ }
-    }));
-  }
-  const items: InboxItem[] = checked.map(({ row, trust, document }) => ({
-    kind: "invoice",
-    id: row.fingerprint,
-    fingerprint: row.fingerprint,
-    vendor: document?.vendor.name ?? "Invoice can't be read",
-    invoiceNumber: row.invoiceNumber,
-    amount: document ? formatAmount(row.total, document.currency.decimals) : undefined,
-    token: document?.currency.symbol ?? "",
-    dueDate: row.dueDate,
-    trust,
-    status: row.status,
-    holdSource: row.holdSource,
-    holdKind: row.holdKind,
-    currencyOff: supported.get(row.token.toLowerCase()) === false ? true : undefined,
-    createdAt: row.receivedAt,
-  }));
-  const bills = await db.select().from(unsignedBills).where(eq(unsignedBills.businessId, businessId)).orderBy(desc(unsignedBills.createdAt));
+  const [rows, bills] = await Promise.all([
+    db.select().from(invoices).where(eq(invoices.businessId, businessId)).orderBy(desc(invoices.receivedAt)),
+    db.select().from(unsignedBills).where(eq(unsignedBills.businessId, businessId)).orderBy(desc(unsignedBills.createdAt)),
+  ]);
+  const items: InboxItem[] = rows.map((row) => {
+    const document = documentOf(row.envelope);
+    return {
+      kind: "invoice" as const,
+      id: row.fingerprint,
+      fingerprint: row.fingerprint,
+      vendor: document?.vendor.name ?? "Invoice can't be read",
+      invoiceNumber: row.invoiceNumber,
+      amount: document ? formatAmount(row.total, document.currency.decimals) : undefined,
+      token: document?.currency.symbol ?? "",
+      dueDate: row.dueDate,
+      ...(row.inboxTrust ? { trust: row.inboxTrust } : {}),
+      status: row.status,
+      holdSource: row.holdSource,
+      holdKind: row.holdKind,
+      ...(row.currencyOff === true ? { currencyOff: true } : {}),
+      createdAt: row.receivedAt,
+    };
+  });
   items.push(...bills.map((bill) => {
     const assessment = bill.assessment as { verdict?: string; reasons?: string[] };
     const extraction = bill.extraction as { vendorName?: string };
@@ -242,6 +229,7 @@ export async function addSealedInvoice(db: Database, client: PublicClient, cfg: 
   const r = await receiveInvoice(db, { chainId: cfg.chainId, ledger: cfg.deployment.contracts.invoiceLedger }, envelope, source, { signatureClient: client, excludeUserId: user.id });
   if (r.status !== "verified" || !r.fingerprint) throw new AuthError(400, r.issues[0]?.message ?? "That sealed invoice didn't check out.");
   await db.update(invoices).set({ businessId: business.id }).where(and(eq(invoices.fingerprint, r.fingerprint), isNull(invoices.businessId)));
+  await refreshInboxFor(db, cfg, business.id, undefined, client);
   return { fingerprint: r.fingerprint };
 }
 
@@ -252,5 +240,6 @@ export async function blockSeal(db: Database, cfg: ChainSettings, user: Pick<Ses
   try { address = getAddress(seal).toLowerCase() as Address; } catch { throw new AuthError(400, "That Seal address is malformed."); }
   await db.insert(payees).values({ businessId, seal: address, status: blocked ? "blocked" : "pending_verification" }).onConflictDoUpdate({ target: [payees.businessId, payees.seal], set: { status: blocked ? "blocked" : "pending_verification" } });
   await appendAppDecision(db, businessId, { kind: blocked ? "block_seal" : "unblock_seal", subject: address, actor: user.id, inputs: { seal: address }, rule: blocked ? "business blocked this Seal" : "business unblocked this Seal", outcome: blocked ? "blocked" : "unblocked" });
+  await refreshInboxFor(db, cfg, businessId, address);
   return { seal: address, status: blocked ? "blocked" : "pending_verification" };
 }

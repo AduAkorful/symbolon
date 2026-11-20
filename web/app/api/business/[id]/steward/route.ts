@@ -18,7 +18,7 @@ import { AuthError } from "@/lib/server/errors";
 import { readBody, requireSession, routeWith } from "@/lib/server/http";
 import { describePolicyLines } from "@/lib/server/policy-text";
 import { rateLimit } from "@/lib/server/rate";
-import { feeBalance, formatFeeBalance, lastRun, listRunDecisions, runForBusiness } from "@/lib/server/steward-runtime";
+import { enqueueManualRun, feeBalance, formatFeeBalance, lastRun, listRunDecisions } from "@/lib/server/steward-runtime";
 import { setMode } from "@/lib/server/steward-settings";
 import { readVaultState, stewardStanding } from "@/lib/server/vault-read";
 
@@ -143,18 +143,8 @@ export const POST = routeWith<Ctx>(async (request, ctx) => {
   if (action === "run") {
     await requireMember(db, session.user.id, businessId, "owner", "approver");
     rateLimit(`steward-run:${businessId}`, 1, 30_000, Date.now(), "Runs are limited to one every 30 seconds. Try again in a moment.");
-    try {
-      const run = await runForBusiness(db, client, config, businessId, "manual", session.user.id);
-      return NextResponse.json({ ok: true, run });
-    } catch (e) {
-      if (e instanceof AuthError) throw e;
-      // a pass that fails (most often Arc's public network was busy) has already recorded itself as failed, with its reason;
-      // that run is the answer, not a server error (found 2026-10-08: "Something went wrong on our side")
-      console.error("steward run failed", e);
-      const failed = await lastRun(db, businessId);
-      if (failed?.status === "failed" && failed.finishedAt && Date.now() - failed.finishedAt.getTime() < 60_000) return NextResponse.json({ ok: true, run: failed });
-      throw e;
-    }
+    const run = await enqueueManualRun(db, businessId, session.user.id);
+    return NextResponse.json({ ok: true, run });
   }
 
   if (action === "anchor") {

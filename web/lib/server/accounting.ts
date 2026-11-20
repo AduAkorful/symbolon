@@ -8,7 +8,6 @@ import {
   paymentsCsv,
   reconcile,
   resolveTokenSymbol,
-  syncVault,
   type Mismatch,
 } from "@symbolon/core";
 import {
@@ -24,9 +23,8 @@ import {
 } from "@symbolon/db";
 import { symbolonContracts, type Deployment, type SymbolonContracts } from "@symbolon/chain";
 import type { PublicClient, ReadContractParameters } from "viem";
-import { ensureVaultBlock } from "./business";
 import { requireMember } from "./access";
-import { syncToHead } from "./sync";
+import { readLedgerMirror } from "./sync";
 import { appendAppDecision } from "./app-decisions";
 import { AuthError } from "./errors";
 import { formatDay } from "../format";
@@ -99,39 +97,37 @@ export async function loadAccounting(
 
   // only the Seals this business has invoices from, not everyone's
   const sealAddresses = [...new Set(bizInvoices.map((i) => i.seal.toLowerCase()))];
-  const sealsList = sealAddresses.length ? await db.select().from(seals).where(inArray(sql`lower(${seals.address})`, sealAddresses)) : [];
+  const fps = bizInvoices.map((i) => i.fingerprint.toLowerCase());
+  const ledger = deployment.contracts.invoiceLedger.toLowerCase();
+  const settledWhere = [
+    eq(chainEvents.eventName, "Settled"),
+    eq(chainEvents.chainId, deployment.chainId),
+    sql`lower(${chainEvents.address}) = ${ledger}`,
+    ...(fps.length ? [inArray(sql`lower(${chainEvents.args}->>'fingerprint')`, fps)] : [sql`false`]),
+    ...(opts.from ? [gte(chainEvents.blockTime, new Date(opts.from))] : []),
+    ...(opts.to ? [lte(chainEvents.blockTime, new Date(opts.to))] : []),
+  ];
+
+  const [sealsList, poList, delList, paidEvents, settledEvents] = await Promise.all([
+    sealAddresses.length ? db.select().from(seals).where(inArray(sql`lower(${seals.address})`, sealAddresses)) : Promise.resolve([]),
+    db.select().from(purchaseOrders).where(eq(purchaseOrders.businessId, businessId)),
+    db.select().from(deliveries).where(eq(deliveries.businessId, businessId)),
+    vault
+      ? db.select().from(chainEvents).where(and(eq(chainEvents.address, vault), eq(chainEvents.eventName, "Paid")))
+      : Promise.resolve([]),
+    db.select().from(chainEvents).where(and(...settledWhere)).orderBy(chainEvents.blockNumber, chainEvents.logIndex),
+  ]);
   const sealMap = new Map(sealsList.map((s) => [s.address.toLowerCase(), s.displayName || s.handle || s.address]));
-
-  const poList = await db.select().from(purchaseOrders).where(eq(purchaseOrders.businessId, businessId));
   const poMap = new Map(poList.map((po) => [po.poRef.toLowerCase(), po.poNumber]));
-
-  const delList = await db.select().from(deliveries).where(eq(deliveries.businessId, businessId));
   const delMap = new Map(delList.map((d) => [d.fingerprint.toLowerCase(), d]));
 
-  // Decision hashes from Paid events on vault
   const decisionHashMap = new Map<string, string>();
-  if (vault) {
-    const paidEvents = await db
-      .select()
-      .from(chainEvents)
-      .where(and(eq(chainEvents.address, vault), eq(chainEvents.eventName, "Paid")));
-    for (const pe of paidEvents) {
-      const a = pe.args as { fingerprint?: string; decisionHash?: string };
-      if (a.fingerprint && a.decisionHash) {
-        decisionHashMap.set(`${pe.txHash.toLowerCase()}:${a.fingerprint.toLowerCase()}`, a.decisionHash);
-      }
+  for (const pe of paidEvents) {
+    const a = pe.args as { fingerprint?: string; decisionHash?: string };
+    if (a.fingerprint && a.decisionHash) {
+      decisionHashMap.set(`${pe.txHash.toLowerCase()}:${a.fingerprint.toLowerCase()}`, a.decisionHash);
     }
   }
-
-  // 2. Settled Events for business invoices
-  const conditions = [eq(chainEvents.eventName, "Settled"), eq(chainEvents.chainId, deployment.chainId)];
-  if (opts.from) conditions.push(gte(chainEvents.blockTime, new Date(opts.from)));
-  if (opts.to) conditions.push(lte(chainEvents.blockTime, new Date(opts.to)));
-
-  const settledEvents = (await db.select().from(chainEvents).where(and(...conditions))).filter((e) =>
-    byFp.has(String((e.args as { fingerprint?: string }).fingerprint).toLowerCase()) && e.chainId === deployment.chainId && e.address.toLowerCase() === deployment.contracts.invoiceLedger.toLowerCase(),
-  );
-  settledEvents.sort((a, b) => (a.blockNumber === b.blockNumber ? a.logIndex - b.logIndex : a.blockNumber < b.blockNumber ? -1 : 1));
 
   let usdcSum = 0n;
   let eurcSum = 0n;
@@ -318,12 +314,10 @@ export async function resyncLedger(
   const [biz] = await db.select().from(businesses).where(eq(businesses.id, businessId));
   if (!biz) throw new AuthError(404, "Business not found");
 
-  // Comparing with a partly copied ledger would report mismatches that aren't there: wait for the copy or say it isn't ready
-  const caughtUp = await syncToHead(db, client, { chainId: deployment.chainId, deployment }, { contracts });
-  if (!caughtUp.ok) throw new AuthError(503, caughtUp.reason);
-
-  if (biz.vault) {
-    await syncVault(db, client, deployment, biz.vault as `0x${string}`, { fromBlock: await ensureVaultBlock(db, client, deployment, businessId, biz.vault) });
+  // The worker keeps the ledger copy. A comparison against a partial copy would report mismatches that are not there.
+  const mirror = await readLedgerMirror(db, { chainId: deployment.chainId, deployment });
+  if (!mirror.ok || mirror.catchingUp) {
+    throw new AuthError(503, "The ledger copy is still catching up with Arc. Try again in a minute.");
   }
 
   // Bind the durable comparison and digest to one database snapshot, even if intake/sync runs concurrently.

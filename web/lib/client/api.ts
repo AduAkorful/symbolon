@@ -10,6 +10,25 @@ export class ApiError extends Error {
   }
 }
 
+/** GETs JSON from one of the app's own routes. Resolves with the parsed answer; rejects with the server's plain-language error. */
+export async function getJson<T = Record<string, unknown>>(url: string): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(url, { method: "GET" });
+  } catch {
+    throw new Error("Can't reach Symbolon right now. Check your connection and try again.");
+  }
+  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) {
+    throw new ApiError(
+      typeof json.error === "string" ? json.error : "Something went wrong. Try again.",
+      res.status,
+      typeof json.code === "string" ? json.code : undefined,
+    );
+  }
+  return json as T;
+}
+
 /** POSTs JSON to one of the app's own routes. Resolves with the parsed answer; rejects with the server's plain-language error. */
 export async function postJson<T = Record<string, unknown>>(url: string, body: unknown = {}): Promise<T> {
   let res: Response;

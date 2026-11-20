@@ -18,7 +18,7 @@ export const GET = async (request: Request, ctx: Ctx) => {
     const filter = new URL(request.url).searchParams.get("filter") as InboxFilter | null;
     const cfg = getConfig();
     const db = await getDb();
-    const items = await listInbox(db, getClient(), cfg, s.user, id, filter && ["all", "verified", "new", "unsigned", "blocked"].includes(filter) ? filter : "all");
+    const items = await listInbox(db, cfg, s.user, id, filter && ["all", "verified", "new", "unsigned", "blocked"].includes(filter) ? filter : "all");
     const claims = await claimable(db, cfg, s.user, id);
     return NextResponse.json({ items, claimable: claims.map((r) => ({ fingerprint: r.fingerprint, invoiceNumber: r.invoiceNumber })) });
   } catch (e) {

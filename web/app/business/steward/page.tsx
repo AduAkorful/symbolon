@@ -95,8 +95,8 @@ export default async function BusinessStewardPage() {
   const scheduled = await lastScheduledRun(db, business.id);
   // Runs come every minute or so, so the newest one is usually in progress. The card shows the last one that finished, and a line
   // says a run is going on now (QA retest 6, R5-11); a run past its lease is shown as stalled as before.
-  const inProgress = latest && latest.status === "running" && Date.now() - latest.startedAt.getTime() <= STEWARD_RUN_LEASE_MS ? latest : null;
-  const run = inProgress ? (await listRuns(db, business.id, 5)).find((r) => r.status !== "running") ?? latest : latest;
+  const inProgress = latest && (latest.status === "queued" || (latest.status === "running" && Date.now() - latest.startedAt.getTime() <= STEWARD_RUN_LEASE_MS)) ? latest : null;
+  const run = inProgress ? (await listRuns(db, business.id, 5)).find((r) => r.status !== "running" && r.status !== "queued") ?? latest : latest;
   const lastRunView: RunView | null = run
     ? {
         id: run.id,
