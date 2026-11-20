@@ -34,8 +34,11 @@ export default async function VendorInvoice({ params }: { params: Promise<{ fing
   const link = `${config.appOrigin}/invoice/${found.row.fingerprint}`;
   const isSettled = found.row.status === "paid" || found.row.credited > 0n;
   const isCancelled = found.row.status === "cancelled";
-  const declined = found.row.status === "declined" ? await declinedBy(await getDb(), found.row.fingerprint, found.sealed.document.payer.name) : null;
-  const cause = isCancelled ? await cancelCause(await getDb(), found.row.fingerprint) : { cause: "cancelled" as const };
+  const db = await getDb();
+  const [declined, cause] = await Promise.all([
+    found.row.status === "declined" ? declinedBy(db, found.row.fingerprint, found.sealed.document.payer.name) : Promise.resolve(null),
+    isCancelled ? cancelCause(db, found.row.fingerprint) : Promise.resolve({ cause: "cancelled" as const }),
+  ]);
 
   return (
     <Shell where={where} current={{ kind: "vendor" }}>

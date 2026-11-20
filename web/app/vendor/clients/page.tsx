@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { ClientForm } from "@/components/vendor/ClientForm";
 import { ClientRow } from "@/components/vendor/ClientRow";
 import { Shell } from "@/components/shell/Shell";
@@ -6,14 +7,24 @@ import { listClients } from "@/lib/server/vendor";
 import { requireVendorPage } from "@/lib/server/vendor-page";
 import { EmptyState } from "@/components/ui/States";
 import { Lead, PageTitle } from "@/components/ui/Type";
+import { PageLoading } from "@/components/ui/PageLoading";
 
 export const dynamic = "force-dynamic";
 
 export default async function VendorClients() {
   const { session, where } = await requireVendorPage("/vendor/clients");
-  const clients = await listClients(await getDb(), session.user);
   return (
     <Shell where={where} current={{ kind: "vendor" }}>
+      <Suspense fallback={<PageLoading title="Clients" shape="list" />}>
+        <ClientList session={session} />
+      </Suspense>
+    </Shell>
+  );
+}
+
+async function ClientList({ session }: { session: Awaited<ReturnType<typeof requireVendorPage>>["session"] }) {
+  const clients = await listClients(await getDb(), session.user);
+  return (
       <div>
         <PageTitle>Clients</PageTitle>
         <Lead className="mt-3">The businesses you invoice. A client is remembered once you send them an invoice.</Lead>
@@ -28,6 +39,5 @@ export default async function VendorClients() {
         )}
         <ClientForm />
       </div>
-    </Shell>
   );
 }

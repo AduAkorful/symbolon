@@ -20,15 +20,16 @@ export default async function SetupPage({ searchParams }: { searchParams: Promis
   const session = await requirePageSession("/setup");
   const config = getConfig();
   const db = await getDb();
-  const wanted = (await searchParams).business;
-
-  // The person's own businesses (as owner) on this chain: one with no Vault yet is the one to finish
-  const owned = await db
+  const [query, owned] = await Promise.all([
+    searchParams,
+    db
     .select({ id: businesses.id, name: businesses.name, vault: businesses.vault, stewardWallet: businesses.stewardWallet })
     .from(members)
     .innerJoin(businesses, eq(businesses.id, members.businessId))
     .where(and(eq(members.userId, session.user.id), eq(members.role, "owner"), eq(businesses.chainId, config.chainId)))
-    .orderBy(businesses.createdAt);
+    .orderBy(businesses.createdAt),
+  ]);
+  const wanted = query.business;
   const open = owned.find((b) => b.id === wanted) ?? owned.find((b) => b.vault === null) ?? null;
 
   // A Vault we know about: what the chain says about its Steward decides whether the wizard goes on to Fund (plan 05h, H13)

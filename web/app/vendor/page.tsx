@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 import { Shell } from "@/components/shell/Shell";
 import { getDb } from "@/lib/server/db";
-import { requirePageSession } from "@/lib/server/http";
+import { requirePageSession, type CurrentSession } from "@/lib/server/http";
 import { listClients, mySeal } from "@/lib/server/vendor";
 import { listMyInvoices } from "@/lib/server/invoice-send";
 import { loadSpaces } from "@/lib/server/space";
@@ -15,6 +16,7 @@ import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/States";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { PageTitle, SectionTitle } from "@/components/ui/Type";
+import { Skeleton } from "@/components/Skeleton";
 
 export const dynamic = "force-dynamic";
 
@@ -22,10 +24,8 @@ export const dynamic = "force-dynamic";
 export default async function VendorHome() {
   const session = await requirePageSession("/vendor");
   const db = await getDb();
-  const seal = await mySeal(db, session.user.id);
+  const [seal, where] = await Promise.all([mySeal(db, session.user.id), loadSpaces(session, { warmVault: false })]);
   if (!seal) redirect("/vendor/start");
-  const where = await loadSpaces(session);
-  const [invoices, clients] = await Promise.all([listMyInvoices(db, session.user), listClients(db, session.user)]);
 
   return (
     <Shell where={where} current={{ kind: "vendor" }}>
@@ -38,10 +38,23 @@ export default async function VendorHome() {
           <LinkButton href="/vendor/new">New invoice</LinkButton>
         </div>
 
+        <Suspense fallback={<Skeleton className="mt-8 h-40 w-full rounded-doc" />}>
+          <VendorHomeLists session={session} sealAddress={seal.address} />
+        </Suspense>
+      </div>
+    </Shell>
+  );
+}
+
+async function VendorHomeLists({ session, sealAddress }: { session: CurrentSession; sealAddress: string }) {
+  const db = await getDb();
+  const [invoices, clients] = await Promise.all([listMyInvoices(db, session.user), listClients(db, session.user)]);
+  return (
+    <>
         <dl className="mt-8 divide-y divide-rule-soft rounded-doc border border-rule px-5 text-sm">
           <div className="grid gap-1 py-3.5 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
             <dt className="text-graphite">Your Seal</dt>
-            <dd className="min-w-0"><Address value={seal.address} full copy /></dd>
+            <dd className="min-w-0"><Address value={sealAddress} full copy /></dd>
           </div>
           <div className="grid gap-1 py-3.5 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
             <dt className="text-graphite">Sent so far</dt>
@@ -70,7 +83,6 @@ export default async function VendorHome() {
           />
         )}
         {invoices.length > 5 ? <p className="mt-4 text-sm"><Link href="/vendor/invoices" className="text-graphite underline decoration-rule underline-offset-4 hover:text-ink">All {invoices.length} invoices →</Link></p> : null}
-      </div>
-    </Shell>
+    </>
   );
 }

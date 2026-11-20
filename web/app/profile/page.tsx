@@ -9,10 +9,11 @@ export const dynamic = "force-dynamic";
 
 export default async function ProfilePage() {
   const session = await requirePageSession("/profile");
-  const where = await loadSpaces(session);
   const db = await getDb();
-
-  const profileData = await getProfile(db, session.user.id, session.sessionId);
+  const [where, profileData] = await Promise.all([
+    loadSpaces(session),
+    getProfile(db, session.user.id, session.sessionId),
+  ]);
 
   const current = where.business
     ? { kind: "business" as const, id: where.business.id }

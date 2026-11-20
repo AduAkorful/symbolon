@@ -1,10 +1,11 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { Shell } from "@/components/shell/Shell";
 import { InboxActions } from "@/components/inbox/InboxActions";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
-import { requirePageSession } from "@/lib/server/http";
-import { loadSpaces } from "@/lib/server/space";
+import { requirePageSession, type CurrentSession } from "@/lib/server/http";
+import { loadSpaces, type Where } from "@/lib/server/space";
 import { readLedgerMirror } from "@/lib/server/sync";
 import { filterInbox, listInbox, type InboxFilter } from "@/lib/server/inbox";
 import { businessStatus, statusToneClass, trustName, unsignedLabel } from "@/lib/business-status";
@@ -17,6 +18,7 @@ import { EmptyState } from "@/components/ui/States";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { pillTone } from "@/lib/status-tone";
 import { Lead, PageTitle } from "@/components/ui/Type";
+import { PageLoading } from "@/components/ui/PageLoading";
 
 export const dynamic = "force-dynamic";
 
@@ -29,13 +31,25 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const where = await loadSpaces(session);
   const business = where.business;
   if (!business) return <Shell where={where} current={{ kind: "business", id: "" }}><p>You don’t belong to a business yet.</p></Shell>;
+  return (
+    <Shell where={where} current={{ kind: "business", id: business.id }}>
+      <Suspense fallback={<PageLoading title="Inbox" shape="list" />}>
+        <InboxList session={session} business={business} searchParams={searchParams} />
+      </Suspense>
+    </Shell>
+  );
+}
+
+async function InboxList({ session, business, searchParams }: { session: CurrentSession; business: NonNullable<Where["business"]>; searchParams: Promise<{ filter?: string; page?: string }> }) {
   const cfg = getConfig();
   const db = await getDb();
-  const sync = await readLedgerMirror(db, cfg);
-  const query = await searchParams;
+  const [sync, query, everything] = await Promise.all([
+    readLedgerMirror(db, cfg),
+    searchParams,
+    listInbox(db, cfg, session.user, business.id, "all"),
+  ]);
   const requested = query.filter as InboxFilter | undefined;
   const filter = requested && filters.some(([value]) => value === requested) ? requested : "all";
-  const everything = await listInbox(db, cfg, session.user, business.id, "all");
   const matching = filterInbox(everything, filter);
   const pages = Math.max(1, Math.ceil(matching.length / PAGE_SIZE));
   const page = Math.min(pages, Math.max(1, Number.parseInt(query.page ?? "1", 10) || 1));
@@ -48,7 +62,6 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
     return `/business/inbox${q ? `?${q}` : ""}`;
   };
   return (
-    <Shell where={where} current={{ kind: "business", id: business.id }}>
       <div>
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
           <div className="min-w-0">
@@ -128,6 +141,5 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
           </nav>
         ) : null}
       </div>
-    </Shell>
   );
 }

@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 import { arcChain } from "@symbolon/chain";
 import { ActivityView } from "@/components/activity/ActivityView";
 import { Shell } from "@/components/shell/Shell";
@@ -6,8 +7,9 @@ import { loadActivity } from "@/lib/server/activity";
 import { getClient } from "@/lib/server/chain";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
-import { requirePageSession } from "@/lib/server/http";
+import { requirePageSession, type CurrentSession } from "@/lib/server/http";
 import { loadSpaces } from "@/lib/server/space";
+import { PageLoading } from "@/components/ui/PageLoading";
 
 export const dynamic = "force-dynamic";
 
@@ -16,16 +18,20 @@ export default async function BusinessActivityPage() {
   const where = await loadSpaces(session);
   if (!where.business) notFound();
 
+  return (
+    <Shell where={where} current={{ kind: "business", id: where.business.id }}>
+      <Suspense fallback={<PageLoading title="Activity" shape="list" />}>
+        <ActivityContent session={session} businessId={where.business.id} />
+      </Suspense>
+    </Shell>
+  );
+}
+
+async function ActivityContent({ session, businessId }: { session: CurrentSession; businessId: string }) {
   const config = getConfig();
   const db = await getDb();
   const client = getClient();
   const explorer = arcChain(config.chainId).blockExplorers!.default.url;
-
-  const feed = await loadActivity(db, client, session.user, where.business.id, {}, { deployment: getConfig().deployment });
-
-  return (
-    <Shell where={where} current={{ kind: "business", id: where.business.id }}>
-      <ActivityView initialFeed={feed} businessId={where.business.id} explorer={explorer} />
-    </Shell>
-  );
+  const feed = await loadActivity(db, client, session.user, businessId, {}, { deployment: config.deployment });
+  return <ActivityView initialFeed={feed} businessId={businessId} explorer={explorer} />;
 }

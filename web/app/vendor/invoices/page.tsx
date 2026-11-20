@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { Shell } from "@/components/shell/Shell";
 import { getDb } from "@/lib/server/db";
 import { listMyInvoices } from "@/lib/server/invoice-send";
@@ -11,6 +12,7 @@ import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/States";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { PageTitle } from "@/components/ui/Type";
+import { PageLoading } from "@/components/ui/PageLoading";
 import { chipClass } from "@/components/ui/chip";
 
 export const dynamic = "force-dynamic";
@@ -25,12 +27,21 @@ const FILTERS = [
 
 export default async function VendorInvoices({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
   const { session, where } = await requireVendorPage("/vendor/invoices");
-  const all = await listMyInvoices(await getDb(), session.user);
-  const wanted = (await searchParams).filter;
+  return (
+    <Shell where={where} current={{ kind: "vendor" }}>
+      <Suspense fallback={<PageLoading title="Invoices" shape="list" />}>
+        <VendorInvoiceList session={session} searchParams={searchParams} />
+      </Suspense>
+    </Shell>
+  );
+}
+
+async function VendorInvoiceList({ session, searchParams }: { session: Awaited<ReturnType<typeof requireVendorPage>>["session"]; searchParams: Promise<{ filter?: string }> }) {
+  const [all, query] = await Promise.all([listMyInvoices(await getDb(), session.user), searchParams]);
+  const wanted = query.filter;
   const active = FILTERS.find(([key]) => key === wanted) ?? FILTERS[0];
   const invoices = all.filter((i) => active[2](i.status));
   return (
-    <Shell where={where} current={{ kind: "vendor" }}>
       <div>
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
           <PageTitle>Invoices</PageTitle>
@@ -66,6 +77,5 @@ export default async function VendorInvoices({ searchParams }: { searchParams: P
           />
         )}
       </div>
-    </Shell>
   );
 }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { InviteVendor } from "@/components/inbox/InviteVendor";
 import { AddPayee } from "@/components/inbox/AddPayee";
 import { VerifyVendor } from "@/components/inbox/VerifyVendor";
@@ -7,8 +8,8 @@ import { Shell } from "@/components/shell/Shell";
 import { getClient } from "@/lib/server/chain";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
-import { requirePageSession } from "@/lib/server/http";
-import { loadSpaces } from "@/lib/server/space";
+import { requirePageSession, type CurrentSession } from "@/lib/server/http";
+import { loadSpaces, type Where } from "@/lib/server/space";
 import { listVendors } from "@/lib/server/vendors";
 import { signerPlanFor } from "@/lib/server/signer-plan";
 import { formatDay, shortenAddressesIn, usd } from "@/lib/format";
@@ -16,6 +17,7 @@ import { Address } from "@/components/Address";
 import { EmptyState } from "@/components/ui/States";
 import { StatusPill, type Tone } from "@/components/ui/StatusPill";
 import { Lead, PageTitle, SectionTitle } from "@/components/ui/Type";
+import { PageLoading } from "@/components/ui/PageLoading";
 
 export const dynamic = "force-dynamic";
 const trustLabel = (status: string) => status === "pending_verification" ? "Sealed, new vendor" : status === "verified" ? "Verified" : status === "blocked" ? "Blocked" : status === "invited" ? "Invited" : status === "awaiting_second" ? "Awaiting second confirmation" : status === "open" ? "Callback code in progress" : status === "expired" ? "Expired" : status === "cancelled" ? "Cancelled" : status === "retired" ? "Retired" : status;
@@ -27,6 +29,16 @@ export default async function BusinessVendorsPage() {
   const where = await loadSpaces(session);
   const business = where.business;
   if (!business) return <Shell where={where} current={{ kind: "business", id: "" }}><PageTitle>No business yet</PageTitle></Shell>;
+  return (
+    <Shell where={where} current={{ kind: "business", id: business.id }}>
+      <Suspense fallback={<PageLoading title="Vendors" shape="list" />}>
+        <VendorsContent session={session} business={business} />
+      </Suspense>
+    </Shell>
+  );
+}
+
+async function VendorsContent({ session, business }: { session: CurrentSession; business: NonNullable<Where["business"]> }) {
   const data = await listVendors(await getDb(), getClient(), getConfig().deployment, session.user, business.id);
   const config = getConfig();
   const signer = signerPlanFor(session, config);
@@ -34,7 +46,6 @@ export default async function BusinessVendorsPage() {
   const canVerify = business.role === "owner" || business.role === "approver";
   const nowSec = BigInt(Math.floor(Date.now() / 1000));
   return (
-    <Shell where={where} current={{ kind: "business", id: business.id }}>
       <div>
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
           <div className="min-w-0">
@@ -116,6 +127,5 @@ export default async function BusinessVendorsPage() {
           </section>
         ) : null}
       </div>
-    </Shell>
   );
 }

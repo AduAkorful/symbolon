@@ -1,12 +1,14 @@
+import { Suspense } from "react";
 import { Shell } from "@/components/shell/Shell";
 import { OrdersClient } from "@/components/orders/OrdersClient";
 import { getClient } from "@/lib/server/chain";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
-import { requirePageSession } from "@/lib/server/http";
+import { requirePageSession, type CurrentSession } from "@/lib/server/http";
 import { loadSpaces } from "@/lib/server/space";
 import { listOrders } from "@/lib/server/orders";
 import { listKnownVendors } from "@/lib/server/vendors";
+import { PageLoading } from "@/components/ui/PageLoading";
 
 export const dynamic = "force-dynamic";
 
@@ -23,11 +25,21 @@ export default async function OrdersPage() {
     );
   }
 
+  return (
+    <Shell where={where} current={{ kind: "business", id: business.id }}>
+      <Suspense fallback={<PageLoading title="Orders" shape="list" />}>
+        <OrdersContent session={session} businessId={business.id} />
+      </Suspense>
+    </Shell>
+  );
+}
+
+async function OrdersContent({ session, businessId }: { session: CurrentSession; businessId: string }) {
   const cfg = getConfig();
   const db = await getDb();
   const [orders, vendors] = await Promise.all([
-    listOrders(db, getClient(), cfg.deployment, session.user, business.id),
-    listKnownVendors(db, business.id),
+    listOrders(db, getClient(), cfg.deployment, session.user, businessId),
+    listKnownVendors(db, businessId),
   ]);
 
   // Serialise BigInt fields to strings for client hydration
@@ -42,9 +54,5 @@ export default async function OrdersPage() {
     live: o.live,
   }));
 
-  return (
-    <Shell where={where} current={{ kind: "business", id: business.id }}>
-      <OrdersClient businessId={business.id} initial={serialised} vendors={vendors} explorer={cfg.deployment.explorer} />
-    </Shell>
-  );
+  return <OrdersClient businessId={businessId} initial={serialised} vendors={vendors} explorer={cfg.deployment.explorer} />;
 }

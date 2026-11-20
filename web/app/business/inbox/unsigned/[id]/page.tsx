@@ -19,8 +19,11 @@ export default async function UnsignedBillPage({ params }: { params: Promise<{ i
   const where = await loadSpaces(session);
   if (!where.business) notFound();
   const db = await getDb();
-  const membership = await requireMember(db, session.user.id, where.business.id);
-  const [bill] = await db.select().from(unsignedBills).where(and(eq(unsignedBills.id, id), eq(unsignedBills.businessId, where.business.id))).limit(1);
+  const [membership, billRows] = await Promise.all([
+    requireMember(db, session.user.id, where.business.id),
+    db.select().from(unsignedBills).where(and(eq(unsignedBills.id, id), eq(unsignedBills.businessId, where.business.id))).limit(1),
+  ]);
+  const bill = billRows[0];
   if (!bill) notFound();
   const extraction = bill.extraction as { vendorName?: string; total?: string; instructionsFound?: string[] };
   const assessment = bill.assessment as { verdict?: string; reasons?: string[] };

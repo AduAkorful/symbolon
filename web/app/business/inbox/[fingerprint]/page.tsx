@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { and, desc, eq } from "drizzle-orm";
@@ -9,6 +10,7 @@ import { Shell } from "@/components/shell/Shell";
 import { getClient } from "@/lib/server/chain";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
+import { AuthError } from "@/lib/server/errors";
 import { requirePageSession } from "@/lib/server/http";
 import { loadSpaces } from "@/lib/server/space";
 import { loadInvoiceDetail } from "@/lib/server/inbox";
@@ -24,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { buttonClass } from "@/components/ui/button";
 import { Callout } from "@/components/ui/Callout";
 import { Eyebrow, PageTitle } from "@/components/ui/Type";
+import { PageLoading } from "@/components/ui/PageLoading";
 
 export const dynamic = "force-dynamic";
 
@@ -31,11 +34,32 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
   const { fingerprint } = await params;
   const session = await requirePageSession(`/business/inbox/${fingerprint}`);
   const where = await loadSpaces(session);
-  if (!where.business) notFound();
+  const business = where.business;
+  if (!business) notFound();
+  return (
+    <Shell where={where} current={{ kind: "business", id: business.id }}>
+      <Suspense fallback={<PageLoading title="Invoice" shape="summary" />}>
+        <InvoiceBody session={session} where={where} fingerprint={fingerprint} />
+      </Suspense>
+    </Shell>
+  );
+}
+
+async function InvoiceBody({ session, where, fingerprint }: { session: Awaited<ReturnType<typeof requirePageSession>>; where: Awaited<ReturnType<typeof loadSpaces>>; fingerprint: string }) {
+  const business = where.business;
+  if (!business) notFound();
   const db = await getDb();
-  const view = await loadInvoiceDetail(db, getClient(), getConfig(), session.user, where.business.id, fingerprint);
-  if (!view || !view.verification.document) notFound();
-  const offers = await businessOffers(db, session.user, where.business.id, fingerprint);
+  const [view, offersResult, latestRows] = await Promise.all([
+    loadInvoiceDetail(db, getClient(), getConfig(), session.user, business.id, fingerprint),
+    businessOffers(db, session.user, business.id, fingerprint).catch((error: unknown) => {
+      if (error instanceof AuthError && error.status === 404) return null;
+      throw error;
+    }),
+    db.select({ id: decisions.id, record: decisions.record, createdAt: decisions.createdAt }).from(decisions).where(and(eq(decisions.businessId, business.id), eq(decisions.subject, fingerprint))).orderBy(desc(decisions.createdAt)).limit(1),
+  ]);
+  if (!view || !view.verification.document || !offersResult) notFound();
+  const offers = offersResult;
+  const latestDecision = latestRows[0];
   const handle = view.vendor?.handle ?? (view.verification.document.vendor.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "vendor");
 
   // Check whether delivery evidence exists in the db (N13: show confirm/reject buttons)
@@ -66,7 +90,7 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
   });
   const inTheWay = blockers.filter((b) => b.kind !== "info" || b.rule === "ChainUnreadable");
   const declined = view.row.status === "declined" && !settled;
-  const isOwner = where.business.role === "owner";
+  const isOwner = business.role === "owner";
   const closed = settled || declined || view.row.status === "paid" || view.row.status === "cancelled" || view.row.status === "rejected";
   const holdSource = "holdSource" in view ? view.holdSource : null;
   const canPay = offers.canAct && !closed && view.verification.ok && holdSource !== "human";
@@ -74,20 +98,7 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
   const signer = signerPlanFor(session, getConfig());
   const explorer = getConfig().deployment.explorer;
 
-  // Latest decision for this invoice
-  const [latestDecision] = await db
-    .select({
-      id: decisions.id,
-      record: decisions.record,
-      createdAt: decisions.createdAt,
-    })
-    .from(decisions)
-    .where(and(eq(decisions.businessId, where.business.id), eq(decisions.subject, fingerprint)))
-    .orderBy(desc(decisions.createdAt))
-    .limit(1);
-
   return (
-    <Shell where={where} current={{ kind: "business", id: where.business.id }}>
       <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <InvoiceDoc document={view.verification.document} fingerprint={fingerprint} handle={handle} sealed={view.verification.ok} />
         <section className="min-w-0 lg:pt-6">
@@ -117,7 +128,7 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
               tone="warn"
               title="You declined this invoice"
               className="mt-5"
-              actions={isOwner ? <ReopenInvoice businessId={where.business.id} fingerprint={fingerprint} /> : undefined}
+              actions={isOwner ? <ReopenInvoice businessId={business.id} fingerprint={fingerprint} /> : undefined}
             >
               {view.row.declinedReason ?? "No reason recorded."} The vendor has been told. It won't be paid unless you reopen it.
             </Callout>
@@ -140,14 +151,14 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
                 unavailable ? (
                   <Button disabled title={unavailable}>Pay now</Button>
                 ) : (
-                  <PayInvoice businessId={where.business.id} fingerprint={fingerprint} label="Pay now" signer={signer} explorer={explorer} />
+                  <PayInvoice businessId={business.id} fingerprint={fingerprint} label="Pay now" signer={signer} explorer={explorer} />
                 )
               ) : (
                 <p className="text-sm text-graphite">
                   {!offers.canAct ? "Only an owner or approver can pay an invoice." : holdSource === "human" ? "Release the hold before paying." : null}
                 </p>
               )}
-              {isOwner ? <DeclineInvoice businessId={where.business.id} fingerprint={fingerprint} /> : null}
+              {isOwner ? <DeclineInvoice businessId={business.id} fingerprint={fingerprint} /> : null}
             </InvoiceBlockers>
           ) : null}
 
@@ -166,7 +177,7 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
 
           {!closed ? (
             <BusinessOffers
-              businessId={where.business.id}
+              businessId={business.id}
               fingerprint={fingerprint}
               view={offers}
               symbol={view.verification.document.currency.symbol}
@@ -177,7 +188,7 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
           {showDeliveryActions ? (
             <div className="mt-6">
               <DeliveryActions
-                businessId={where.business.id}
+                businessId={business.id}
                 fingerprint={fingerprint}
                 currentState={currentDeliveryState}
                 currentReason={rejectionReason ?? null}
@@ -218,8 +229,8 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
                   ? `This invoice is held because delivery was rejected: ${rejectionReason}`
                   : "A reviewer placed this invoice on hold."}
               </p>
-              {where.business.role === "owner" ? (
-                <ReleaseHoldButton businessId={where.business.id} fingerprint={fingerprint} />
+              {business.role === "owner" ? (
+                <ReleaseHoldButton businessId={business.id} fingerprint={fingerprint} />
               ) : (
                 <p className="mt-1 text-graphite">Only an owner can release this hold.</p>
               )}
@@ -229,6 +240,5 @@ export default async function BusinessInvoice({ params }: { params: Promise<{ fi
           ) : null}
         </section>
       </div>
-    </Shell>
   );
 }

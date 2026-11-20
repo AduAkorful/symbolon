@@ -1,9 +1,11 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 
 import { arcChain } from "@symbolon/chain";
 
 import { DecisionView } from "@/components/decisions/DecisionView";
 import { Shell } from "@/components/shell/Shell";
+import { PageLoading } from "@/components/ui/PageLoading";
 import { getClient } from "@/lib/server/chain";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
@@ -24,18 +26,17 @@ export default async function DecisionPage({ params }: Props) {
   const b = where.business;
   if (!b) return notFound();
 
-  const db = await getDb();
-  const client = getClient();
-  const config = getConfig();
-
-  const decision = await loadDecision(db, client, config, session.user, b.id, id);
-  if (!decision) return notFound();
-
-  const explorerUrl = arcChain(config.chainId).blockExplorers!.default.url;
-
   return (
     <Shell where={where} current={{ kind: "business", id: b.id }}>
-      <DecisionView decision={decision} explorerUrl={explorerUrl} />
+      <Suspense fallback={<PageLoading title="Decision" shape="summary" />}>
+        <DecisionBody session={session} businessId={b.id} id={id} />
+      </Suspense>
     </Shell>
   );
+}
+
+async function DecisionBody({ session, businessId, id }: { session: Awaited<ReturnType<typeof requirePageSession>>; businessId: string; id: string }) {
+  const decision = await loadDecision(await getDb(), getClient(), getConfig(), session.user, businessId, id);
+  if (!decision) return notFound();
+  return <DecisionView decision={decision} explorerUrl={arcChain(getConfig().chainId).blockExplorers!.default.url} />;
 }

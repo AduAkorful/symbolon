@@ -13,10 +13,11 @@ export default async function UploadInvoice() {
   const { session, seal, where } = await requireVendorPage("/vendor/upload");
   const db = await getDb();
   const config = getConfig();
-  const clients = (await listClients(db, session.user)).map((c) => ({ id: c.id, name: c.name, vault: c.vault, email: c.email }));
+  const [clientRows, nextNumber] = await Promise.all([listClients(db, session.user), nextInvoiceNumber(db, seal.address)]);
+  const clients = clientRows.map((c) => ({ id: c.id, name: c.name, vault: c.vault, email: c.email }));
   return (
     <Shell where={where} current={{ kind: "vendor" }}>
-      <Upload available={config.model !== undefined} handle={seal.handle} clients={clients} nextNumber={await nextInvoiceNumber(db, seal.address)} signer={signerPlanFor(session, config)} />
+      <Upload available={config.model !== undefined} handle={seal.handle} clients={clients} nextNumber={nextNumber} signer={signerPlanFor(session, config)} />
     </Shell>
   );
 }

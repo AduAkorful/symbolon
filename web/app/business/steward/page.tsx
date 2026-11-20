@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { getAddress } from "viem";
 import { arcChain, symbolonContracts } from "@symbolon/chain";
 import { humanResponseAgreement } from "@symbolon/core";
@@ -7,15 +8,16 @@ import { StewardClient, type DecisionView, type RunView } from "@/components/ste
 import { getClient } from "@/lib/server/chain";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
-import { requirePageSession } from "@/lib/server/http";
+import { requirePageSession, type CurrentSession } from "@/lib/server/http";
 import { describePolicyLines } from "@/lib/server/policy-text";
 import { signerPlanFor } from "@/lib/server/signer-plan";
-import { loadSpaces } from "@/lib/server/space";
+import { loadSpaces, type Where } from "@/lib/server/space";
 import { subjectRefs } from "@/lib/server/subject-label";
 import { decisionNow, foldRecentDecisions, loadLendingEvents } from "@/lib/server/steward-decisions";
 import { feeBalance, formatFeeBalance, lastRun, lastScheduledRun, listRunDecisions, listRuns, STEWARD_RUN_LEASE_MS } from "@/lib/server/steward-runtime";
 import { readVaultState, stewardStanding } from "@/lib/server/vault-read";
 import { PageTitle } from "@/components/ui/Type";
+import { PageLoading } from "@/components/ui/PageLoading";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +63,17 @@ export default async function BusinessStewardPage() {
     );
   }
 
+  return (
+    <Shell where={where} current={{ kind: "business", id: business.id }}>
+      <Suspense fallback={<PageLoading title="Steward" shape="summary" />}>
+        <StewardContent session={session} business={business} />
+      </Suspense>
+    </Shell>
+  );
+}
+
+async function StewardContent({ session, business }: { session: CurrentSession; business: NonNullable<Where["business"]> }) {
+  if (!business.vault) return null;
   const db = await getDb();
   const client = getClient();
   const config = getConfig();
@@ -88,15 +101,23 @@ export default async function BusinessStewardPage() {
     standing = { kind: "unknown", ready: false, block: null, reason: "Could not read Vault state from chain" };
   }
 
-  const rawFee = business.stewardWallet ? await feeBalance(client, business.stewardWallet) : null;
+  const [rawFee, latest, scheduled, runRows, rawDecisions, agreement, pendingAnchorCount, lendingEvents, now] = await Promise.all([
+    business.stewardWallet ? feeBalance(client, business.stewardWallet) : Promise.resolve(null),
+    lastRun(db, business.id),
+    lastScheduledRun(db, business.id),
+    listRuns(db, business.id, 10),
+    listRunDecisions(db, business.id, 25),
+    humanResponseAgreement(db, business.id),
+    countPendingAnchors(db, business.id),
+    loadLendingEvents(db, business.vault),
+    decisionNow(client, config.deployment, business.vault, { db, businessId: business.id }),
+  ]);
   const fee = formatFeeBalance(rawFee);
 
-  const latest = await lastRun(db, business.id);
-  const scheduled = await lastScheduledRun(db, business.id);
   // Runs come every minute or so, so the newest one is usually in progress. The card shows the last one that finished, and a line
   // says a run is going on now (QA retest 6, R5-11); a run past its lease is shown as stalled as before.
   const inProgress = latest && (latest.status === "queued" || (latest.status === "running" && Date.now() - latest.startedAt.getTime() <= STEWARD_RUN_LEASE_MS)) ? latest : null;
-  const run = inProgress ? (await listRuns(db, business.id, 5)).find((r) => r.status !== "running" && r.status !== "queued") ?? latest : latest;
+  const run = inProgress ? runRows.find((r) => r.status !== "running" && r.status !== "queued") ?? latest : latest;
   const lastRunView: RunView | null = run
     ? {
         id: run.id,
@@ -111,7 +132,6 @@ export default async function BusinessStewardPage() {
       }
     : null;
 
-  const runRows = await listRuns(db, business.id, 10);
   const runs: RunView[] = runRows.map((r) => ({
     id: r.id,
     trigger: r.trigger,
@@ -123,10 +143,8 @@ export default async function BusinessStewardPage() {
     error: r.error,
   }));
 
-  const rawDecisions = await listRunDecisions(db, business.id, 25);
   const refs = await subjectRefs(db, business.id, rawDecisions.map((d) => d.subject));
   // each move told once, cash back from lending said as such, and stored blockers shown against what holds now (QA retest 18)
-  const [lendingEvents, now] = await Promise.all([loadLendingEvents(db, business.vault), decisionNow(client, config.deployment, business.vault, { db, businessId: business.id })]);
   const recentDecisions: DecisionView[] = foldRecentDecisions(rawDecisions, lendingEvents, now).map(({ row: d, summary, kindLabel, txHash }) => ({
     id: d.id,
     kind: d.kind,
@@ -140,26 +158,9 @@ export default async function BusinessStewardPage() {
     summary,
   }));
 
-  const agreement = await humanResponseAgreement(db, business.id);
   const shadow = { agreed: agreement.agreed, compared: agreement.total, disagreements: [] };
 
-  const pendingAnchorCount = await (async () => {
-    const { decisionAnchors, decisions } = await import("@symbolon/db");
-    const { eq } = await import("drizzle-orm");
-    const anchoredBatches = await db
-      .select({ leaves: decisionAnchors.leaves })
-      .from(decisionAnchors)
-      .where(eq(decisionAnchors.businessId, business.id));
-    const anchored = new Set(anchoredBatches.flatMap((b) => b.leaves));
-    const allBizDecs = await db
-      .select({ hash: decisions.hash })
-      .from(decisions)
-      .where(eq(decisions.businessId, business.id));
-    return allBizDecs.filter((d) => !anchored.has(d.hash)).length;
-  })();
-
   return (
-    <Shell where={where} current={{ kind: "business", id: business.id }}>
       <StewardClient
         business={{
           id: business.id,
@@ -182,7 +183,17 @@ export default async function BusinessStewardPage() {
         signer={signer}
         explorer={explorer}
       />
-    </Shell>
   );
+}
+
+async function countPendingAnchors(db: Awaited<ReturnType<typeof getDb>>, businessId: string): Promise<number> {
+  const { decisionAnchors, decisions } = await import("@symbolon/db");
+  const { eq } = await import("drizzle-orm");
+  const [anchoredBatches, allBizDecs] = await Promise.all([
+    db.select({ leaves: decisionAnchors.leaves }).from(decisionAnchors).where(eq(decisionAnchors.businessId, businessId)),
+    db.select({ hash: decisions.hash }).from(decisions).where(eq(decisions.businessId, businessId)),
+  ]);
+  const anchored = new Set(anchoredBatches.flatMap((b) => b.leaves));
+  return allBizDecs.filter((d) => !anchored.has(d.hash)).length;
 }
 

@@ -61,25 +61,22 @@ export default async function BusinessTreasuryPage() {
   return (
     <Shell where={where} current={{ kind: "business", id: business.id }}>
       <Suspense fallback={<PageLoading title="Treasury" shape="summary" />}>
-        <TreasuryContent session={session} businessId={business.id} isOwner={business.role === "owner"} />
+        <TreasuryContent session={session} businessId={business.id} vault={business.vault} isOwner={business.role === "owner"} />
       </Suspense>
     </Shell>
   );
 }
 
 /** The part of the page that reads Arc; the frame and title are already on screen while this finishes (plan 05zd F6) */
-async function TreasuryContent({ session, businessId, isOwner }: { session: Awaited<ReturnType<typeof requirePageSession>>; businessId: string; isOwner: boolean }) {
+async function TreasuryContent({ session, businessId, vault, isOwner }: { session: Awaited<ReturnType<typeof requirePageSession>>; businessId: string; vault: string; isOwner: boolean }) {
   const db = await getDb();
   const config = getConfig();
   const client = getClient();
-
-  const state = await loadTreasury(db, client, config.deployment, businessId, session.user);
   const signer = signerPlanFor(session, config);
-  // Whether the Vault is set to pay in EURC (plan 05zj D6): null when it can't be read, which is never shown as "supported"
-  const vault = state.vault ?? null;
-  const eurcSupported = vault
-    ? await symbolonContracts(client, config.deployment).lens.read.isSupportedToken([getAddress(vault), config.deployment.tokens.eurc]).then((v) => Boolean(v), () => null)
-    : null;
+  const [state, eurcSupported] = await Promise.all([
+    loadTreasury(db, client, config.deployment, businessId, session.user),
+    symbolonContracts(client, config.deployment).lens.read.isSupportedToken([getAddress(vault), config.deployment.tokens.eurc]).then((v) => Boolean(v), () => null),
+  ]);
 
   return (
     <TreasuryView

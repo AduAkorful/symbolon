@@ -12,10 +12,14 @@ export const dynamic = "force-dynamic";
 
 export default async function InvitationPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  let invite;
-  try { invite = await loadInvitation(await getDb(), token); } catch { notFound(); }
-  const session = await getSession();
-  const hasSeal = session?.user ? Boolean(await mySeal(await getDb(), session.user.id)) : false;
+  const db = await getDb();
+  const [inviteResult, session] = await Promise.all([
+    loadInvitation(db, token).then((invite) => ({ ok: true as const, invite }), () => ({ ok: false as const })),
+    getSession(),
+  ]);
+  if (!inviteResult.ok) notFound();
+  const invite = inviteResult.invite;
+  const hasSeal = session?.user ? Boolean(await mySeal(db, session.user.id)) : false;
   return <main className="mx-auto min-h-screen max-w-[720px] px-6 py-16 md:px-10">
     <Eyebrow>Symbolon · vendor invitation</Eyebrow>
     <PageTitle className="mt-8">{invite.vendorName}</PageTitle>

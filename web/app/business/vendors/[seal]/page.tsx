@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { notFound, redirect } from "next/navigation";
 import { and, desc, eq } from "drizzle-orm";
 import { seals as sealsTable, vendorRequests } from "@symbolon/db";
@@ -21,6 +22,7 @@ import { formatAmount } from "@symbolon/seal";
 import { formatDay, formatDateTime, shortenAddressesIn, showMoney, usd } from "@/lib/format";
 import { Address } from "@/components/Address";
 import { Eyebrow, PageTitle, SectionTitle } from "@/components/ui/Type";
+import { PageLoading } from "@/components/ui/PageLoading";
 
 export const dynamic = "force-dynamic";
 
@@ -39,35 +41,41 @@ export default async function BusinessVendorDetailPage({ params }: { params: Pro
   const where = await loadSpaces(session);
   const business = where.business;
   if (!business) notFound();
+  return (
+    <Shell where={where} current={{ kind: "business", id: business.id }}>
+      <Suspense fallback={<PageLoading title="Vendor" shape="summary" />}>
+        <VendorRecord session={session} business={business} params={params} />
+      </Suspense>
+    </Shell>
+  );
+}
+
+async function VendorRecord({ session, business, params }: { session: Awaited<ReturnType<typeof requirePageSession>>; business: NonNullable<Awaited<ReturnType<typeof loadSpaces>>["business"]>; params: Promise<{ seal: string }> }) {
   const { seal } = await params;
   const config = getConfig();
   const db = await getDb();
-  // a vendor's @handle is what the list shows beside the name, so it works as an address here too (it leads to the Seal's own page)
   if (!/^0x[0-9a-fA-F]{40}$/.test(seal)) {
     const handle = decodeURIComponent(seal).replace(/^@/, "").toLowerCase();
     const [found] = await db.select({ address: sealsTable.address }).from(sealsTable).where(eq(sealsTable.handle, handle)).limit(1);
     if (!found) notFound();
     redirect(`/business/vendors/${found.address}`);
   }
-  let vendor;
-  try {
-    vendor = await vendorDetail(db, getClient(), config.deployment, session.user, business.id, seal);
-  } catch (error) {
-    if (error instanceof AuthError && error.status === 404) notFound();
-    throw error;
+  const client = getClient();
+  const [vendorResult, requests, budgetsData] = await Promise.all([
+    vendorDetail(db, client, config.deployment, session.user, business.id, seal).then((vendor) => ({ ok: true as const, vendor }), (error: unknown) => ({ ok: false as const, error })),
+    db.select().from(vendorRequests).where(and(eq(vendorRequests.businessId, business.id), eq(vendorRequests.seal, seal.toLowerCase()))).orderBy(desc(vendorRequests.createdAt)),
+    listBudgets(db, client, config.deployment, session.user, business.id).catch(() => null),
+  ]);
+  if (!vendorResult.ok) {
+    if (vendorResult.error instanceof AuthError && vendorResult.error.status === 404) notFound();
+    throw vendorResult.error;
   }
-  const requests = await db
-    .select()
-    .from(vendorRequests)
-    .where(and(eq(vendorRequests.businessId, business.id), eq(vendorRequests.seal, seal.toLowerCase())))
-    .orderBy(desc(vendorRequests.createdAt));
-
+  const vendor = vendorResult.vendor;
   const isBlocked = vendor.status === "blocked";
   const mayVerify = business.role === "owner" || business.role === "approver";
   const signer = signerPlanFor(session, config);
-  const budgetsData = await listBudgets(db, getClient(), config.deployment, session.user, business.id).catch(() => null);
 
-  return <Shell where={where} current={{ kind: "business", id: business.id }}>
+  return (
     <article>
       <Link href="/business/vendors" className="text-sm underline decoration-rule underline-offset-4">← Vendors</Link>
       <Eyebrow className="mt-8">{business.name} · Vendor record</Eyebrow>
@@ -175,5 +183,5 @@ export default async function BusinessVendorDetailPage({ params }: { params: Pro
         {business.role === "owner" || business.role === "approver" ? <div className="mt-3"><ManageVendorBlock businessId={business.id} seal={vendor.seal} blocked={isBlocked} canUnblock={business.role === "owner"} /></div> : <p className="mt-3 text-sm text-graphite">An owner or approver manages the blocked state.</p>}
       </section>
     </article>
-  </Shell>;
+  );
 }

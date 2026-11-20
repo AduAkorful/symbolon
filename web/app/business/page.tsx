@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { arcChain } from "@symbolon/chain";
 import { erc20Abi, formatUnits } from "viem";
 import { Shell } from "@/components/shell/Shell";
@@ -20,6 +21,9 @@ import { Money } from "@/components/ui/Money";
 import { Callout } from "@/components/ui/Callout";
 import { listBudgets } from "@/lib/server/budgets";
 import { Eyebrow, PageTitle } from "@/components/ui/Type";
+import { Skeleton } from "@/components/Skeleton";
+import type { CurrentSession } from "@/lib/server/http";
+import type { Where } from "@/lib/server/space";
 
 export const dynamic = "force-dynamic";
 
@@ -27,13 +31,54 @@ export const dynamic = "force-dynamic";
 export default async function BusinessHome() {
   const session = await requirePageSession("/business");
   const where = await loadSpaces(session);
-  const config = getConfig();
   const b = where.business;
+
+  return (
+    <Shell where={where} current={{ kind: "business", id: b?.id ?? "" }}>
+      {b ? (
+        <div>
+          <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+            <div className="min-w-0">
+              <Eyebrow className="capitalize">{b.role}</Eyebrow>
+              <PageTitle className="mt-1">{b.name}</PageTitle>
+            </div>
+            <LinkButton href="/business/vendors" variant="secondary">Manage vendors</LinkButton>
+          </div>
+          <Suspense fallback={<HomeLoading vault={Boolean(b.vault)} />}>
+            <HomeBody session={session} business={b} />
+          </Suspense>
+        </div>
+      ) : (
+        <div>
+          <PageTitle>No business yet</PageTitle>
+          <p className="mt-2 text-graphite">
+            You don’t belong to a business.{" "}
+            <Link href="/setup" className="text-ink underline decoration-rule underline-offset-4">
+              Set up a business
+            </Link>
+            .
+          </p>
+        </div>
+      )}
+    </Shell>
+  );
+}
+
+function HomeLoading({ vault }: { vault: boolean }) {
+  if (!vault) return null;
+  return (
+    <div className="mt-8 space-y-4" aria-busy="true" aria-label="Loading the Vault">
+      <Skeleton className="h-36 w-full rounded-doc" />
+      <Skeleton className="h-24 w-full rounded-doc" />
+    </div>
+  );
+}
+
+async function HomeBody({ session, business: b }: { session: CurrentSession; business: NonNullable<Where["business"]> }) {
+  const config = getConfig();
   const explorer = arcChain(config.chainId).blockExplorers!.default.url;
   const client = getClient();
   const db = await getDb();
-  // Everything the page needs is asked for together: the reads share one round trip to Arc and the loaders overlap, instead of
-  // each waiting for the one before
   const [summary, eurcHeld, operatingCap, vaultState, needsYou, today, ahead] = await Promise.all([
     b?.vault ? readVaultSummary(client, config.deployment, b.vault) : null,
     // EURC beside USDC: a failed read is "can't confirm", never zero (QA SYM-40)
@@ -66,17 +111,7 @@ export default async function BusinessHome() {
   const ownerSigner = b?.role === "owner" ? signerPlanFor(session, config) : null;
 
   return (
-    <Shell where={where} current={{ kind: "business", id: b?.id ?? "" }}>
-      {b ? (
-        <div>
-          <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-            <div className="min-w-0">
-              <Eyebrow className="capitalize">{b.role}</Eyebrow>
-              <PageTitle className="mt-1">{b.name}</PageTitle>
-            </div>
-            <LinkButton href="/business/vendors" variant="secondary">Manage vendors</LinkButton>
-          </div>
-
+    <>
           <dl className="mt-8 divide-y divide-rule-soft rounded-doc border border-rule px-5 text-sm">
             <div className="grid gap-1 py-3.5 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
               <dt className="text-graphite">Vault</dt>
@@ -182,19 +217,6 @@ export default async function BusinessHome() {
           {needsYou && today ? (
             <HomeQueues needsYou={needsYou} today={today} ahead={ahead ?? undefined} />
           ) : null}
-        </div>
-      ) : (
-        <div>
-          <PageTitle>No business yet</PageTitle>
-          <p className="mt-2 text-graphite">
-            You don’t belong to a business.{" "}
-            <Link href="/setup" className="text-ink underline decoration-rule underline-offset-4">
-              Set up a business
-            </Link>
-            .
-          </p>
-        </div>
-      )}
-    </Shell>
+    </>
   );
 }

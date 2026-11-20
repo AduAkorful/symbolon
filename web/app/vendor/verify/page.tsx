@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { Shell } from "@/components/shell/Shell";
 import { getDb } from "@/lib/server/db";
 import { requirePageSession } from "@/lib/server/http";
@@ -7,16 +8,25 @@ import { formatDateTime } from "@/lib/format";
 import { Address } from "@/components/Address";
 import { EmptyState } from "@/components/ui/States";
 import { Lead, PageTitle } from "@/components/ui/Type";
+import { PageLoading } from "@/components/ui/PageLoading";
 
 export const dynamic = "force-dynamic";
 
 export default async function VendorVerificationPage() {
   const session = await requirePageSession("/vendor/verify");
-  const db = await getDb();
-  const where = await loadSpaces(session);
-  const requests = await showCodeToSeal(db, session.user);
+  const where = await loadSpaces(session, { warmVault: false });
   return (
     <Shell where={where} current={{ kind: "vendor" }}>
+      <Suspense fallback={<PageLoading title="First-contact checks" shape="list" />}>
+        <VerificationList session={session} />
+      </Suspense>
+    </Shell>
+  );
+}
+
+async function VerificationList({ session }: { session: Awaited<ReturnType<typeof requirePageSession>> }) {
+  const requests = await showCodeToSeal(await getDb(), session.user);
+  return (
       <div>
         <PageTitle>First-contact checks</PageTitle>
         <Lead className="mt-3">A business may call you on a number or channel it already trusts. Read it the code below. Never share a code with someone who contacted you unexpectedly.</Lead>
@@ -38,6 +48,5 @@ export default async function VendorVerificationPage() {
           <EmptyState title="No checks waiting" className="mt-8">When a business wants to verify you by phone, the code to read out shows up here.</EmptyState>
         )}
       </div>
-    </Shell>
   );
 }

@@ -13,7 +13,7 @@ import { getDb } from "@/lib/server/db";
 import { requirePageSession } from "@/lib/server/http";
 import { signerPlanFor } from "@/lib/server/signer-plan";
 import { loadSpaces } from "@/lib/server/space";
-import { businessOffers } from "@/lib/server/offers";
+import { businessOffersFor } from "@/lib/server/offers";
 import { PageLoading } from "@/components/ui/PageLoading";
 
 export const dynamic = "force-dynamic";
@@ -42,7 +42,7 @@ async function ApprovalsContent({ session, businessId }: { session: Awaited<Retu
   const config = getConfig();
 
   const data = await listApprovals(db, client, config, session.user, businessId);
-  const offerViews = Object.fromEntries(await Promise.all(data.items.map(async (item) => [item.fingerprint, await businessOffers(db, session.user, businessId, item.fingerprint)])));
+  const offerViews = await businessOffersFor(db, session.user, businessId, data.items.map((item) => item.fingerprint));
   const signerPlan = signerPlanFor(session, config);
   const explorerUrl = arcChain(config.chainId).blockExplorers!.default.url;
 

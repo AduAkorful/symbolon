@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { getAddress } from "viem";
 
 import { Address } from "@/components/Address";
 import { ReleaseNotesBody } from "@/components/settings/ReleaseNotesBody";
 import { Shell } from "@/components/shell/Shell";
+import { PageLoading } from "@/components/ui/PageLoading";
 import { Callout } from "@/components/ui/Callout";
 import { EmptyState } from "@/components/ui/States";
 import { StatusPill } from "@/components/ui/StatusPill";
@@ -23,8 +25,17 @@ export default async function ReleaseHistoryPage() {
   const where = await loadSpaces(session);
   const business = where.business;
   if (!business) notFound();
-  const config = getConfig();
+  return (
+    <Shell where={where} current={{ kind: "business", id: business.id }}>
+      <Suspense fallback={<PageLoading title="Vault releases" shape="list" />}>
+        <ReleaseHistory business={business} />
+      </Suspense>
+    </Shell>
+  );
+}
 
+async function ReleaseHistory({ business }: { business: NonNullable<Awaited<ReturnType<typeof loadSpaces>>["business"]> }) {
+  const config = getConfig();
   let history: Awaited<ReturnType<typeof loadReleaseHistory>> | null = null;
   try {
     history = await loadReleaseHistory(getClient(), config.deployment, business.vault ? getAddress(business.vault) : null);
@@ -32,9 +43,7 @@ export default async function ReleaseHistoryPage() {
     history = null;
   }
   const explorer = config.deployment.explorer;
-
   return (
-    <Shell where={where} current={{ kind: "business", id: business.id }}>
       <div className="max-w-3xl">
         <Link href="/business/settings" className="text-sm text-graphite underline decoration-rule underline-offset-4 hover:text-ink">
           Back to settings
@@ -82,6 +91,5 @@ export default async function ReleaseHistoryPage() {
           </ol>
         )}
       </div>
-    </Shell>
   );
 }

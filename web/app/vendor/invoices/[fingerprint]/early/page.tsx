@@ -21,11 +21,12 @@ export default async function VendorInvoiceEarlyPage({
   const db = await getDb();
   const config = getConfig();
 
-  const found = await myInvoice(db, session.user, fingerprint);
+  const [found, offers, suggested] = await Promise.all([
+    myInvoice(db, session.user, fingerprint),
+    listOffersForInvoice(db, fingerprint),
+    suggestedDiscount(db, seal.address),
+  ]);
   if (!found) notFound();
-
-  const offers = await listOffersForInvoice(db, fingerprint);
-  const suggested = await suggestedDiscount(db, seal.address);
   const signer = signerPlanFor(session, config);
 
   const due = new Date(found.sealed.document.dueDate * 1000);
