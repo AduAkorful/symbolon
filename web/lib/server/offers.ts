@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, lt } from "drizzle-orm";
+import { and, desc, eq, inArray, lt } from "drizzle-orm";
 import { getAddress, type Address, type Hex, type PublicClient } from "viem";
 
 import { symbolonContracts } from "@symbolon/chain";
@@ -326,15 +326,75 @@ export async function declineOffer(
 }
 
 export async function businessOffers(db: Database, user: Pick<SessionUser, "id">, businessId: string, fingerprint: string) {
-  const member = await requireMember(db, user.id, businessId);
-  const [invoice] = await db.select().from(invoices).where(and(eq(invoices.businessId, businessId), eq(invoices.fingerprint, fingerprint.toLowerCase())));
+  const [member, invoiceRows] = await Promise.all([
+    requireMember(db, user.id, businessId),
+    db.select().from(invoices).where(and(eq(invoices.businessId, businessId), eq(invoices.fingerprint, fingerprint.toLowerCase()))).limit(1),
+  ]);
+  const invoice = invoiceRows[0];
   if (!invoice) throw new AuthError(404, "Invoice not found.");
-  const offers = await listOffersForInvoice(db, invoice.fingerprint);
-  const [recommendation] = await db.select().from(decisions).where(and(eq(decisions.businessId, businessId), eq(decisions.subject, invoice.fingerprint), eq(decisions.kind, "counter_recommended"))).orderBy(desc(decisions.createdAt)).limit(1);
+  const [offers, recommendationRows] = await Promise.all([
+    listOffersForInvoice(db, invoice.fingerprint),
+    db.select().from(decisions).where(and(eq(decisions.businessId, businessId), eq(decisions.subject, invoice.fingerprint), eq(decisions.kind, "counter_recommended"))).orderBy(desc(decisions.createdAt)).limit(1),
+  ]);
+  const recommendation = recommendationRows[0];
   const inputs = recommendation?.record.inputs as { discountBps?: number; validUntil?: string } | undefined;
   const counter = inputs?.discountBps && inputs.validUntil && BigInt(inputs.validUntil) > BigInt(Math.floor(Date.now() / 1000)) && !offers.some((o) => o.isCounter)
     ? { discountBps: inputs.discountBps, validUntil: inputs.validUntil } : null;
   return { offers, counter, canAct: member.role === "owner" || member.role === "approver", remaining: (invoice.total - invoice.credited).toString() };
+}
+
+/** The same offer view as businessOffers, for every fingerprint, with one membership check and one expiry pass. */
+export async function businessOffersFor(db: Database, user: Pick<SessionUser, "id">, businessId: string, fingerprints: string[]) {
+  const member = await requireMember(db, user.id, businessId);
+  const canAct = member.role === "owner" || member.role === "approver";
+  const keys = [...new Set(fingerprints.map((fingerprint) => fingerprint.toLowerCase()))];
+  if (keys.length === 0) return {};
+  await expireOffers(db, new Date());
+  const now = new Date();
+  const [invoiceRows, offerRows, recommendationRows] = await Promise.all([
+    db.select().from(invoices).where(and(eq(invoices.businessId, businessId), inArray(invoices.fingerprint, keys))),
+    db.select().from(earlyPayOffers).where(inArray(earlyPayOffers.fingerprint, keys)).orderBy(desc(earlyPayOffers.createdAt)),
+    db.select().from(decisions).where(and(eq(decisions.businessId, businessId), inArray(decisions.subject, keys), eq(decisions.kind, "counter_recommended"))).orderBy(desc(decisions.createdAt)),
+  ]);
+  const invoicesByFingerprint = new Map(invoiceRows.map((row) => [row.fingerprint.toLowerCase(), row]));
+  const offersByFingerprint = new Map<string, OfferDisplay[]>();
+  for (const row of offerRows) {
+    const list = offersByFingerprint.get(row.fingerprint) ?? [];
+    list.push(displayOffer(row, now));
+    offersByFingerprint.set(row.fingerprint, list);
+  }
+  const recommendationBySubject = new Map<string, (typeof recommendationRows)[number]>();
+  for (const row of recommendationRows) if (row.subject && !recommendationBySubject.has(row.subject)) recommendationBySubject.set(row.subject, row);
+  const out: Record<string, { offers: OfferDisplay[]; counter: { discountBps: number; validUntil: string } | null; canAct: boolean; remaining: string }> = {};
+  for (const fingerprint of fingerprints) {
+    const invoice = invoicesByFingerprint.get(fingerprint.toLowerCase());
+    if (!invoice) throw new AuthError(404, "Invoice not found.");
+    const offers = offersByFingerprint.get(invoice.fingerprint) ?? [];
+    const recommendation = recommendationBySubject.get(invoice.fingerprint);
+    const inputs = recommendation?.record.inputs as { discountBps?: number; validUntil?: string } | undefined;
+    const counter = inputs?.discountBps && inputs.validUntil && BigInt(inputs.validUntil) > BigInt(Math.floor(Date.now() / 1000)) && !offers.some((offer) => offer.isCounter)
+      ? { discountBps: inputs.discountBps, validUntil: inputs.validUntil }
+      : null;
+    out[fingerprint] = { offers, counter, canAct, remaining: (invoice.total - invoice.credited).toString() };
+  }
+  return out;
+}
+
+function displayOffer(row: { id: string; fingerprint: string; discountBps: number; validUntil: Date; status: string; signature: string | null; createdAt: Date }, now: Date): OfferDisplay {
+  let status = row.status as OfferDisplay["status"];
+  if (status === "open" && row.validUntil < now) status = "expired";
+  return {
+    id: row.id,
+    fingerprint: row.fingerprint,
+    discountBps: row.discountBps,
+    discountPercent: (row.discountBps / 100).toFixed(2),
+    validUntil: row.validUntil.toISOString(),
+    validUntilEpoch: Math.floor(row.validUntil.getTime() / 1000),
+    status,
+    isCounter: row.status === "countered" || row.signature === null,
+    signature: row.signature,
+    createdAt: row.createdAt.toISOString(),
+  };
 }
 
 /** A person sends only a counter recomputed from current signed offers and live business controls. */
@@ -385,26 +445,7 @@ export async function listOffersForInvoice(
     .where(eq(earlyPayOffers.fingerprint, fingerprint))
     .orderBy(desc(earlyPayOffers.createdAt));
 
-  const now = new Date();
-
-  return rows.map((r) => {
-    let derivedStatus = r.status as OfferDisplay["status"];
-    if (derivedStatus === "open" && r.validUntil < now) {
-      derivedStatus = "expired";
-    }
-    return {
-      id: r.id,
-      fingerprint: r.fingerprint,
-      discountBps: r.discountBps,
-      discountPercent: (r.discountBps / 100).toFixed(2),
-      validUntil: r.validUntil.toISOString(),
-      validUntilEpoch: Math.floor(r.validUntil.getTime() / 1000),
-      status: derivedStatus,
-      isCounter: r.status === "countered" || r.signature === null,
-      signature: r.signature,
-      createdAt: r.createdAt.toISOString(),
-    };
-  });
+  return rows.map((row) => displayOffer(row, new Date()));
 }
 
 /**

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, gt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { erc20Abi, getAddress, type Hex, type PublicClient } from "viem";
 
 import { businesses, chainEvents, decisions, invoices, members, users, type Database } from "@symbolon/db";
@@ -104,28 +104,30 @@ export async function loadDecision(
     canonicalJson = JSON.stringify(rec, null, 2);
   }
 
-  // cash back from lending reads as that, not as a deposit, on its own page too (QA retest 18)
-  let summaryRec = rec;
-  if (row.kind === "deposit_confirmed" && row.txHash) {
-    const [redeemed] = await db
-      .select({ txHash: chainEvents.txHash })
-      .from(chainEvents)
-      .where(and(eq(chainEvents.txHash, row.txHash.toLowerCase() as Hex), eq(chainEvents.eventName, "LendingRedeemed")))
-      .limit(1);
-    if (redeemed) summaryRec = { ...rec, inputs: { ...((rec.inputs as Record<string, unknown> | undefined) ?? {}), fromLending: true } };
-  }
+  const subjectIsInvoice = Boolean(row.subject && /^0x[0-9a-fA-F]{64}$/.test(row.subject));
+  const venue = (rec.inputs as { venue?: unknown } | undefined)?.venue;
+  const venueAddress = typeof venue === "string" && /^0x[0-9a-fA-F]{40}$/.test(venue) ? getAddress(venue) : null;
+  const [redeemedRows, humanDecRows, txRows, anchor, newerRows, invRows, shareDecimals, subjectLabel] = await Promise.all([
+    row.kind === "deposit_confirmed" && row.txHash
+      ? db.select({ txHash: chainEvents.txHash }).from(chainEvents).where(and(eq(chainEvents.txHash, row.txHash.toLowerCase() as Hex), eq(chainEvents.eventName, "LendingRedeemed"))).limit(1)
+      : Promise.resolve([]),
+    db.select().from(decisions).where(and(eq(decisions.businessId, businessId), sql`(${decisions.record}->'inputs'->>'recommendation' = ${row.hash.toLowerCase()} or ${decisions.record}->>'recommendation' = ${row.hash.toLowerCase()})`)).orderBy(desc(decisions.createdAt)),
+    row.txHash
+      ? Promise.resolve([])
+      : db.select({ txHash: decisions.txHash, record: decisions.record }).from(decisions).where(and(eq(decisions.businessId, businessId), sql`(${decisions.supersedes} = ${row.id} or ${decisions.record}->'inputs'->>'decisionHash' = ${row.hash.toLowerCase()} or ${decisions.record}->>'decision' = ${row.hash.toLowerCase()})`)).limit(1),
+    anchorState(db, client, cfg, businessId, row.hash as Hex),
+    subjectIsInvoice
+      ? db.select({ id: decisions.id, createdAt: decisions.createdAt, record: decisions.record }).from(decisions).where(and(eq(decisions.businessId, businessId), eq(decisions.subject, row.subject!), gt(decisions.createdAt, row.createdAt))).orderBy(desc(decisions.createdAt)).limit(1)
+      : Promise.resolve([]),
+    subjectIsInvoice
+      ? db.select({ status: invoices.status, token: invoices.token }).from(invoices).where(and(eq(invoices.businessId, businessId), eq(invoices.fingerprint, row.subject!.toLowerCase() as Hex))).limit(1)
+      : Promise.resolve([]),
+    venueAddress ? client.readContract({ address: venueAddress, abi: erc20Abi, functionName: "decimals" }).then(Number).catch(() => undefined) : Promise.resolve(undefined),
+    subjectLabelFor(db, businessId, row.subject),
+  ]);
 
-  // Human responses linked to this recommendation (Decision A9)
-  const humanDecRows = await db
-    .select()
-    .from(decisions)
-    .where(
-      and(
-        eq(decisions.businessId, businessId),
-        sql`(${decisions.record}->'inputs'->>'recommendation' = ${row.hash.toLowerCase()} or ${decisions.record}->>'recommendation' = ${row.hash.toLowerCase()})`,
-      ),
-    )
-    .orderBy(desc(decisions.createdAt));
+  let summaryRec = rec;
+  if (redeemedRows[0]) summaryRec = { ...rec, inputs: { ...((rec.inputs as Record<string, unknown> | undefined) ?? {}), fromLending: true } };
 
   const humanResponses = humanDecRows.map((hr) => {
     const hrRec = (hr.record as Record<string, unknown>) ?? {};
@@ -138,72 +140,35 @@ export async function loadDecision(
     };
   });
 
-  // Find linked transaction: either in this record or a superseding decision
   let txHash: string | null = row.txHash ?? null;
-  if (!txHash) {
-    const [txDec] = await db
-      .select({ txHash: decisions.txHash, record: decisions.record })
-      .from(decisions)
-      .where(
-        and(
-          eq(decisions.businessId, businessId),
-          sql`(${decisions.supersedes} = ${row.id} or ${decisions.record}->'inputs'->>'decisionHash' = ${row.hash.toLowerCase()} or ${decisions.record}->>'decision' = ${row.hash.toLowerCase()})`,
-        ),
-      )
-      .limit(1);
-    if (txDec) {
-      txHash = txDec.txHash ?? ((txDec.record as any)?.inputs?.txHash as string) ?? null;
-    }
-  }
-
-  // a record that carries its own transaction (an owner's Pay now) shows it under "What happened" too (QA R25-5)
+  const txDec = txRows[0];
+  if (!txHash && txDec) txHash = txDec.txHash ?? ((txDec.record as { inputs?: { txHash?: string } } | null)?.inputs?.txHash ?? null);
   if (!txHash) {
     const own = (rec.inputs as { txHash?: unknown } | undefined)?.txHash ?? rec.txHash;
     if (typeof own === "string" && /^0x[0-9a-fA-F]{64}$/.test(own)) txHash = own;
   }
 
-  // Anchor status and proof (Decision A10)
-  const anchor = await anchorState(db, client, cfg, businessId, row.hash as Hex);
-
   let since: DecisionDetailView["since"] = null;
   let currency = "USDC";
-  if (row.subject && /^0x[0-9a-fA-F]{64}$/.test(row.subject)) {
-    const [newer] = await db
-      .select({ id: decisions.id, createdAt: decisions.createdAt, record: decisions.record })
-      .from(decisions)
-      .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, row.subject), gt(decisions.createdAt, row.createdAt)))
-      .orderBy(desc(decisions.createdAt))
-      .limit(1);
-    const [inv] = await db
-      .select({ status: invoices.status, token: invoices.token })
-      .from(invoices)
-      .where(and(eq(invoices.businessId, businessId), eq(invoices.fingerprint, row.subject.toLowerCase() as Hex)))
-      .limit(1);
+  if (subjectIsInvoice) {
+    const newer = newerRows[0];
+    const inv = invRows[0];
     if (inv?.token && inv.token.toLowerCase() === cfg.deployment.tokens.eurc.toLowerCase()) currency = "EURC";
     since = {
       newerId: newer?.id ?? null,
       newerAt: newer?.createdAt ?? null,
-      // QA STW-4: say what the later record is, so two records in the same minute aren't confusing
       newerSentence: newer ? summarizeDecision(newer.record as Record<string, unknown>, { currency }).sentence : null,
       invoiceStatus: inv?.status ?? null,
-      invoiceHref: inv ? `/business/inbox/${row.subject.toLowerCase()}` : null,
+      invoiceHref: inv ? `/business/inbox/${row.subject!.toLowerCase()}` : null,
     };
   }
 
-  // said in the invoice's own currency: "Paid €239.45" for an EURC invoice (QA R25-2)
   const summary = summarizeDecision(summaryRec, { currency });
 
   const ids = new Set<string>();
   const inputActor = (rec.inputs as { actor?: unknown } | undefined)?.actor;
   for (const a of [rec.actor, inputActor, ...humanResponses.map((h) => h.actor)]) if (typeof a === "string" && UUID.test(a)) ids.add(a);
   const people = await peopleLabels(db, businessId, user.id, [...ids]);
-
-  // a lending record's shares are in the venue's own decimals (an ERC-4626 vault is often 18, not USDC's 6)
-  let shareDecimals: number | undefined;
-  const venue = (rec.inputs as { venue?: unknown } | undefined)?.venue;
-  if (typeof venue === "string" && /^0x[0-9a-fA-F]{40}$/.test(venue)) {
-    shareDecimals = await client.readContract({ address: getAddress(venue), abi: erc20Abi, functionName: "decimals" }).then(Number).catch(() => undefined);
-  }
 
   const rawOptions = Array.isArray(rec.options) ? (rec.options as DecisionOptionView[]) : [];
 
@@ -213,7 +178,7 @@ export async function loadDecision(
     kind: row.kind,
     kindLabel: humanizeKind(row.kind),
     subject: row.subject,
-    subjectLabel: await subjectLabelFor(db, businessId, row.subject),
+    subjectLabel,
     hash: row.hash,
     hashMatches,
     canonicalJson,
@@ -240,13 +205,15 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** "You (wallet 0x645c…4E7b)", "Ama Owusu (owner, wallet 0xc81f…1CFb)": a person in a record, said the way the team page says them */
 async function peopleLabels(db: Database, businessId: string, viewer: string, ids: string[]): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
+  if (ids.length === 0) return out;
+  const rows = await db
+    .select({ id: users.id, displayName: users.displayName, wallet: users.wallet, role: members.role })
+    .from(users)
+    .leftJoin(members, and(eq(members.userId, users.id), eq(members.businessId, businessId)))
+    .where(inArray(users.id, ids));
+  const byId = new Map(rows.map((row) => [row.id, row]));
   for (const id of ids) {
-    const [row] = await db
-      .select({ displayName: users.displayName, wallet: users.wallet, role: members.role })
-      .from(users)
-      .leftJoin(members, and(eq(members.userId, users.id), eq(members.businessId, businessId)))
-      .where(eq(users.id, id))
-      .limit(1);
+    const row = byId.get(id);
     const wallet = row?.wallet ? `wallet ${shortHex(row.wallet)}` : "";
     if (id === viewer) out[id] = wallet ? `You (${row?.role ? `${row.role}, ` : ""}${wallet})` : "You";
     else if (row) {

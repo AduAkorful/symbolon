@@ -138,52 +138,44 @@ export function filterInbox(items: InboxItem[], filter: InboxFilter): InboxItem[
 
 export async function loadInvoiceDetail(db: Database, client: PublicClient, cfg: ChainSettings, user: Pick<SessionUser, "id">, businessId: string, fingerprint: string) {
   if (!HEX_HASH.test(fingerprint)) return null;
-  const business = await businessFor(db, cfg, user, businessId);
-  const [row] = await db.select().from(invoices).where(and(eq(invoices.businessId, businessId), eq(invoices.fingerprint, fingerprint))).limit(1);
+  const [business, invoiceRows] = await Promise.all([
+    businessFor(db, cfg, user, businessId),
+    db.select().from(invoices).where(and(eq(invoices.businessId, businessId), eq(invoices.fingerprint, fingerprint))).limit(1),
+  ]);
+  const row = invoiceRows[0];
   if (!row) return null;
-  const verification = await verifySealedInvoice(row.envelope, { client, expected: { chainId: cfg.chainId, ledger: cfg.deployment.contracts.invoiceLedger } });
-  const vendor = await db.select({ displayName: seals.displayName, legalName: seals.legalName, handle: seals.handle }).from(seals).where(eq(seals.address, row.seal)).limit(1);
+  const [verification, vendor, payeeRows, known, deliveryRows] = await Promise.all([
+    verifySealedInvoice(row.envelope, { client, expected: { chainId: cfg.chainId, ledger: cfg.deployment.contracts.invoiceLedger } }),
+    db.select({ displayName: seals.displayName, legalName: seals.legalName, handle: seals.handle }).from(seals).where(eq(seals.address, row.seal)).limit(1),
+    db.select({ status: payees.status }).from(payees).where(and(eq(payees.businessId, businessId), eq(payees.seal, row.seal))).limit(1),
+    duplicateCandidates(db, businessId, row.seal, row.fingerprint),
+    db.select({ state: deliveries.state, reason: deliveries.reason, txHash: deliveries.txHash }).from(deliveries).where(and(eq(deliveries.businessId, businessId), eq(deliveries.fingerprint, fingerprint))).limit(1),
+  ]);
   if (!verification.invoice || !verification.document) return { row, verification, vendor: vendor[0] ?? null, evidence: evidenceFor({ verification, invoice: verification.invoice!, trust: "failed" }), ledger: undefined };
 
-  let ledger;
-  let facts;
-  try {
-    const contracts = symbolonContracts(client, cfg.deployment);
-    ledger = await invoiceStatus(contracts, row.fingerprint as Hex);
-    if (business.vault) facts = await readVaultFacts(contracts, client, getAddress(business.vault), verification.invoice, row.fingerprint as Hex);
-  } catch {
-    // The evidence builder turns missing chain facts into a blocking row.
-  }
-  const [payee] = await db.select({ status: payees.status }).from(payees).where(and(eq(payees.businessId, businessId), eq(payees.seal, row.seal))).limit(1);
+  const payee = payeeRows[0];
   const trust: TrustState = payee?.status === "blocked" ? "blocked" : payee?.status === "verified" ? "verified" : "new_vendor";
-  const known = await duplicateCandidates(db, businessId, row.seal, row.fingerprint);
   const duplicates = findDuplicates(
     { fingerprint: row.fingerprint as Hex, seal: row.seal, invoiceNumber: row.invoiceNumber, amount: row.total, token: row.token, issuedAt: BigInt(Math.floor((row.issuedAt ?? row.receivedAt).getTime() / 1000)) },
     known.map((x) => ({ fingerprint: x.fingerprint as Hex, seal: x.seal, invoiceNumber: x.invoiceNumber, amount: x.total, token: x.token, issuedAt: BigInt(Math.floor((x.issuedAt ?? x.receivedAt).getTime() / 1000)) })),
   );
+  const contracts = symbolonContracts(client, cfg.deployment);
+  const wantsPo = Boolean(verification.invoice.poRef && verification.invoice.poRef !== `0x${"00".repeat(32)}`);
+  const [ledger, facts, poRows] = await Promise.all([
+    invoiceStatus(contracts, row.fingerprint as Hex).then((value) => value, () => undefined),
+    business.vault ? readVaultFacts(contracts, client, getAddress(business.vault), verification.invoice, row.fingerprint as Hex).then((value) => value, () => undefined) : Promise.resolve(undefined),
+    wantsPo ? db.select().from(purchaseOrders).where(and(eq(purchaseOrders.businessId, businessId), eq(purchaseOrders.poRef, verification.invoice.poRef))).limit(1) : Promise.resolve([]),
+  ]);
   const match = facts ? matchInvoice(verification.invoice, facts.payee?.terms, facts.purchaseOrder, facts.deliveryConfirmed, facts.now) : undefined;
-
-  // N11: load DB delivery and PO rows to enrich evidence
-  const [dbDelivery] = await db
-    .select({ state: deliveries.state, reason: deliveries.reason, txHash: deliveries.txHash })
-    .from(deliveries)
-    .where(and(eq(deliveries.businessId, businessId), eq(deliveries.fingerprint, fingerprint)))
-    .limit(1);
+  const poRow = poRows[0];
   let dbPo: import("./match-view").MatchViewInput["dbPo"] | undefined;
-  if (verification.invoice.poRef && verification.invoice.poRef !== `0x${"00".repeat(32)}`) {
-    const [poRow] = await db
-      .select()
-      .from(purchaseOrders)
-      .where(and(eq(purchaseOrders.businessId, businessId), eq(purchaseOrders.poRef, verification.invoice.poRef)))
-      .limit(1);
-    if (poRow) {
-      dbPo = business.vault
-        ? await livePurchaseOrderEvidence(symbolonContracts(client, cfg.deployment), business.vault, verification.invoice.poRef as Hex, poRow)
-        : { poNumber: poRow.poNumber, open: false, remainingRaw: null, releaseAfter: poRow.releaseAfter ?? null, openTx: poRow.openTx ?? null, closedAt: poRow.closedAt ?? null };
-    }
+  if (poRow) {
+    dbPo = business.vault
+      ? await livePurchaseOrderEvidence(contracts, business.vault, verification.invoice.poRef as Hex, poRow)
+      : { poNumber: poRow.poNumber, open: false, remainingRaw: null, releaseAfter: poRow.releaseAfter ?? null, openTx: poRow.openTx ?? null, closedAt: poRow.closedAt ?? null };
   }
 
-  return { row, verification, vendor: vendor[0] ?? null, ledger, evidence: evidenceFor({ verification, invoice: verification.invoice, trust, facts, ledger, match, duplicates, dbDelivery: dbDelivery ?? undefined, dbPo }), trust, facts, holdSource: row.holdSource };
+  return { row, verification, vendor: vendor[0] ?? null, ledger, evidence: evidenceFor({ verification, invoice: verification.invoice, trust, facts, ledger, match, duplicates, dbDelivery: deliveryRows[0], dbPo }), trust, facts, holdSource: row.holdSource };
 }
 
 

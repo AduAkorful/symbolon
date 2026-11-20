@@ -278,30 +278,53 @@ export async function listApprovals(
   if (!biz) throw new AuthError(404, "That business doesn't exist.");
   if (!biz.vault) throw new AuthError(409, "This business doesn't have a Vault yet.");
 
-  const [dbUser] = await db.select({ wallet: seals.address }).from(seals).where(eq(seals.userId, user.id)).limit(1);
-  const [callerUser] = await db.select({ wallet: users.wallet }).from(users).where(eq(users.id, user.id)).limit(1);
-  // Read user's primary wallet
-  const userWallet = callerUser?.wallet?.toLowerCase() ?? dbUser?.wallet?.toLowerCase() ?? null;
-
   const vault = getAddress(biz.vault);
   const contracts = symbolonContracts(client, cfg.deployment);
+  // The wallet, the waiting invoices, and the Vault's owner are independent, so they go out together.
+  const [sealRows, userRows, rows, settled] = await Promise.all([
+    db.select({ wallet: seals.address }).from(seals).where(eq(seals.userId, user.id)).limit(1),
+    db.select({ wallet: users.wallet }).from(users).where(eq(users.id, user.id)).limit(1),
+    db.select().from(invoices).where(and(eq(invoices.businessId, businessId), eq(invoices.status, "awaiting_approval"))).orderBy(desc(invoices.receivedAt)),
+    Promise.allSettled([contracts.lens.read.getVaultState([vault]), client.getBlock()]),
+  ]);
+  const dbUser = sealRows[0];
+  const callerUser = userRows[0];
+  const userWallet = callerUser?.wallet?.toLowerCase() ?? dbUser?.wallet?.toLowerCase() ?? null;
+  const [ownerRead, blockRead] = settled;
   let vaultOwner: Address | null = null;
-  // One block for the whole list, read alongside the owner: each card then reads the Vault at that block instead of fetching its own
-  const [ownerRead, blockRead] = await Promise.allSettled([contracts.lens.read.getVaultState([vault]), client.getBlock()]);
   if (ownerRead.status === "fulfilled") vaultOwner = ownerRead.value.owner;
-  // Lens read best effort
   const at = blockRead.status === "fulfilled" ? { number: blockRead.value.number, timestamp: blockRead.value.timestamp } : undefined;
-
   const isVaultOwner = userWallet && vaultOwner && userWallet.toLowerCase() === vaultOwner.toLowerCase();
 
-  // Load awaiting_approval invoices
-  const rows = await db
-    .select()
-    .from(invoices)
-    .where(and(eq(invoices.businessId, businessId), eq(invoices.status, "awaiting_approval")))
-    .orderBy(desc(invoices.receivedAt));
+  const sealList = [...new Set(rows.map((row) => row.seal))];
+  const fingerprints = rows.map((row) => row.fingerprint.toLowerCase());
+  const [payeeRows, decisionRows, deliveryRows] = await Promise.all([
+    sealList.length ? db.select({ seal: payees.seal, status: payees.status }).from(payees).where(and(eq(payees.businessId, businessId), inArray(payees.seal, sealList))) : [],
+    fingerprints.length
+      ? db.selectDistinctOn([decisions.subject], { subject: decisions.subject, record: decisions.record }).from(decisions).where(and(eq(decisions.businessId, businessId), inArray(decisions.subject, fingerprints))).orderBy(decisions.subject, desc(decisions.createdAt))
+      : [],
+    rows.length
+      ? db.select({ fingerprint: deliveries.fingerprint, state: deliveries.state, reason: deliveries.reason, txHash: deliveries.txHash }).from(deliveries).where(and(eq(deliveries.businessId, businessId), inArray(deliveries.fingerprint, rows.map((row) => row.fingerprint))))
+      : [],
+  ]);
+  const payeeStatus = new Map(payeeRows.map((row) => [row.seal, row.status]));
+  const decisionBySubject = new Map(decisionRows.flatMap((row) => (row.subject ? [[row.subject, row] as const] : [])));
+  const deliveryByFingerprint = new Map<string, (typeof deliveryRows)[number]>();
+  for (const row of deliveryRows) if (!deliveryByFingerprint.has(row.fingerprint)) deliveryByFingerprint.set(row.fingerprint, row);
 
   // Each invoice reads the chain on its own; one after another, a long list would wait for the sum of every read
+  const { humanResponseAgreement } = await import("@symbolon/core");
+  const recentPromise = db
+    .select()
+    .from(decisions)
+    .where(and(eq(decisions.businessId, businessId), inArray(decisions.kind, ["approval_granted", "approval_rejected"])))
+    .orderBy(desc(decisions.createdAt))
+    .limit(10);
+  const metricPromise = humanResponseAgreement(db, businessId);
+  const notYetPromise = loadNotYetApprovable(db, businessId, {
+    autoMode: biz.stewardMode === "auto",
+    canApprove: Boolean(userWallet && (member.role === "owner" || member.role === "approver")),
+  });
   const items: ApprovalItem[] = await Promise.all(rows.map(async (row): Promise<ApprovalItem> => {
     let doc: any = null;
     let inv: any = null;
@@ -317,21 +340,9 @@ export async function listApprovals(
       // verification failed
     }
 
-    const [payeeRow] = await db
-      .select({ status: payees.status })
-      .from(payees)
-      .where(and(eq(payees.businessId, businessId), eq(payees.seal, row.seal)))
-      .limit(1);
-
-    const trust = payeeRow?.status === "blocked" ? "blocked" : payeeRow?.status === "verified" ? "verified" : "new_vendor";
-
-    // Load latest decision for this invoice
-    const [latestDec] = await db
-      .select()
-      .from(decisions)
-      .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, row.fingerprint.toLowerCase())))
-      .orderBy(desc(decisions.createdAt))
-      .limit(1);
+    const payeeState = payeeStatus.get(row.seal);
+    const trust = payeeState === "blocked" ? "blocked" : payeeState === "verified" ? "verified" : "new_vendor";
+    const latestDec = decisionBySubject.get(row.fingerprint.toLowerCase());
 
     const decRecord = (latestDec?.record as Record<string, unknown>) ?? {};
     // with no decision on file there is nothing to summarise; say so instead of describing an empty record
@@ -352,11 +363,7 @@ export async function listApprovals(
       // best effort
     }
 
-    const [dbDelivery] = await db
-      .select({ state: deliveries.state, reason: deliveries.reason, txHash: deliveries.txHash })
-      .from(deliveries)
-      .where(and(eq(deliveries.businessId, businessId), eq(deliveries.fingerprint, row.fingerprint)))
-      .limit(1);
+    const dbDelivery = deliveryByFingerprint.get(row.fingerprint);
 
     let dbPo: any = undefined;
     if (inv?.poRef && inv.poRef !== ZERO32) {
@@ -413,18 +420,7 @@ export async function listApprovals(
     };
   }));
 
-  // Load recent answers (granted or rejected)
-  const recentDecRows = await db
-    .select()
-    .from(decisions)
-    .where(
-      and(
-        eq(decisions.businessId, businessId),
-        inArray(decisions.kind, ["approval_granted", "approval_rejected"]),
-      ),
-    )
-    .orderBy(desc(decisions.createdAt))
-    .limit(10);
+  const [recentDecRows, metric, notYetApprovable] = await Promise.all([recentPromise, metricPromise, notYetPromise]);
 
   const recentAnswers: RecentAnswer[] = recentDecRows.map((r) => {
     const rec = (r.record as Record<string, unknown>) ?? {};
@@ -439,18 +435,10 @@ export async function listApprovals(
     };
   });
 
-  // Calculate human metric from latest linked eligible responses (Decision A7).
-  const { humanResponseAgreement } = await import("@symbolon/core");
-  const metric = await humanResponseAgreement(db, businessId);
   const humanMetric: HumanResponseMetric | null = metric.total > 0 ? {
     ...metric,
     text: `You agreed with ${metric.agreed} of ${metric.total} recommendations`,
   } : null;
-
-  const notYetApprovable = await loadNotYetApprovable(db, businessId, {
-    autoMode: biz.stewardMode === "auto",
-    canApprove: Boolean(userWallet && (member.role === "owner" || member.role === "approver")),
-  });
 
   return {
     items,

@@ -211,7 +211,8 @@ export async function myInvoice(db: Database, user: Pick<SessionUser, "id">, fin
   const [r] = await db.select().from(invoices).where(and(eq(invoices.fingerprint, fingerprint), eq(invoices.seal, seal.address))).limit(1);
   if (!r) return null;
   try {
-    return { row: r, sealed: decodeSealedInvoice(r.envelope), encoded: encodeSealedInvoice(decodeSealedInvoice(r.envelope)) };
+    const sealed = decodeSealedInvoice(r.envelope);
+    return { row: r, sealed, encoded: encodeSealedInvoice(sealed) };
   } catch {
     return null;
   }
