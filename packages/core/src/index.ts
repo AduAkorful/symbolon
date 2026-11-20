@@ -26,3 +26,8 @@ export * from "./counter-lifecycle.js";
 export * from "./telegram-link.js";
 export * from "./avatar.js";
 export * from "./actor-by.js";
+export * from "./vault-block.js";
+export * from "./deposits.js";
+export * from "./inbox-mirror.js";
+export * from "./payee-active.js";
+export * from "./due-notices.js";

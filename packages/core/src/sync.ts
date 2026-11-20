@@ -14,6 +14,15 @@ const LEDGER_EVENTS = [
 
 const json = (v: unknown) => JSON.parse(JSON.stringify(v, (_k, x: unknown) => (typeof x === "bigint" ? x.toString() : x)));
 
+export function ledgerCursorKey(chainId: number, ledger: string): string {
+  return `ledger:${chainId}:${ledger.toLowerCase()}`;
+}
+
+/** The chain head the worker last saw, stored beside the ledger cursor so pages can say the mirror is behind without scanning. */
+export function ledgerHeadKey(chainId: number, ledger: string): string {
+  return `ledger-head:${chainId}:${ledger.toLowerCase()}`;
+}
+
 export interface SyncReport {
   from: bigint;
   to: bigint;
@@ -114,7 +123,7 @@ export async function syncLedger(
   deployment: Deployment,
   opts: { toBlock?: bigint; maxBlocks?: bigint; deadline?: number } = {},
 ): Promise<SyncReport> {
-  const key = `ledger:${deployment.chainId}:${deployment.contracts.invoiceLedger.toLowerCase()}`;
+  const key = ledgerCursorKey(deployment.chainId, deployment.contracts.invoiceLedger);
   const [cursor] = await db.select().from(syncCursors).where(eq(syncCursors.key, key));
   const head = opts.toBlock ?? (await client.getBlockNumber());
   let from: bigint;
