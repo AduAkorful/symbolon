@@ -13,8 +13,6 @@ services:
     numInstances: 1
     healthCheckPath: /health
     autoDeployTrigger: commit
-    # A tick can still be in a scan when Render sends SIGTERM. 30s is not enough.
-    maxShutdownDelaySeconds: 180
     buildCommand: npm install -g pnpm@10.33.2 && pnpm install --frozen-lockfile && pnpm --filter "@symbolon/worker..." build
     startCommand: node services/worker/dist/index.js
     buildFilter:
