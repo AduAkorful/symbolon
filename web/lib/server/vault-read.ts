@@ -10,6 +10,15 @@ export type VaultSummary =
  * The Vault's USDC balance at one block. A failed read is a failed read the screen names; it is never shown as zero. Within one page
  * request every caller with the same arguments shares one read (React's request-scoped `cache`; outside a request it is a plain call).
  */
+/** One balance read per token and holder within a request, shared by the home figures and the Ahead summary. A failed read is null. */
+export const readErc20Balance = cache(async (client: PublicClient, token: `0x${string}`, holder: string): Promise<bigint | null> => {
+  try {
+    return await client.readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [getAddress(holder)] });
+  } catch {
+    return null;
+  }
+});
+
 export const readVaultSummary = cache(async (client: PublicClient, deployment: Deployment, vault: string): Promise<VaultSummary> => {
   try {
     const token = deployment.tokens.usdc;

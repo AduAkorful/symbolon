@@ -7,7 +7,7 @@ import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
 import { requirePageSession } from "@/lib/server/http";
 import { loadSpaces } from "@/lib/server/space";
-import { pauseStateOf, readVaultState, readVaultSummary, stewardStanding } from "@/lib/server/vault-read";
+import { pauseStateOf, readErc20Balance, readVaultState, readVaultSummary, stewardStanding } from "@/lib/server/vault-read";
 import { signerPlanFor } from "@/lib/server/signer-plan";
 import { Address } from "@/components/Address";
 import { PauseControl } from "@/components/steward/PauseControl";
@@ -41,9 +41,10 @@ export default async function BusinessHome() {
       ? (async () => {
           const token = config.deployment.tokens.eurc;
           const [raw, decimals] = await Promise.all([
-            client.readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [b.vault as `0x${string}`] }),
+            readErc20Balance(client, token, b.vault as `0x${string}`),
             client.readContract({ address: token, abi: erc20Abi, functionName: "decimals" }),
           ]);
+          if (raw === null) throw new Error("unread");
           return formatUnits(raw, decimals);
         })().catch(() => null)
       : null,

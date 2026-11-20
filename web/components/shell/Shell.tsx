@@ -1,13 +1,13 @@
 import { BuildId } from "@/components/shell/BuildId";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { Wordmark } from "@/components/Marks";
 import { PrivyBoundary } from "@/components/providers/PrivyBoundary";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/db";
 import { getSession } from "@/lib/server/http";
 import type { Where } from "@/lib/server/space";
-import { loadNavCounts, type NavCounts } from "@/lib/server/nav-counts";
+import { loadNavCounts } from "@/lib/server/nav-counts";
 
 import { buttonClass } from "@/components/ui/button";
 
@@ -43,7 +43,7 @@ export async function Shell(props: {
   );
 }
 
-async function Frame({
+function Frame({
   where,
   current,
   children,
@@ -57,20 +57,7 @@ async function Frame({
   const config = getConfig();
   const testnet = config.testnet;
   const chain = <span className={pill}>{testnet ? "Arc testnet" : "Arc mainnet"}</span>;
-
-  let unreadCount = initialUnreadCount;
-  if (unreadCount === undefined) {
-    try {
-      const session = await getSession();
-      if (session) {
-        const db = await getDb();
-        unreadCount = await getUnreadNotificationCount(db, session.user.id);
-      }
-    } catch (e) {
-      console.error("unread notification count failed", e);
-      unreadCount = undefined;
-    }
-  }
+  const bell = <BellSlot initial={initialUnreadCount} />;
 
   if (current.kind === "vendor") {
     return (
@@ -88,7 +75,7 @@ async function Frame({
                   New invoice
                 </Link>
               ) : null}
-              <Bell unreadCount={unreadCount ?? 0} />
+              {bell}
               <SpaceSwitcher spaces={where.spaces} current={current} who={where.who} wallet={where.wallet} picture={where.picture} compact />
             </div>
           </div>
@@ -105,16 +92,6 @@ async function Frame({
     ? (where.business?.id === current.id ? where.business : where.spaces.businesses.find((b) => b.id === current.id))
     : where.business;
 
-  let navCounts: NavCounts | undefined;
-  if (biz?.id) {
-    try {
-      navCounts = await loadNavCounts(await getDb(), biz.id);
-    } catch (e) {
-      // the menu shows no number rather than a wrong one
-      console.error("navigation counts failed", e);
-    }
-  }
-
   return (
     <div className="relative min-h-screen lg:grid lg:grid-cols-[232px_minmax(0,1fr)]">
       {/* S13: red rule across the top while payments are paused; it arrives with the Vault read and is laid over the page, so it moves nothing */}
@@ -129,7 +106,13 @@ async function Frame({
             <SpaceSwitcher spaces={where.spaces} current={current} who={where.who} wallet={where.wallet} picture={where.picture} />
           </div>
         </div>
-        <BusinessNav inboxCount={navCounts?.inbox} approvalsCount={navCounts?.approvals} settingsDot={<ReleaseDotSlot biz={biz} />} />
+        {biz?.id ? (
+          <Suspense fallback={<BusinessNav settingsDot={<ReleaseDotSlot biz={biz} />} />}>
+            <NavWithCounts businessId={biz.id} biz={biz} />
+          </Suspense>
+        ) : (
+          <BusinessNav settingsDot={<ReleaseDotSlot biz={biz} />} />
+        )}
       </aside>
 
 
@@ -146,7 +129,7 @@ async function Frame({
             </Link>
             <PauseSlot biz={biz} />
             <span className="hidden md:inline-block">{chain}</span>
-            <Bell unreadCount={unreadCount ?? 0} />
+              {bell}
           </div>
          </div>
         </header>
@@ -160,4 +143,44 @@ async function Frame({
       </div>
     </div>
   );
+}
+
+function BellSlot({ initial }: { initial?: number }) {
+  if (initial !== undefined) return <Bell unreadCount={initial} />;
+  return (
+    <Suspense fallback={<Bell unreadCount={0} />}>
+      <UnreadBell />
+    </Suspense>
+  );
+}
+
+async function UnreadBell() {
+  let unreadCount = 0;
+  try {
+    const session = await getSession();
+    if (session) unreadCount = await getUnreadNotificationCount(await getDb(), session.user.id);
+  } catch (e) {
+    console.error("unread notification count failed", e);
+  }
+  return <Bell unreadCount={unreadCount} />;
+}
+
+async function NavWithCounts({
+  businessId,
+  biz,
+}: {
+  businessId: string;
+  biz: { id: string; vault: string | null; stewardWallet: string | null; stewardMode?: string | null; role: string };
+}) {
+  let inbox: number | undefined;
+  let approvals: number | undefined;
+  try {
+    const counts = await loadNavCounts(await getDb(), businessId);
+    inbox = counts.inbox;
+    approvals = counts.approvals;
+  } catch (e) {
+    // the menu shows no number rather than a wrong one
+    console.error("navigation counts failed", e);
+  }
+  return <BusinessNav inboxCount={inbox} approvalsCount={approvals} settingsDot={<ReleaseDotSlot biz={biz} />} />;
 }

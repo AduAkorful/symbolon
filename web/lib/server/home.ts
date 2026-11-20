@@ -2,7 +2,7 @@ import "server-only";
 
 import { notPreparedPayment } from "./prepared-payment";
 import { and, desc, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
-import { erc20Abi, getAddress, type PublicClient } from "viem";
+import { getAddress, type PublicClient } from "viem";
 
 import {
   businesses,
@@ -26,7 +26,7 @@ import { summarizeDecision } from "./decision-text";
 import { AuthError } from "./errors";
 import type { SessionUser } from "./session";
 import { feeBalance, type StewardConfig } from "./steward-runtime";
-import { readVaultState, stewardStanding } from "./vault-read";
+import { readErc20Balance, readVaultState, readVaultSummary, stewardStanding } from "./vault-read";
 
 const VIEW_ROLES: Role[] = ["owner", "approver", "requester", "viewer"];
 
@@ -212,6 +212,40 @@ async function loadWaitingOnYou(
   return { count: list.reduce((n, g) => n + g.invoices.length, 0), groups: list };
 }
 
+/** The latest recorded rule for each invoice, in one read. Missing means the caller supplies its own sentence. */
+async function latestRules(db: Database, businessId: string, subjects: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (subjects.length === 0) return map;
+  const rows = await db
+    .selectDistinctOn([decisions.subject], { subject: decisions.subject, record: decisions.record })
+    .from(decisions)
+    .where(and(eq(decisions.businessId, businessId), inArray(decisions.subject, subjects), notPreparedPayment))
+    .orderBy(decisions.subject, desc(decisions.createdAt));
+  for (const row of rows) {
+    if (!row.subject) continue;
+    const rule = (row.record as { rule?: unknown } | null)?.rule;
+    if (rule !== undefined && rule !== null) map.set(row.subject, String(rule));
+  }
+  return map;
+}
+
+function namedInvoice(row: { envelope: string; fingerprint: string; invoiceNumber: string | null }, problems: string[]) {
+  let vendorName = UNREADABLE_VENDOR;
+  let invoiceNumber = row.invoiceNumber ?? `${row.fingerprint.slice(0, 10)}…`;
+  let token = "";
+  let decimals = 6;
+  try {
+    const decoded = decodeSealedInvoice(row.envelope);
+    vendorName = decoded.document.vendor.name;
+    invoiceNumber = decoded.document.invoiceNumber;
+    token = decoded.document.currency.symbol;
+    decimals = decoded.document.currency.decimals;
+  } catch {
+    unreadable(problems, row.fingerprint);
+  }
+  return { vendorName, invoiceNumber, token, decimals };
+}
+
 /**
  * Loads the "Needs you" queue of items requiring human action (Decision A14).
  */
@@ -229,166 +263,89 @@ export async function loadNeedsYou(
 
   const problems: string[] = [];
 
-  // 1. Awaiting approval invoices (count + top 5)
-  const awaitingRows = await db
-    .select()
-    .from(invoices)
-    .where(and(eq(invoices.businessId, businessId), eq(invoices.status, "awaiting_approval")))
-    .orderBy(desc(invoices.receivedAt));
+  const [awaitingRows, stewardHeldRows, humanHeldRows, openBills, pendingVerifs, lastRunRows] = await Promise.all([
+    db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.businessId, businessId), eq(invoices.status, "awaiting_approval")))
+      .orderBy(desc(invoices.receivedAt)),
+    db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.businessId, businessId), eq(invoices.status, "held"), or(eq(invoices.holdSource, "steward"), isNull(invoices.holdSource))))
+      .orderBy(desc(invoices.receivedAt)),
+    db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.businessId, businessId), eq(invoices.status, "held"), eq(invoices.holdSource, "human")))
+      .orderBy(desc(invoices.receivedAt)),
+    db.select({ id: unsignedBills.id }).from(unsignedBills).where(and(eq(unsignedBills.businessId, businessId), eq(unsignedBills.status, "open"))),
+    db.select({ seal: payees.seal }).from(payees).where(and(eq(payees.businessId, businessId), eq(payees.status, "pending_verification"))),
+    db.select().from(stewardRuns).where(eq(stewardRuns.businessId, businessId)).orderBy(desc(stewardRuns.startedAt)).limit(1),
+  ]);
 
-  const topAwaiting: NeedsYouSummary["awaitingApproval"]["top"] = [];
-  for (const row of awaitingRows.slice(0, 5)) {
-    let vendorName = UNREADABLE_VENDOR;
-    let invoiceNumber = row.invoiceNumber ?? `${row.fingerprint.slice(0, 10)}…`;
-    let token = "";
-    let amountStr = "—";
-    try {
-      const decoded = decodeSealedInvoice(row.envelope);
-      vendorName = decoded.document.vendor.name;
-      invoiceNumber = decoded.document.invoiceNumber;
-      token = decoded.document.currency.symbol;
-      amountStr = formatAmount(row.total, decoded.document.currency.decimals);
-    } catch {
-      unreadable(problems, row.fingerprint);
-    }
+  const rules = await latestRules(db, businessId, [
+    ...awaitingRows.slice(0, 5).map((row) => row.fingerprint),
+    ...stewardHeldRows.slice(0, 5).map((row) => row.fingerprint),
+  ]);
 
-    const [latestDec] = await db
-      .select({ record: decisions.record })
-      .from(decisions)
-      .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, row.fingerprint), notPreparedPayment))
-      .orderBy(desc(decisions.createdAt))
-      .limit(1);
-
-    const rule = String((latestDec?.record as any)?.rule ?? "Approval required");
-
-    topAwaiting.push({
-      fingerprint: row.fingerprint,
-      invoiceNumber,
-      vendorName,
-      amountFormatted: amountStr,
-      token,
-      ruleNeededHuman: rule,
-    });
-  }
-
-  // 2. Steward-held invoices
-  const stewardHeldRows = await db
-    .select()
-    .from(invoices)
-    .where(
-      and(
-        eq(invoices.businessId, businessId),
-        eq(invoices.status, "held"),
-        or(eq(invoices.holdSource, "steward"), isNull(invoices.holdSource)),
-      ),
-    )
-    .orderBy(desc(invoices.receivedAt));
-
-  const stewardHeldItems: NeedsYouSummary["stewardHeld"]["items"] = [];
-  for (const row of stewardHeldRows.slice(0, 5)) {
-    let vendorName = UNREADABLE_VENDOR;
-    let invoiceNumber = row.invoiceNumber ?? `${row.fingerprint.slice(0, 10)}…`;
-    try {
-      const decoded = decodeSealedInvoice(row.envelope);
-      vendorName = decoded.document.vendor.name;
-      invoiceNumber = decoded.document.invoiceNumber;
-    } catch {
-      unreadable(problems, row.fingerprint);
-    }
-
-    const [latestDec] = await db
-      .select({ record: decisions.record })
-      .from(decisions)
-      .where(and(eq(decisions.businessId, businessId), eq(decisions.subject, row.fingerprint), notPreparedPayment))
-      .orderBy(desc(decisions.createdAt))
-      .limit(1);
-
-    const reason = String((latestDec?.record as any)?.rule ?? "No reason was recorded for this hold");
-
-    stewardHeldItems.push({
-      fingerprint: row.fingerprint,
-      invoiceNumber,
-      vendorName,
-      reason,
-    });
-  }
-
-  // 3. Human-held invoices
-  const humanHeldRows = await db
-    .select()
-    .from(invoices)
-    .where(
-      and(
-        eq(invoices.businessId, businessId),
-        eq(invoices.status, "held"),
-        eq(invoices.holdSource, "human"),
-      ),
-    )
-    .orderBy(desc(invoices.receivedAt));
-
-  const humanHeldItems: NeedsYouSummary["humanHeld"]["items"] = humanHeldRows.slice(0, 5).map((row) => {
-    let vendorName = UNREADABLE_VENDOR;
-    let invoiceNumber = row.invoiceNumber ?? `${row.fingerprint.slice(0, 10)}…`;
-    try {
-      const decoded = decodeSealedInvoice(row.envelope);
-      vendorName = decoded.document.vendor.name;
-      invoiceNumber = decoded.document.invoiceNumber;
-    } catch {
-      unreadable(problems, row.fingerprint);
-    }
+  const topAwaiting: NeedsYouSummary["awaitingApproval"]["top"] = awaitingRows.slice(0, 5).map((row) => {
+    const named = namedInvoice(row, problems);
     return {
       fingerprint: row.fingerprint,
-      invoiceNumber,
-      vendorName,
+      invoiceNumber: named.invoiceNumber,
+      vendorName: named.vendorName,
+      amountFormatted: named.token ? formatAmount(row.total, named.decimals) : "—",
+      token: named.token,
+      ruleNeededHuman: rules.get(row.fingerprint) || "Approval required",
     };
   });
 
-  // 4. Unsigned bills open
-  const openBills = await db
-    .select({ id: unsignedBills.id })
-    .from(unsignedBills)
-    .where(and(eq(unsignedBills.businessId, businessId), eq(unsignedBills.status, "open")));
+  const stewardHeldItems: NeedsYouSummary["stewardHeld"]["items"] = stewardHeldRows.slice(0, 5).map((row) => {
+    const named = namedInvoice(row, problems);
+    return {
+      fingerprint: row.fingerprint,
+      invoiceNumber: named.invoiceNumber,
+      vendorName: named.vendorName,
+      reason: rules.get(row.fingerprint) || "No reason was recorded for this hold",
+    };
+  });
 
-  // 5. Verifications awaiting second
-  const pendingVerifs = await db
-    .select({ seal: payees.seal })
-    .from(payees)
-    .where(and(eq(payees.businessId, businessId), eq(payees.status, "pending_verification")));
+  const humanHeldItems: NeedsYouSummary["humanHeld"]["items"] = humanHeldRows.slice(0, 5).map((row) => {
+    const named = namedInvoice(row, problems);
+    return { fingerprint: row.fingerprint, invoiceNumber: named.invoiceNumber, vendorName: named.vendorName };
+  });
 
-  // 6. Problems (Steward fee balance, standing mismatch, failed last run)
-
-  if (biz.vault) {
-    const vault = getAddress(biz.vault);
-    const standing = stewardStanding(biz.stewardWallet, await readVaultState(client, cfg.deployment, vault));
-    if (standing.kind === "mismatch") {
-      problems.push("The Steward this Vault reports onchain isn't the wallet configured for this business.");
-    }
-
-    // the Steward page's own floor: below 0.01 USDC (18-decimal native units) a run is skipped (QA SYM-21)
-    if (biz.stewardMode !== "shadow" && biz.stewardWallet) {
-      const bal = await feeBalance(client, biz.stewardWallet);
-      if (bal !== null && bal < 10_000_000_000_000_000n) {
-        problems.push("The Steward's fee balance is below 0.01 USDC, so its runs will be skipped. Add fees on the Steward page.");
+  const chainProblems: string[] = [];
+  const waitProblems: string[] = [];
+  const [waitingOnYou] = await Promise.all([
+    loadWaitingOnYou(db, client, cfg, businessId, biz.vault, waitProblems).catch((e) => {
+      console.error("waiting-on-you read failed", e);
+      waitProblems.push("Can't work out which invoices are waiting on you right now.");
+      return { count: 0, groups: [] } as NeedsYouSummary["waitingOnYou"];
+    }),
+    (async () => {
+      if (!biz.vault) return;
+      const vault = getAddress(biz.vault);
+      const [state, bal] = await Promise.all([
+        readVaultState(client, cfg.deployment, vault),
+        biz.stewardMode !== "shadow" && biz.stewardWallet ? feeBalance(client, biz.stewardWallet) : null,
+      ]);
+      if (stewardStanding(biz.stewardWallet, state).kind === "mismatch") {
+        chainProblems.push("The Steward this Vault reports onchain isn't the wallet configured for this business.");
       }
-    }
-  }
+      // the Steward page's own floor: below 0.01 USDC (18-decimal native units) a run is skipped (QA SYM-21)
+      if (bal !== null && bal < 10_000_000_000_000_000n) {
+        chainProblems.push("The Steward's fee balance is below 0.01 USDC, so its runs will be skipped. Add fees on the Steward page.");
+      }
+    })(),
+  ]);
 
-  const [lastRun] = await db
-    .select()
-    .from(stewardRuns)
-    .where(eq(stewardRuns.businessId, businessId))
-    .orderBy(desc(stewardRuns.startedAt))
-    .limit(1);
-
+  const lastRun = lastRunRows[0];
   if (lastRun && lastRun.status === "failed") {
     problems.push(`Last Steward pass failed: ${plainRunError(lastRun.error)}`);
   }
-
-  const waitingOnYou = await loadWaitingOnYou(db, client, cfg, businessId, biz.vault, problems).catch((e) => {
-    console.error("waiting-on-you read failed", e);
-    problems.push("Can't work out which invoices are waiting on you right now.");
-    return { count: 0, groups: [] } as NeedsYouSummary["waitingOnYou"];
-  });
+  problems.push(...chainProblems, ...waitProblems);
 
   return {
     awaitingApproval: {
@@ -429,8 +386,24 @@ export async function loadToday(
   const endOfToday = new Date(now);
   endOfToday.setUTCHours(23, 59, 59, 999);
 
-  // 1. Payments made today (from chainEvents with eventName = 'Paid' from this Vault)
-  const [biz] = await db.select({ vault: businesses.vault }).from(businesses).where(eq(businesses.id, businessId)).limit(1);
+  const [[biz], dueTodayRows, decisionsTodayRows] = await Promise.all([
+    db.select({ vault: businesses.vault }).from(businesses).where(eq(businesses.id, businessId)).limit(1),
+    db
+      .select({ fingerprint: invoices.fingerprint })
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.businessId, businessId),
+          gte(invoices.dueDate, startOfToday),
+          lte(invoices.dueDate, endOfToday),
+          inArray(invoices.status, ["scheduled", "verified"]),
+        ),
+      ),
+    db
+      .select({ id: decisions.id })
+      .from(decisions)
+      .where(and(eq(decisions.businessId, businessId), gte(decisions.createdAt, startOfToday), notPreparedPayment)),
+  ]);
 
   let paymentsCount = 0;
   let paymentsTotal = 0n;
@@ -439,47 +412,14 @@ export async function loadToday(
     const paidEvents = await db
       .select({ args: chainEvents.args })
       .from(chainEvents)
-      .where(
-        and(
-          eq(chainEvents.address, vault),
-          eq(chainEvents.eventName, "Paid"),
-          gte(chainEvents.createdAt, startOfToday),
-        ),
-      );
+      .where(and(eq(chainEvents.address, vault), eq(chainEvents.eventName, "Paid"), gte(chainEvents.createdAt, startOfToday)));
 
     paymentsCount = paidEvents.length;
     for (const pe of paidEvents) {
       const args = pe.args as Record<string, unknown>;
-      if (typeof args.paid === "string") {
-        paymentsTotal += BigInt(args.paid);
-      }
+      if (typeof args.paid === "string") paymentsTotal += BigInt(args.paid);
     }
   }
-
-  // 2. Invoices scheduled/due today
-  const dueTodayRows = await db
-    .select({ fingerprint: invoices.fingerprint })
-    .from(invoices)
-    .where(
-      and(
-        eq(invoices.businessId, businessId),
-        gte(invoices.dueDate, startOfToday),
-        lte(invoices.dueDate, endOfToday),
-        inArray(invoices.status, ["scheduled", "verified"]),
-      ),
-    );
-
-  // 3. Decisions made today
-  const decisionsTodayRows = await db
-    .select({ id: decisions.id })
-    .from(decisions)
-    .where(
-      and(
-        eq(decisions.businessId, businessId),
-        gte(decisions.createdAt, startOfToday),
-        notPreparedPayment,
-      ),
-    );
 
   return {
     paymentsCount,
@@ -518,9 +458,11 @@ export async function loadAhead(
   const usdcToken = cfg.deployment.tokens.usdc;
   const eurcToken = cfg.deployment.tokens.eurc;
 
-  const balances = await Promise.allSettled([usdcToken, eurcToken].map(address => client.readContract({ address, abi: erc20Abi, functionName: "balanceOf", args: [vault] })));
-  const usdcBal = balances[0]?.status === "fulfilled" ? balances[0].value : null;
-  const eurcBal = balances[1]?.status === "fulfilled" ? balances[1].value : null;
+  const [summary, eurcBal] = await Promise.all([
+    readVaultSummary(client, cfg.deployment, vault),
+    readErc20Balance(client, eurcToken, vault),
+  ]);
+  const usdcBal = summary.ok ? summary.usdc : null;
 
   const unpaid = await db
     .select({

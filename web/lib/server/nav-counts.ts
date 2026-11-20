@@ -15,31 +15,31 @@ export interface NavCounts {
  * the database only (no chain reads), so the menu never waits on a node and never disagrees with itself between screens.
  */
 export async function loadNavCounts(db: Database, businessId: string): Promise<NavCounts> {
-  const [approvals] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(invoices)
-    .where(and(eq(invoices.businessId, businessId), eq(invoices.status, "awaiting_approval")));
-
-  const [unverified] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(invoices)
-    .where(
-      and(
-        eq(invoices.businessId, businessId),
-        inArray(invoices.status, ["received", "verified", "held", "awaiting_approval"]),
-        notExists(
-          db
-            .select({ one: sql`1` })
-            .from(payees)
-            .where(and(eq(payees.businessId, invoices.businessId), eq(payees.seal, invoices.seal), eq(payees.status, "verified"))),
+  const [[approvals], [unverified], [bills]] = await Promise.all([
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(invoices)
+      .where(and(eq(invoices.businessId, businessId), eq(invoices.status, "awaiting_approval"))),
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.businessId, businessId),
+          inArray(invoices.status, ["received", "verified", "held", "awaiting_approval"]),
+          notExists(
+            db
+              .select({ one: sql`1` })
+              .from(payees)
+              .where(and(eq(payees.businessId, invoices.businessId), eq(payees.seal, invoices.seal), eq(payees.status, "verified"))),
+          ),
         ),
       ),
-    );
-
-  const [bills] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(unsignedBills)
-    .where(and(eq(unsignedBills.businessId, businessId), eq(unsignedBills.status, "open")));
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(unsignedBills)
+      .where(and(eq(unsignedBills.businessId, businessId), eq(unsignedBills.status, "open"))),
+  ]);
 
   return { inbox: (unverified?.n ?? 0) + (bills?.n ?? 0), approvals: approvals?.n ?? 0 };
 }

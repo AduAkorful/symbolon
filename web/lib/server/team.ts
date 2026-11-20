@@ -105,6 +105,18 @@ export async function listTeamMembers(
     user.wallet && vaultOwner && getAddress(user.wallet) === getAddress(vaultOwner),
   );
 
+  const roleVault = business.vault;
+  const roleFromBlock = business.vaultBlock ?? (deployment ? BigInt(deployment.startBlock) : 0n);
+  function fetchApproverLogs() {
+    return scanLogs(client!, {
+      address: getAddress(roleVault!),
+      events: symbolonVaultAbi.filter((e) => e.type === "event" && e.name === "ApproverSet"),
+      fromBlock: roleFromBlock,
+    });
+  }
+  let approverHistory: ReturnType<typeof fetchApproverLogs> | undefined;
+  const approverLogs = () => (approverHistory ??= fetchApproverLogs());
+
   const memberViews: TeamMemberView[] = await Promise.all(
     rawMembers.map(async (m): Promise<TeamMemberView> => {
       let onchainRole: TeamMemberView["onchainRole"] = "none";
@@ -131,8 +143,7 @@ export async function listTeamMembers(
 
           activeApproverBudgets = [];
           if (count > 0n) {
-            const event = symbolonVaultAbi.filter((e) => e.type === "event" && e.name === "ApproverSet");
-            const { logs } = await scanLogs(client!, { address: vaultAddr, events: event, fromBlock: business.vaultBlock ?? BigInt(deployment!.startBlock) });
+            const { logs } = await approverLogs();
             const granted = new Set<Hex>();
             for (const log of logs) {
               const a = log.args;
