@@ -63,7 +63,9 @@ Contract setup, deploys and the live smoke test: [`contracts/README.md`](contrac
 
 ## Worker
 
-[`render.yaml`](render.yaml) is a Render background worker. In the Render dashboard, create a Blueprint from this repo and fill the prompted values with the same database, chain, origin, Privy, Circle, and model settings as the production web app. Deploy the web app first so its migrations have run. Leave the worker at one instance. A healthy log line is `worker: chain 5042002`, then `indexer` with `done` and `behindBlocks`.
+[`render.yaml`](render.yaml) is a free Render web service. A background worker has no free plan. The process listens on `/health` and runs the indexer and Steward in the same loop. Create a Blueprint from this repo and fill the prompted values with the same database, chain, origin, Privy, Circle, and model settings as the production web app. Deploy the web app first so its migrations have run. Leave the service at one instance.
+
+A free service sleeps after 15 minutes with no request, and stays asleep until the next one. Call `/health` about every 10 minutes to keep indexing going. One service that stays awake fits in the 750 free hours each month. Render can suspend a free service that sends a lot of its own traffic; this one talks to Arc and Postgres whenever it is awake. A healthy log line is `worker: chain 5042002`, then `indexer` with `done` and `behindBlocks`.
 
 ```bash
 pnpm --filter @symbolon/worker... build && pnpm --filter @symbolon/worker start

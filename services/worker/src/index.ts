@@ -1,3 +1,4 @@
+import { createServer, type Server } from "node:http";
 import { pathToFileURL } from "node:url";
 
 import { createArcClient } from "@symbolon/chain";
@@ -55,13 +56,37 @@ export async function runUntilStop(signal: AbortSignal, db: Database, client: Pu
   }
 }
 
+/** Render's free plan is a web service, so the process has to accept HTTP on PORT. The loop is unchanged. */
+function listen(port: number): Server {
+  const server = createServer((req, res) => {
+    const ok = req.url === "/" || req.url === "/health";
+    res.writeHead(ok ? 200 : 404, { "content-type": "text/plain" });
+    res.end(ok ? "ok" : "");
+  });
+  server.listen(port, "0.0.0.0");
+  return server;
+}
+
+function listenPort(): number | undefined {
+  const raw = process.env.PORT?.trim();
+  if (!raw) return undefined;
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) throw new Error("PORT is not a valid port");
+  return port;
+}
+
 async function main(): Promise<void> {
   const cfg = loadConfig(process.env);
   if (!cfg.databaseUrl) throw new Error("DATABASE_URL is not set");
   const db = createDb(cfg.databaseUrl);
   const client = createArcClient(cfg.chainId, cfg.rpcUrl);
+  const port = listenPort();
+  const server = port !== undefined ? listen(port) : undefined;
   const controller = new AbortController();
-  const stop = () => controller.abort();
+  const stop = () => {
+    controller.abort();
+    server?.close();
+  };
   process.on("SIGTERM", stop);
   process.on("SIGINT", stop);
   console.info(`worker: chain ${cfg.chainId}`);
