@@ -26,22 +26,26 @@ export interface Where {
   picture: string | null;
 }
 
-export async function loadSpaces(session: CurrentSession): Promise<Where> {
-  const spaces = await spacesFor(await getDb(), session.user.id, getConfig().chainId);
-  const wanted = (await cookies()).get(BUSINESS_COOKIE)?.value;
+export async function loadSpaces(session: CurrentSession, opts: { warmVault?: boolean } = {}): Promise<Where> {
+  const db = await getDb();
+  const config = getConfig();
+  const [spaces, version, jar] = await Promise.all([
+    spacesFor(db, session.user.id, config.chainId),
+    avatarVersion(db, session.user.id).catch(() => null),
+    cookies(),
+  ]);
+  const wanted = jar.get(BUSINESS_COOKIE)?.value;
   const { email, wallet } = session.user;
   const shown = wallet && isAddress(wallet) ? getAddress(wallet) : wallet;
   const who = email ?? (shown ? `${shown.slice(0, 6)}…${shown.slice(-4)}` : "Signed in");
   const business = spaces.businesses.find((b) => b.id === wanted) ?? spaces.businesses[0] ?? null;
-  // Every business page's shell asks Arc about this Vault (is the Steward paused, is a newer release out). Starting those reads
-  // here, before the page does its own work, means they run beside it instead of after it, and the shell and the page share them
-  // (the read functions are request-scoped caches). Nothing waits on them here; the shell does.
-  if (business?.vault) {
-    const config = getConfig();
+  // A business page's shell asks Arc about this Vault. Starting those reads here lets them run beside the page, and the shell
+  // shares them (the read functions are request-scoped caches). Sign-in does not ask: nothing there is waiting on Arc.
+  if (opts.warmVault !== false && business?.vault) {
     const client = getClient();
     void readVaultState(client, config.deployment, business.vault);
     void checkReleaseNudge(client, config.deployment, getAddress(business.vault));
   }
-  const picture = avatarUrl(session.user.id, await avatarVersion(await getDb(), session.user.id).catch(() => null)) ?? null;
+  const picture = avatarUrl(session.user.id, version) ?? null;
   return { who, spaces, business, wallet: shown ?? null, picture };
 }

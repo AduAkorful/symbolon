@@ -54,7 +54,7 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<{
 async function Where({ session, next }: { session: NonNullable<Awaited<ReturnType<typeof getSession>>>; next: string }) {
   // Someone who arrived from a page they were sent away from goes straight back to it
   if (next !== "/signin") redirect(next);
-  const { spaces } = await loadSpaces(session);
+  const { spaces } = await loadSpaces(session, { warmVault: false });
   const empty = !spaces.seal && spaces.businesses.length === 0;
   return (
     <div>

@@ -23,13 +23,16 @@ async function currentSeal(db: Database, userId: string): Promise<Spaces["seal"]
 
 /** Everything a person belongs to on this chain: their Seal and each business they're a member of */
 export async function spacesFor(db: Database, userId: string, chainId: number): Promise<Spaces> {
-  const rows = await db
-    .select({ id: businesses.id, name: businesses.name, role: members.role, vault: businesses.vault, stewardWallet: businesses.stewardWallet, stewardMode: businesses.stewardMode })
-    .from(members)
-    .innerJoin(businesses, eq(businesses.id, members.businessId))
-    .where(and(eq(members.userId, userId), eq(businesses.chainId, chainId)))
-    .orderBy(businesses.name);
-  return { seal: await currentSeal(db, userId), businesses: rows };
+  const [rows, seal] = await Promise.all([
+    db
+      .select({ id: businesses.id, name: businesses.name, role: members.role, vault: businesses.vault, stewardWallet: businesses.stewardWallet, stewardMode: businesses.stewardMode })
+      .from(members)
+      .innerJoin(businesses, eq(businesses.id, members.businessId))
+      .where(and(eq(members.userId, userId), eq(businesses.chainId, chainId)))
+      .orderBy(businesses.name),
+    currentSeal(db, userId),
+  ]);
+  return { seal, businesses: rows };
 }
 
 /**
