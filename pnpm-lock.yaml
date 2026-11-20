@@ -30,6 +30,19 @@ importers:
         specifier: 5.0.2
         version: 5.0.2(@types/node@26.6.2)(vite@8.3.1(@types/node@26.6.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
 
+  packages/config:
+    dependencies:
+      '@symbolon/chain':
+        specifier: workspace:*
+        version: link:../chain
+    devDependencies:
+      '@types/node':
+        specifier: 26.6.2
+        version: 26.6.2
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+
   packages/core:
     dependencies:
       '@symbolon/chain':
@@ -190,6 +203,9 @@ importers:
       '@symbolon/chain':
         specifier: workspace:*
         version: link:../packages/chain
+      '@symbolon/config':
+        specifier: workspace:*
+        version: link:../packages/config
       '@symbolon/core':
         specifier: workspace:*
         version: link:../packages/core

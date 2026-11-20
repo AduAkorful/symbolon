@@ -16,6 +16,7 @@
     "@privy-io/node": "^0.35.0",
     "@privy-io/react-auth": "^3.46.0",
     "@symbolon/chain": "workspace:*",
+    "@symbolon/config": "workspace:*",
     "@symbolon/core": "workspace:*",
     "@symbolon/db": "workspace:*",
     "@symbolon/kits": "workspace:*",
