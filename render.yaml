@@ -1,0 +1,68 @@
+# The indexer and Steward. One process, on purpose: a second instance races the same sync cursor.
+# Region is fixed after the first Blueprint sync. Unset means Oregon. Set region (oregon, ohio,
+# virginia, frankfurt, singapore) on this service before syncing if the database lives elsewhere.
+# Apply the web app's migrations before the first start. This service does not migrate.
+
+services:
+  - type: worker
+    name: symbolon-worker
+    runtime: node
+    plan: 0.5c-512mb
+    numInstances: 1
+    autoDeployTrigger: commit
+    # A tick can still be in a scan when Render sends SIGTERM. 30s is not enough.
+    maxShutdownDelaySeconds: 180
+    buildCommand: npm install -g pnpm@10.33.2 && pnpm install --frozen-lockfile && pnpm --filter "@symbolon/worker..." build
+    startCommand: node services/worker/dist/index.js
+    buildFilter:
+      paths:
+        - services/worker/**
+        - packages/chain/**
+        - packages/config/**
+        - packages/core/**
+        - packages/db/**
+        - packages/seal/**
+        - packages/steward/**
+        - package.json
+        - pnpm-lock.yaml
+        - pnpm-workspace.yaml
+        - render.yaml
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Render's own install would not pin pnpm. The build command installs it.
+      - key: SKIP_INSTALL_DEPS
+        value: "true"
+      # Same database as the web app. Prefer the direct URL when the host also offers a pooled one.
+      - key: DATABASE_URL
+        sync: false
+      - key: CHAIN_ID
+        sync: false
+      # https origin of the web app. Production refuses to start without it.
+      - key: APP_ORIGIN
+        sync: false
+      - key: NEXT_PUBLIC_PRIVY_APP_ID
+        sync: false
+      - key: PRIVY_APP_SECRET
+        sync: false
+      # Optional. Blank uses the public Arc endpoints.
+      - key: ARC_RPC_URL
+        sync: false
+      # Both are required for Steward to send transactions. The process still boots without them.
+      - key: CIRCLE_API_KEY
+        sync: false
+      - key: CIRCLE_ENTITY_SECRET
+        sync: false
+      - key: CIRCLE_WALLET_SET_ID
+        sync: false
+      # One model key. If both are set, STEWARD_LLM must be anthropic or openrouter.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: STEWARD_LLM
+        sync: false
+      - key: OPENROUTER_MODEL
+        sync: false
+      - key: OPENROUTER_ZDR
+        sync: false

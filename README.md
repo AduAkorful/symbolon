@@ -30,6 +30,7 @@ limits the Vault enforces.
 | `packages/db` | Postgres schema (Drizzle) |
 | `packages/steward` | Policy mirror, matching, timing, treasury planner, decision records and anchoring, model and wallet interfaces |
 | `packages/core` | Services: intake, sync, Steward runs, approvals, offers, change control, treasury, screening, exports |
+| `services/worker` | The long-running indexer and Steward. The web app reads Postgres and does not scan Arc |
 
 ## Arc testnet (chain 5042002)
 
@@ -59,3 +60,11 @@ cd contracts && forge test
 
 Contract setup, deploys and the live smoke test: [`contracts/README.md`](contracts/README.md). Required credentials:
 [`.env.example`](.env.example), [`contracts/.env.example`](contracts/.env.example).
+
+## Worker
+
+[`render.yaml`](render.yaml) is a Render background worker. In the Render dashboard, create a Blueprint from this repo and fill the prompted values with the same database, chain, origin, Privy, Circle, and model settings as the production web app. Deploy the web app first so its migrations have run. Leave the worker at one instance. A healthy log line is `worker: chain 5042002`, then `indexer` with `done` and `behindBlocks`.
+
+```bash
+pnpm --filter @symbolon/worker... build && pnpm --filter @symbolon/worker start
+```
