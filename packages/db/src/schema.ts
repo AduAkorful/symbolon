@@ -363,6 +363,10 @@ export const invoices = pgTable(
     /** Mirrored from the ledger by sync */
     credited: amount("credited").notNull().default(sql`0`),
     syncedBlock: bigint("synced_block", { mode: "bigint" }),
+    /** Inbox list trust, written by intake and the worker. Null until that mirror has seen the row. */
+    inboxTrust: text("inbox_trust").$type<"verified" | "new_vendor" | "blocked" | "failed">(),
+    /** True when the Vault is known not to pay this invoice's currency. Null when that hasn't been read. */
+    currencyOff: boolean("currency_off"),
     source: text("source").notNull(),
     /**
      * Who placed the hold. `steward` = the Steward holds it and can reconsider each run.
@@ -386,6 +390,7 @@ export const invoices = pgTable(
     check("invoices_declined_reason", sql`${t.status}::text <> 'declined' or ${t.declinedReason} is not null`),
     check("invoices_hold_source", sql`${t.holdSource} is null or ${t.holdSource} in ('steward', 'human')`),
     check("invoices_hold_source_with_status", sql`${t.status} = 'held' or ${t.holdSource} is null`),
+    check("invoices_inbox_trust", sql`${t.inboxTrust} is null or ${t.inboxTrust} in ('verified', 'new_vendor', 'blocked', 'failed')`),
   ],
 );
 
@@ -632,7 +637,7 @@ export const stewardRuns = pgTable(
     index("steward_runs_business_started_idx").on(t.businessId, t.startedAt),
     check("steward_runs_trigger_check", sql`${t.trigger} in ('manual', 'schedule')`),
     check("steward_runs_mode_check", sql`${t.mode} in ('shadow', 'assist', 'auto')`),
-    check("steward_runs_status_check", sql`${t.status} in ('running', 'done', 'failed', 'skipped_paused', 'skipped_fees')`),
+    check("steward_runs_status_check", sql`${t.status} in ('queued', 'running', 'done', 'failed', 'skipped_paused', 'skipped_fees')`),
   ],
 );
 

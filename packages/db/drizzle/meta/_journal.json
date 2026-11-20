@@ -204,6 +204,13 @@
       "when": 1792063450566,
       "tag": "0028_slimy_grandmaster",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1795000000000,
+      "tag": "0029_worker_mirror",
+      "breakpoints": true
     }
   ]
 }
